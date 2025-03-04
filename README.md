@@ -1,7 +1,3 @@
-Here's a clean and professional **README.md** file for your **PhishNet** project:  
-
----
-
 # 🐟 PhishNet – Phishing Simulator & Cyber Awareness Tool  
 
 ## 📌 Overview  
