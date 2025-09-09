@@ -32,6 +32,7 @@ PhishNet is a professional phishing simulation platform designed for cybersecuri
 ```bash
 git clone https://github.com/gh0st-bit/PhishNet.git
 cd PhishNet/phisnet
+chmod +x deploy.sh
 ./deploy.sh
 ```
 
