@@ -40,6 +40,9 @@ chmod +x deploy.sh
 ```powershell
 git clone https://github.com/gh0st-bit/PhishNet.git
 cd PhishNet\phisnet
+# Fix PowerShell execution policy if needed
+Set-ExecutionPolicy Bypass -Scope Process -Force
+# Run the deployment script
 .\deploy.ps1
 ```
 
@@ -216,6 +219,50 @@ npm run import-data     # Import sample data
 psql -U postgres -d phishnet -c "\l"    # List databases
 psql -U postgres -d phishnet -c "\dt"   # List tables
 psql -U postgres -d phishnet -c "\du"   # List users
+```
+
+## 🛠️ Troubleshooting Common Issues
+
+### PowerShell Execution Policy Errors
+If you see errors like "File cannot be loaded because running scripts is disabled on this system":
+
+```powershell
+# Method 1: Use our safe batch files (recommended)
+deploy-safe.bat   # Instead of deploy.bat
+start-safe.bat    # Instead of start.bat
+
+# Method 2: Run this command in PowerShell as Administrator
+Set-ExecutionPolicy Bypass -Scope Process -Force
+
+# Method 3: For a more permanent solution
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+```
+
+See `POWERSHELL-EXECUTION-FIX.md` for detailed troubleshooting steps.
+
+### Database Connection Issues
+If the application can't connect to the database:
+```bash
+# Check if PostgreSQL is running
+# Windows:
+Get-Service postgresql*
+
+# Linux/macOS:
+sudo systemctl status postgresql
+
+# Verify database exists:
+psql -U postgres -c "SELECT datname FROM pg_database WHERE datname='phishnet';"
+```
+
+### Node.js Version Issues
+The application works best with Node.js LTS versions (preferably Node 20):
+```bash
+# Check Node version
+node -v
+
+# If using nvm, switch to Node 20
+nvm install 20
+nvm use 20
 ```
 
 ---
