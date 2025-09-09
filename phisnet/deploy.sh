@@ -31,10 +31,14 @@ fi
 # Parse arguments
 PRODUCTION=false
 SKIP_DEPS=false
+FROM_ENV=false
+CI_SECRETS_ENABLED=true
 for arg in "$@"; do
     case $arg in
         --production) PRODUCTION=true ;;
         --skip-deps) SKIP_DEPS=true ;;
+        --from-env|--env|--secrets) FROM_ENV=true ;;
+        --no-ci-secrets) CI_SECRETS_ENABLED=false ;;
     esac
 done
 
@@ -385,6 +389,53 @@ success "Database setup complete"
 
 # Environment setup
 info "📝 Setting up environment..."
+generate_env_from_vars(){
+    info "Generating .env from exported environment variables (if present)"
+    local keys=(DATABASE_URL DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD SESSION_SECRET JWT_SECRET ENCRYPTION_KEY SENDGRID_API_KEY SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS SMTP_FROM)
+    : > .env.generated
+    local found=0
+    for k in "${keys[@]}"; do
+        if [[ -n "${!k:-}" ]]; then
+            echo "$k=${!k}" >> .env.generated
+            found=1
+        fi
+    done
+    if [[ $found -eq 0 ]]; then
+        rm -f .env.generated
+        return 1
+    fi
+    return 0
+}
+
+merge_secrets(){
+    # Only merge if CI and enabled
+    if [[ -z "${GITHUB_ACTIONS:-}" || "$CI_SECRETS_ENABLED" != true ]]; then
+        return 0
+    fi
+    info "🔐 Merging GitHub Actions secrets into .env"
+    generate_env_from_vars || return 0
+    touch .env
+    while IFS='=' read -r k v; do
+        [[ -z "$k" || "$k" =~ ^# ]] && continue
+        if grep -q "^${k}=" .env; then
+            sed -i "s|^${k}=.*|${k}=${v}|" .env
+        else
+            echo "${k}=${v}" >> .env
+        fi
+    done < .env.generated
+    rm -f .env.generated
+    success "Secrets merged (keys only): $(grep -E '^[A-Za-z0-9_]+=' .env | cut -d'=' -f1 | tr '\n' ' ')"
+}
+
+if [[ $FROM_ENV == true ]]; then
+    if generate_env_from_vars; then
+        mv .env.generated .env
+        success ".env created from environment variables"
+    else
+        warning "--from-env specified but no recognized variables found"
+    fi
+fi
+
 if [[ ! -f ".env" ]]; then
     cat > .env << EOF
 # PhishNet Auto-Generated Environment Configuration
@@ -443,6 +494,9 @@ DEFAULT_ADMIN_NAME=PhishNet Administrator
 EOF
     success "Environment file created with full configuration"
 fi
+
+# Merge CI secrets if present
+merge_secrets || true
 
 # Verify .env file
 if [[ -f ".env" ]]; then
@@ -530,13 +584,17 @@ echo -e "${GREEN}======================================${NC}"
 echo ""
 
 if [[ "$PRODUCTION" != true ]]; then
-    read -p "🚀 Start PhishNet development server now? (Y/n): " start_choice
-    if [[ "$start_choice" != "n" && "$start_choice" != "N" ]]; then
-        info "Starting PhishNet..."
-        export NODE_ENV=development
-        npx tsx server/index.ts
+    if [[ -n "${GITHUB_ACTIONS:-}" || ! -t 0 ]]; then
+        info "CI / non-interactive shell detected – skipping dev server auto-start prompt."
     else
-        info "To start later: ./start.sh"
+        read -p "🚀 Start PhishNet development server now? (Y/n): " start_choice
+        if [[ "$start_choice" != "n" && "$start_choice" != "N" ]]; then
+            info "Starting PhishNet..."
+            export NODE_ENV=development
+            npx tsx server/index.ts
+        else
+            info "To start later: ./start.sh"
+        fi
     fi
 fi
 
