@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { storage } from '../storage';
 import type { Campaign, Target, SmtpProfile, EmailTemplate } from '@shared/schema';
+import { NotificationService } from './notification-service';
 
 // Base URL for tracking links & pixels (allow override via env)
 const BASE_URL = process.env.APP_BASE_URL || 'http://localhost:5000';
@@ -134,5 +135,36 @@ export async function sendCampaignEmails(campaignId: number, organizationId: num
 
   // Mark campaign status accordingly
   await storage.updateCampaign(campaign.id, { status: 'Completed' });
+  
+  // Create notification about campaign completion
+  try {
+    // Get organization users to notify
+    const users = await storage.listUsers(organizationId);
+    
+    if (users && users.length > 0) {
+      for (const user of users) {
+        // Only notify admins or users with appropriate permissions
+        if (user.isAdmin) {
+          await NotificationService.createNotification({
+            userId: user.id,
+            organizationId: organizationId,
+            type: 'campaign',
+            title: 'Campaign Completed',
+            message: `The campaign "${campaign.name}" has been sent to ${sentCount} of ${targets.length} targets.`,
+            priority: 'medium',
+            actionUrl: `/campaigns/${campaign.id}`,
+            metadata: {
+              campaignId: campaign.id,
+              sentCount,
+              totalTargets: targets.length
+            }
+          });
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error creating campaign notification:', error);
+  }
+  
   return { sent: sentCount, total: targets.length };
 }

@@ -4,7 +4,29 @@ This guide will help you solve common PowerShell execution policy issues when de
 
 ## Quick Solutions
 
-### Option 1: Use the safe batch files (Recommended)
+### Option 1: Use the Universal Setup Script (Recommended)
+We've created an all-in-one script that handles everything automatically:
+
+```
+universal-setup.bat        # For Command Prompt users
+.\universal-setup.ps1      # For PowerShell users
+```
+
+This script can:
+- Deploy and start PhishNet in one command
+- Automatically bypass execution policies
+- Handle both development and production modes
+- Recover from common errors
+- Use fixed scripts when needed
+
+**Options:**
+```
+universal-setup.bat --help       # Show all options
+universal-setup.bat --all        # Deploy and start in one go
+universal-setup.bat --production # Use production mode
+```
+
+### Option 2: Use the safe batch files
 We've included special batch files that automatically bypass execution policies:
 
 ```
@@ -12,7 +34,7 @@ deploy-safe.bat   # Install everything
 start-safe.bat    # Start PhishNet
 ```
 
-### Option 2: Run a bypass command directly
+### Option 3: Run a bypass command directly
 Open PowerShell as Administrator and run:
 
 ```powershell
@@ -21,7 +43,7 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 
 This temporarily allows script execution in the current PowerShell session.
 
-### Option 3: Change execution policy for your user account
+### Option 4: Change execution policy for your user account
 For a more permanent solution (only if you regularly run scripts):
 
 ```powershell

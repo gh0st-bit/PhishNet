@@ -813,11 +813,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         // Fetch existing row (if any) by attempting update; if none updated, create later.
         const existing = await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, {} as any);
+        let wasOpened = false;
+        
         if (existing) {
           const newData: any = {};
             if (!existing.opened) {
               newData.opened = true;
               newData.openedAt = new Date();
+              wasOpened = true; // Track that this is a new open event
             }
             // Only set status to opened if current status is pending or sent
             if (['pending', 'sent'].includes(existing.status)) {
@@ -832,6 +835,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
             sent: false, opened: true, openedAt: new Date(), clicked: false, submitted: false,
             status: 'opened'
           } as any);
+          wasOpened = true; // New record created with opened = true
+        }
+        
+        // If this is a new open event, create a notification
+        if (wasOpened) {
+          try {
+            // Get the target details
+            const target = await storage.getTarget(targetId);
+            
+            // Get organization users with admin access to notify
+            const users = await storage.listUsers(campaign.organizationId);
+            
+            if (users && users.length > 0) {
+              for (const user of users) {
+                // Only notify admins
+                if (user.isAdmin) {
+                  await NotificationService.createNotification({
+                    userId: user.id,
+                    organizationId: campaign.organizationId,
+                    type: 'campaign',
+                    title: 'Email Opened',
+                    message: `${target.firstName} ${target.lastName} (${target.email}) opened the email from campaign "${campaign.name}".`,
+                    priority: 'medium',
+                    actionUrl: `/campaigns/${campaignId}`,
+                    metadata: {
+                      campaignId,
+                      targetId,
+                      targetEmail: target.email,
+                      eventType: 'opened'
+                    }
+                  });
+                }
+              }
+            }
+          } catch (notifError) {
+            console.error('Error creating open notification:', notifError);
+          }
         }
       } catch (e) {
         console.error('Open pixel record error:', e);
@@ -873,11 +913,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!url) return res.status(400).send('Invalid URL');
       try {
         const existing = await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, {} as any);
+        let wasClicked = false;
+        
         if (existing) {
           const newData: any = {};
           if (!existing.clicked) {
             newData.clicked = true;
             newData.clickedAt = new Date();
+            wasClicked = true; // Track that this is a new click event
           }
           // Do not downgrade submitted
           if (existing.status !== 'submitted') {
@@ -895,6 +938,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
             sent: false, opened: false, clicked: true, clickedAt: new Date(), submitted: false,
             status: 'clicked'
           } as any);
+          wasClicked = true; // New record created with clicked = true
+        }
+        
+        // If this is a new click event, create a notification
+        if (wasClicked) {
+          try {
+            // Get the target details
+            const target = await storage.getTarget(targetId);
+            
+            // Get organization users with admin access to notify
+            const users = await storage.listUsers(campaign.organizationId);
+            
+            if (users && users.length > 0) {
+              for (const user of users) {
+                // Only notify admins
+                if (user.isAdmin) {
+                  await NotificationService.createNotification({
+                    userId: user.id,
+                    organizationId: campaign.organizationId,
+                    type: 'campaign',
+                    title: 'Link Clicked',
+                    message: `${target.firstName} ${target.lastName} (${target.email}) clicked a link in the email from campaign "${campaign.name}".`,
+                    priority: 'high', // Higher priority than just opening an email
+                    actionUrl: `/campaigns/${campaignId}`,
+                    metadata: {
+                      campaignId,
+                      targetId,
+                      targetEmail: target.email,
+                      eventType: 'clicked',
+                      url: url // Include the URL that was clicked
+                    }
+                  });
+                }
+              }
+            }
+          } catch (notifError) {
+            console.error('Error creating click notification:', notifError);
+          }
         }
       } catch (e) {
         console.error('Click record error:', e);
@@ -973,12 +1054,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update or create result row
       try {
         // Try updating existing result for this campaign+target
+        let wasSubmitted = false;
+        const existing = await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, {} as any);
+        
+        if (existing && !existing.submitted) {
+          wasSubmitted = true;
+        } else if (!existing) {
+          wasSubmitted = true;
+        }
+        
         const updated = await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, {
           submitted: true,
           submittedAt: new Date(),
           submittedData: submittedData as any,
           status: 'submitted',
         } as any);
+        
         if (!updated) {
           await storage.createCampaignResult({
             campaignId,
@@ -992,6 +1083,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
             submittedData: submittedData as any,
             status: 'submitted',
           } as any);
+        }
+        
+        // If this is a new submission event, create a notification with urgent priority
+        if (wasSubmitted) {
+          try {
+            // Get the target details
+            const target = await storage.getTarget(targetId);
+            
+            // Get organization users with admin access to notify
+            const users = await storage.listUsers(campaign.organizationId);
+            
+            if (users && users.length > 0) {
+              for (const user of users) {
+                // Only notify admins
+                if (user.isAdmin) {
+                  await NotificationService.createNotification({
+                    userId: user.id,
+                    organizationId: campaign.organizationId,
+                    type: 'campaign',
+                    title: 'Form Submitted',
+                    message: `${target.firstName} ${target.lastName} (${target.email}) submitted information on the landing page from campaign "${campaign.name}".`,
+                    priority: 'urgent', // Highest priority - user submitted form data
+                    actionUrl: `/campaigns/${campaignId}`,
+                    metadata: {
+                      campaignId,
+                      targetId,
+                      targetEmail: target.email,
+                      eventType: 'submitted'
+                    }
+                  });
+                }
+              }
+            }
+          } catch (notifError) {
+            console.error('Error creating form submission notification:', notifError);
+          }
         }
       } catch (err) {
         console.error('Error recording submission:', err);

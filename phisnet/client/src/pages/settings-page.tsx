@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
+import { NotificationSettings } from "@/components/notifications/notification-settings";
 import { 
   Lock, 
   Bell, 
@@ -19,22 +20,36 @@ import {
   AlertTriangle,
   Loader2,
   X,
-  ArrowLeft
+  ArrowLeft,
+  BarChart3,
+  Info as InfoIcon
 } from "lucide-react";
 import { useLocation } from "wouter";
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [, navigate] = useLocation();
-  
+  const [location, navigate] = useLocation();
+  // Get tab from query string
+  const getTabFromQuery = () => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab === 'notifications' || tab === 'appearance' || tab === 'account') {
+        return tab;
+      }
+    }
+    return 'account';
+  };
+  const [selectedTab, setSelectedTab] = useState(getTabFromQuery());
+  // Watch for changes in location
+  useEffect(() => {
+    setSelectedTab(getTabFromQuery());
+  }, [location]);
   // State for various settings
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [securityAlerts, setSecurityAlerts] = useState(true);
   const [darkMode, setDarkMode] = useState(false);
   const [sessionTimeout, setSessionTimeout] = useState(30);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  
   // Password form state
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
@@ -52,24 +67,14 @@ export default function SettingsPage() {
   
   // Handle settings toggle
   const handleToggle = (setting: string, value: boolean) => {
-    switch (setting) {
-      case "emailNotifications":
-        setEmailNotifications(value);
-        break;
-      case "securityAlerts":
-        setSecurityAlerts(value);
-        break;
-      case "darkMode":
-        setDarkMode(value);
-        break;
-      default:
-        break;
+    if (setting === "darkMode") {
+      setDarkMode(value);
+      
+      toast({
+        title: "Setting updated",
+        description: "Your preference has been saved.",
+      });
     }
-
-    toast({
-      title: "Setting updated",
-      description: "Your preference has been saved.",
-    });
   };
   
   // Handle session timeout change
@@ -229,7 +234,7 @@ export default function SettingsPage() {
         </div>
       </div>
       
-      <Tabs defaultValue="account">
+  <Tabs value={selectedTab} onValueChange={setSelectedTab}>
         <TabsList className="mb-6">
           <TabsTrigger value="account">
             <Shield className="h-4 w-4 mr-2" />
@@ -369,53 +374,7 @@ export default function SettingsPage() {
         
         {/* Notifications Tab */}
         <TabsContent value="notifications">
-          <Card>
-            <CardHeader>
-              <CardTitle>Notification Preferences</CardTitle>
-              <CardDescription>
-                Configure how and when you receive notifications
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="emailNotifications">
-                    <div className="flex items-center">
-                      <Mail className="h-4 w-4 mr-2" />
-                      Email Notifications
-                    </div>
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Receive campaign reports and alerts via email
-                  </p>
-                </div>
-                <Switch
-                  id="emailNotifications"
-                  checked={emailNotifications}
-                  onCheckedChange={(value) => handleToggle("emailNotifications", value)}
-                />
-              </div>
-              
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label htmlFor="securityAlerts">
-                    <div className="flex items-center">
-                      <Shield className="h-4 w-4 mr-2" />
-                      Security Alerts
-                    </div>
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Get notified about important security events
-                  </p>
-                </div>
-                <Switch
-                  id="securityAlerts"
-                  checked={securityAlerts}
-                  onCheckedChange={(value) => handleToggle("securityAlerts", value)}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <NotificationSettings />
         </TabsContent>
         
         {/* Appearance Tab */}

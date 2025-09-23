@@ -63,6 +63,15 @@ export class NotificationService {
   
   static async createNotification(notification: any) {
     try {
+      // Check if the user has enabled this type of notification
+      if (notification.userId) {
+        const shouldNotify = await this.shouldNotify(notification.userId, notification.type);
+        if (!shouldNotify) {
+          console.log(`Notification of type ${notification.type} skipped based on user preferences`);
+          return null;
+        }
+      }
+      
       const result = await pool.query(
         `INSERT INTO notifications (user_id, organization_id, type, title, message, priority, action_url, metadata)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
@@ -95,11 +104,21 @@ export class NotificationService {
       
       const notifications = [];
       for (const user of usersResult.rows) {
+        // Check if the user has enabled this type of notification
+        const shouldNotify = await this.shouldNotify(user.id, notification.type);
+        if (!shouldNotify) {
+          console.log(`Organization notification of type ${notification.type} skipped for user ${user.id} based on preferences`);
+          continue;
+        }
+        
         const notif = await this.createNotification({
           ...notification,
           userId: user.id
         });
-        notifications.push(notif);
+        
+        if (notif) {
+          notifications.push(notif);
+        }
       }
       
       return notifications;
@@ -177,6 +196,40 @@ export class NotificationService {
     } catch (error) {
       console.error("Error deleting notification:", error);
       throw error;
+    }
+  }
+  
+  static async shouldNotify(userId: number, notificationType: string): Promise<boolean> {
+    try {
+      const preferences = await this.getPreferences(userId);
+      
+      // Map notification type to corresponding preference setting
+      switch (notificationType) {
+        case 'campaign_complete':
+        case 'email_opened':
+        case 'link_clicked':
+        case 'form_submitted':
+          return preferences.campaignAlerts;
+          
+        case 'security_alert':
+        case 'login_attempt':
+        case 'password_changed':
+          return preferences.securityAlerts;
+          
+        case 'system_update':
+        case 'maintenance':
+          return preferences.systemUpdates;
+          
+        case 'weekly_report':
+        case 'monthly_report':
+          return preferences.weeklyReports;
+          
+        default:
+          return true; // Default to showing notifications
+      }
+    } catch (error) {
+      console.error("Error checking notification preferences:", error);
+      return true; // Default to showing notifications on error
     }
   }
 }

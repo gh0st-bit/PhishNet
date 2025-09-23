@@ -46,6 +46,21 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 .\deploy.ps1
 ```
 
+#### Windows (Easiest Method):
+```cmd
+git clone https://github.com/gh0st-bit/PhishNet.git
+cd PhishNet\phisnet
+universal-setup.bat
+```
+
+This universal setup script automatically handles:
+- Execution policy issues
+- Deployment and startup in one command
+- Error recovery with fallback options
+- Both development and production modes
+
+Run `universal-setup.bat --help` to see all options.
+
 > Note: Legacy container quick start removed. Use the platform scripts above for local setup.
 
 ---
@@ -227,14 +242,18 @@ psql -U postgres -d phishnet -c "\du"   # List users
 If you see errors like "File cannot be loaded because running scripts is disabled on this system":
 
 ```powershell
-# Method 1: Use our safe batch files (recommended)
+# Method 1: Use our universal setup script (recommended)
+universal-setup.bat    # For cmd.exe users
+.\universal-setup.ps1  # For PowerShell users
+
+# Method 2: Use our safe batch files
 deploy-safe.bat   # Instead of deploy.bat
 start-safe.bat    # Instead of start.bat
 
-# Method 2: Run this command in PowerShell as Administrator
+# Method 3: Run this command in PowerShell as Administrator
 Set-ExecutionPolicy Bypass -Scope Process -Force
 
-# Method 3: For a more permanent solution
+# Method 4: For a more permanent solution
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 ```
 

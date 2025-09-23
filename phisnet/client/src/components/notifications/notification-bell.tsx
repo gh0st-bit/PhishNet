@@ -161,7 +161,12 @@ export default function NotificationBell() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                <DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setIsOpen(false);
+                    window.location.href = '/settings?tab=notifications';
+                  }}
+                >
                   Notification Settings
                 </DropdownMenuItem>
               </DropdownMenuContent>

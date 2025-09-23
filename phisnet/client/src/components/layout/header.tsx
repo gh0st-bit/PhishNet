@@ -14,6 +14,12 @@ import { Separator } from "@/components/ui/separator";
 import { User } from "@shared/schema";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import NotificationBell from "@/components/notifications/notification-bell";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface HeaderProps {
   user: User;
@@ -88,14 +94,20 @@ export default function Header({ user }: HeaderProps) {
               </DropdownMenu>
             </div>
             <div className="ml-4 relative flex items-center space-x-4">
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-5 w-5 text-muted-foreground" />
-                <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-destructive"></span>
-              </Button>
+              <NotificationBell />
               <Separator orientation="vertical" className="h-6" />
-              <Button variant="ghost" size="icon">
-                <HelpCircle className="h-5 w-5 text-muted-foreground" />
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon">
+                      <HelpCircle className="h-5 w-5 text-muted-foreground" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <p>PhishNet: Advanced phishing simulation platform for security awareness training and threat assessment.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           </div>
         </div>
