@@ -21,6 +21,63 @@ const JWT_SECRET = process.env.JWT_SECRET || 'phishnet-password-reset-secret';
 const TOKEN_EXPIRY = '1h';
 
 /**
+ * Title-cases a string (each word capitalized)
+ */
+function toTitleCase(s: string) {
+  return s
+    .toLowerCase()
+    .replace(/\b\w+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1));
+}
+
+/**
+ * Attempt to derive a human-friendly name from an email address.
+ * Examples:
+ *  - "umar.waqar@mail.com" -> "Umar Waqar"
+ *  - "umarwaqar390@mail.com" -> "Umar Waqar" (best-effort)
+ */
+function guessNameFromEmail(email?: string): string | null {
+  if (!email) return null;
+  let local = email.split('@')[0] || '';
+  // Replace separators with spaces and remove trailing numbers
+  local = local.replace(/[._+-]+/g, ' ').replace(/\d+/g, ' ').trim();
+
+  if (!local) return null;
+
+  // If still a single token like "umarwaqar", try a best-effort split
+  if (!/\s/.test(local)) {
+    const re = /^([a-z]{3,})([a-z]{3,})$/i;
+    const m = re.exec(local);
+    if (m) {
+      local = `${m[1]} ${m[2]}`;
+    }
+  }
+
+  // Collapse multiple spaces and title case
+  local = local.replace(/\s{2,}/g, ' ').trim();
+  return local ? toTitleCase(local) : null;
+}
+
+/**
+ * Resolve the best display name for a user.
+ * Priority: displayName/name -> firstName + lastName -> derived from email -> generic fallback.
+ */
+function getRecipientName(user: User): string {
+  const anyUser = user as any;
+  const candidates = [
+    anyUser?.displayName,
+    anyUser?.name,
+    `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
+  ].filter((v: any) => typeof v === 'string' && v.trim().length > 0) as string[];
+
+  if (candidates.length > 0) {
+    return toTitleCase(candidates[0]);
+  }
+
+  const guessed = guessNameFromEmail(user.email);
+  return guessed || 'there';
+}
+
+/**
  * Generates a JWT token for password reset
  */
 export function generatePasswordResetToken(user: User) {
@@ -67,8 +124,9 @@ export function verifyPasswordResetToken(token: string): { userId: number; email
 export async function sendPasswordResetEmail(user: User, resetUrl: string) {
   try {
     const subject = 'Reset Your PhishNet Password';
+    const recipientName = getRecipientName(user);
     const text = `
-        Hello ${user.firstName} ${user.lastName},
+        Hello ${recipientName},
         
         You've requested to reset your password for your PhishNet account.
         
@@ -88,7 +146,7 @@ export async function sendPasswordResetEmail(user: User, resetUrl: string) {
             <h2 style="color: #FF8000;">PhishNet Password Reset</h2>
           </div>
           
-          <p>Hello ${user.firstName} ${user.lastName},</p>
+          <p>Hello ${recipientName},</p>
           
           <p>You've requested to reset your password for your PhishNet account.</p>
           
