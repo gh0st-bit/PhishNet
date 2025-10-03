@@ -10,14 +10,6 @@ if [[ ! -f "package.json" ]]; then
     exit 1
 fi
 
-# Start Redis if not running
-echo "🔧 Starting Redis..."
-if command -v systemctl >/dev/null 2>&1; then
-    sudo systemctl start redis-server 2>/dev/null || sudo systemctl start redis 2>/dev/null || sudo redis-server --daemonize yes
-else
-    sudo redis-server --daemonize yes
-fi
-
 # Start PostgreSQL if not running
 echo "🔧 Starting PostgreSQL..."
 if command -v systemctl >/dev/null 2>&1; then

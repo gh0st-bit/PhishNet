@@ -201,6 +201,57 @@ export const userRolesSchema = pgTable("user_roles", {
   createdAt: timestamp("created_at").defaultNow()
 });
 
+// Threat Intelligence table
+export const threatIntelligence = pgTable("threat_intelligence", {
+  id: serial("id").primaryKey(),
+  
+  // Core threat data
+  url: text("url"),
+  domain: varchar("domain", { length: 255 }),
+  indicator: text("indicator"), // Changed from varchar(500) to text for unlimited length
+  indicatorType: varchar("indicator_type", { length: 50 }), // 'url', 'domain', 'ip', 'hash'
+  // Canonical normalized indicator for deduplication (lower-cased coalesce of indicator/url/domain)
+  normalizedIndicator: text("normalized_indicator"),
+  
+  // Classification
+  threatType: varchar("threat_type", { length: 100 }), // 'phishing', 'malware', 'spam', 'c2'
+  malwareFamily: varchar("malware_family", { length: 100 }),
+  campaignName: varchar("campaign_name", { length: 200 }),
+  
+  // Metadata
+  source: varchar("source", { length: 100 }).notNull(), // 'urlhaus', 'openphish', etc.
+  confidence: integer("confidence").default(0), // 0-100
+  isActive: boolean("is_active").default(true),
+  
+  // Timestamps
+  firstSeen: timestamp("first_seen").notNull(),
+  lastSeen: timestamp("last_seen"),
+  expiresAt: timestamp("expires_at"),
+  
+  // Additional data
+  tags: jsonb("tags").default('[]'),
+  description: text("description"),
+  rawData: jsonb("raw_data"),
+  
+  // PhishNet specific
+  usedInSimulations: boolean("used_in_simulations").default(false),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Threat Statistics table for dashboard
+export const threatStatistics = pgTable("threat_statistics", {
+  id: serial("id").primaryKey(),
+  date: timestamp("date").notNull(),
+  source: varchar("source", { length: 100 }).notNull(),
+  threatType: varchar("threat_type", { length: 100 }).notNull(),
+  count: integer("count").default(0),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Define permission types
 export const PERMISSIONS = {
   // Dashboard permissions
@@ -319,6 +370,10 @@ export type CampaignResult = typeof campaignResults.$inferSelect;
 export type InsertCampaignResult = typeof campaignResults.$inferInsert;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type InsertPasswordResetToken = typeof passwordResetTokens.$inferInsert;
+export type ThreatIntelligence = typeof threatIntelligence.$inferSelect;
+export type InsertThreatIntelligence = typeof threatIntelligence.$inferInsert;
+export type ThreatStatistics = typeof threatStatistics.$inferSelect;
+export type InsertThreatStatistics = typeof threatStatistics.$inferInsert;
 
 // Validation schemas - ONLY DECLARE ONCE
 export const userValidationSchema = z.object({

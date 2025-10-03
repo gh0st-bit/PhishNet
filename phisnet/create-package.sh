@@ -189,7 +189,7 @@ psql -U postgres -d phishnet -f database-data-only.sql
 ## 🆘 Troubleshooting
 - Run `./deploy.sh` for fresh installation
 - Check `KALI-TROUBLESHOOTING.md` for Kali Linux issues
-- Ensure PostgreSQL and Redis are running
+- Ensure PostgreSQL is running
 - Check `.env` file for correct database connection
 
 ## ⚠️ Important Notes
@@ -421,12 +421,7 @@ else
     echo "❌ PostgreSQL: Not running"
 fi
 
-# Check Redis
-if redis-cli ping > /dev/null 2>&1; then
-    echo "✅ Redis: Running"
-else
-    echo "❌ Redis: Not running"
-fi
+# Redis not used by PhishNet runtime (PostgreSQL-backed sessions)
 
 # Check disk space
 echo ""

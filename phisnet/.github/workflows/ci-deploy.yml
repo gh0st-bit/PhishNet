@@ -37,6 +37,5 @@ jobs:
           name: phishnet-dist
           path: |
             dist/**
-            .env
             package.json
             package-lock.json

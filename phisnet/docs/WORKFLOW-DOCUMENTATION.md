@@ -17,90 +17,83 @@ This document provides comprehensive details about all GitHub Actions workflows 
   - Install dependencies with npm ci
   - Run TypeScript compilation check
   - Execute unit tests with Jest
-  - Generate test coverage reports
 - **Runtime**: ~3-5 minutes
-- **Frequency**: Only on code changes (optimized with path filters)
+  # 📚 PhishNet GitHub Actions Workflows Documentation (Simplified)
 
 ### 2. 🛡️ Quality Gates Pipeline (`enhanced-quality-gates.yml`)
 **Purpose**: Comprehensive code quality assessment and gates
 - **Triggers**: 
   - Pull requests to `main` only (when `phisnet/**` files change)
-  - Manual trigger
 - **Actions**:
   - Code quality analysis with ESLint
   - Security scanning with CodeQL
-  - Performance analysis
   - Dependency vulnerability checks
   - Quality gate evaluation (requires 3/4 gates to pass)
 - **Runtime**: ~8-12 minutes
 - **Frequency**: Only on PRs to main (significantly reduced from all pushes)
-
-### 3. 🏗️ Multi-Stage Build Pipeline (`multi-stage-build-pipeline.yml`)
 **Purpose**: Advanced build process with staging verification
-- **Triggers**: 
-  - Manual trigger only (`workflow_dispatch`)
-  - Options: staging or production build target
-- **Actions**:
+  ## 🔥 Active Workflows
+
+  Only the following workflows are active in this repository:
+
+  ### 1. 🚀 CI Deploy (`ci-deploy.yml`)
+  **Purpose**: Build and package the application on pushes to main or manual dispatch.
+  - Installs Node.js and PostgreSQL client
+  - Runs deploy.sh in production mode using repository secrets
+  - Uploads the production build artifact (dist and package files)
+
+  ### 2. 🗄️ DB Schema Snapshot (`schema-snapshot.yml`)
+  **Purpose**: Spin up Postgres, apply SQL migrations, and dump a schema snapshot.
+  - Triggers on changes to migrations, server, or shared code
+  - Commits updated schema.sql if there are changes
   - Stage 1: Client application build (Vite)
   - Stage 2: Server application build verification (esbuild)
   - Build artifact validation
 - **Runtime**: ~6-8 minutes
 - **Frequency**: Manual only (saves ~400 minutes/month)
-
 ---
 
 ## 🔒 Security & Compliance Workflows
-
 ### 4. 🛡️ Security Scanning & Compliance (`security-scanning.yml`)
 **Purpose**: Comprehensive security analysis and vulnerability detection
 - **Triggers**: 
   - Pull requests to `main` (when `phisnet/**` files change)
   - Weekly schedule (Sundays at 2 AM UTC)
-  - Manual trigger with scan type options
-- **Actions**:
   - Dependency security audit with npm audit
-  - Code security analysis with CodeQL
-  - Container security scanning
+  ## 🔒 Notes
+  - Legacy or example workflows (like hello-world) have been removed.
+  - Security scans can be run locally via npm scripts.
   - Secret detection with TruffleHog
   - SAST/DAST security tests
 - **Runtime**: ~15-20 minutes
 - **Frequency**: Weekly + PRs only (reduced from daily)
 
-### 5. 🔐 Zero Trust CI/CD (`zero-trust-ci.yml`)
 **Purpose**: Zero Trust security model implementation
 - **Triggers**: 
   - Pull requests only
   - Manual trigger
-- **Actions**:
   - Access control verification
-  - Multi-tenancy isolation testing
+  - Unified workflow testing
   - Security policy validation
   - Audit trail generation
 - **Runtime**: ~5-7 minutes
-- **Frequency**: PR-based only
-
 ### 6. 📋 Compliance Monitoring (`compliance-monitoring.yml`)
-**Purpose**: Regulatory compliance checking and reporting
-- **Triggers**: 
+  ## 🚀 Deployment
+  CI Deploy packages the app; separate environment-specific deployment is handled outside GitHub Actions.
   - Monthly schedule (1st of month at 6 AM UTC)
   - Manual trigger with compliance type options
 - **Actions**:
-  - GDPR compliance verification
   - Security framework alignment (NIST, ISO 27001)
-  - Data protection audit
   - Accessibility compliance check
 - **Runtime**: ~10-15 minutes
 - **Frequency**: Monthly only (reduced from weekly)
 
----
-
-## 🚀 Deployment & Operations Workflows
-
-### 7. 🚢 Deployment Automation (`deployment-automation.yml`)
+  ## 🧹 Removed Workflows
+  - Hello World example
+  - Zero-trust and modular workspace validations
 **Purpose**: Automated deployment pipeline (native services)
-- **Triggers**: 
-  - Push to `main` branch
-  - Release tags (`v*`)
+  *Last Updated: October 2025*
+  *Active Workflows: 2*
   - Published releases
   - Manual trigger with environment selection
 - **Actions**:

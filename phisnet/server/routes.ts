@@ -29,6 +29,8 @@ import { exportReportToCsv } from './utils/report-exporter';
 import path from 'path';
 import fs from 'fs';
 import { sendCampaignEmails } from './services/email-service';
+import { ThreatIntelligenceService } from './services/threat-intelligence/threat-intelligence.service';
+import { threatFeedScheduler } from './services/threat-intelligence/threat-feed-scheduler';
 
 const upload = multer();
 
@@ -134,41 +136,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Threat Landscape - Real Data
+  // Threat Landscape - Real Data (Enhanced with Threat Intelligence)
   app.get("/api/dashboard/threats", isAuthenticated, hasOrganization, async (req, res) => {
     try {
       assertUser(req.user);
-      // Get campaign types and their success rates - with proper error handling
-      const threats = await db.select({
-        type: sql<string>`COALESCE(${emailTemplates.type}, 'Unknown')`.as('type'),
-        totalSent: sql<number>`count(${campaignResults.id})`.as('totalSent'),
-        successful: sql<number>`count(CASE WHEN ${campaignResults.status} IN ('clicked', 'submitted') THEN 1 END)`.as('successful'),
-      })
-      .from(campaigns)
-      .leftJoin(emailTemplates, eq(campaigns.emailTemplateId, emailTemplates.id))
-      .leftJoin(campaignResults, eq(campaigns.id, campaignResults.campaignId))
-      .where(eq(campaigns.organizationId, req.user.organizationId))
-      .groupBy(emailTemplates.type)
-      .orderBy(sql`count(CASE WHEN ${campaignResults.status} IN ('clicked', 'submitted') THEN 1 END) DESC`);
       
-      const threatData = threats.map(threat => {
-        const ratio = threat.totalSent > 0 ? threat.successful / threat.totalSent : 0;
-        let level: 'high' | 'medium' | 'low' = 'low';
-        let severity: 'High' | 'Medium' | 'Low' = 'Low';
-        if (ratio > 0.3) { level = 'high'; severity = 'High'; }
-        else if (ratio > 0.15) { level = 'medium'; severity = 'Medium'; }
+      // Get threat intelligence analysis
+      const threatService = new ThreatIntelligenceService();
+      const threatAnalysis = await threatService.getThreatAnalysis(req.user.organizationId);
+      
+      // Get recent threats from threat intelligence
+      const recentThreats = await threatService.getRecentThreats(5);
+      
+      // Convert threat intelligence to dashboard format
+      const threatData = recentThreats.map(threat => {
+        let level: 'high' | 'medium' | 'low' = 'medium';
+        let severity: 'High' | 'Medium' | 'Low' = 'Medium';
+        
+        // Determine threat level based on confidence and type
+        if (threat.confidence >= 80 || threat.threatType === 'phishing') {
+          level = 'high';
+          severity = 'High';
+        } else if (threat.confidence >= 60) {
+          level = 'medium';
+          severity = 'Medium';
+        } else {
+          level = 'low';
+          severity = 'Low';
+        }
+        
         return {
-          id: Math.random(), // Add id for React keys
-          name: threat.type || 'Unknown',
-          description: `${threat.successful} successful attacks out of ${threat.totalSent} attempts`,
+          id: threat.id,
+          name: threat.malwareFamily || threat.threatType || 'Unknown Threat',
+          description: threat.description || `${threat.threatType} detected from ${threat.source}`,
           level,
           severity,
-          count: threat.successful,
-          trend: 'stable',
+          count: threat.confidence,
+          trend: 'increasing',
+          source: threat.source,
+          firstSeen: threat.firstSeen
         };
       });
       
-      res.json(threatData);
+      // Add summary information
+      const enhancedData = {
+        threats: threatData,
+        summary: {
+          total: threatAnalysis.totalThreats,
+          newToday: threatAnalysis.newThreatsToday,
+          sources: threatAnalysis.activeSources,
+          topTypes: threatAnalysis.topThreatTypes
+        }
+      };
+      
+      res.json(enhancedData);
     } catch (error) {
       console.error("Error fetching threat data:", error);
       res.status(500).json({ message: "Error fetching threat data" });
@@ -2040,6 +2061,122 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Error fetching roles" });
     }
   });
+
+  // ===============================================
+  // THREAT INTELLIGENCE ROUTES
+  // ===============================================
+
+  const threatService = new ThreatIntelligenceService();
+
+  // Get threat intelligence analysis for dashboard
+  app.get("/api/threat-intelligence/analysis", isAuthenticated, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const analysis = await threatService.getThreatAnalysis(req.user.organizationId);
+      res.json(analysis);
+    } catch (error) {
+      console.error("Error fetching threat analysis:", error);
+      res.status(500).json({ message: "Error fetching threat analysis" });
+    }
+  });
+
+  // Get recent threats for threat landscape page
+  app.get("/api/threat-intelligence/threats", isAuthenticated, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const limit = parseInt(req.query.limit as string) || 50;
+      const threats = await threatService.getRecentThreats(limit);
+      res.json(threats);
+    } catch (error) {
+      console.error("Error fetching threats:", error);
+      res.status(500).json({ message: "Error fetching threats" });
+    }
+  });
+
+  // Search threats by domain or URL
+  app.get("/api/threat-intelligence/search", isAuthenticated, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const query = req.query.q as string;
+      if (!query || query.trim().length < 3) {
+        return res.status(400).json({ message: "Search query must be at least 3 characters" });
+      }
+      
+      const limit = parseInt(req.query.limit as string) || 20;
+      const threats = await threatService.searchThreats(query.trim(), limit);
+      res.json(threats);
+    } catch (error) {
+      console.error("Error searching threats:", error);
+      res.status(500).json({ message: "Error searching threats" });
+    }
+  });
+
+  // Manually trigger threat feed ingestion (admin only)
+  app.post("/api/threat-intelligence/ingest", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      assertUser(req.user);
+      // Run ingestion in background
+      threatService.ingestAllFeeds().catch(error => {
+        console.error("Background threat ingestion failed:", error);
+      });
+      
+      res.json({ message: "Threat feed ingestion started in background" });
+    } catch (error) {
+      console.error("Error starting threat ingestion:", error);
+      res.status(500).json({ message: "Error starting threat ingestion" });
+    }
+  });
+
+  // Get threat feed scheduler status (admin only)
+  app.get("/api/threat-intelligence/scheduler/status", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const status = threatFeedScheduler.getStatus();
+      res.json(status);
+    } catch (error) {
+      console.error("Error getting scheduler status:", error);
+      res.status(500).json({ message: "Error getting scheduler status" });
+    }
+  });
+
+  // Start/stop threat feed scheduler (admin only)
+  app.post("/api/threat-intelligence/scheduler/:action", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const action = req.params.action;
+      
+      if (action === 'start') {
+        const intervalHours = parseInt(req.body.intervalHours) || 2;
+        threatFeedScheduler.start(intervalHours);
+        res.json({ message: `Threat feed scheduler started (every ${intervalHours} hours)` });
+      } else if (action === 'stop') {
+        threatFeedScheduler.stop();
+        res.json({ message: "Threat feed scheduler stopped" });
+      } else {
+        res.status(400).json({ message: "Invalid action. Use 'start' or 'stop'" });
+      }
+    } catch (error) {
+      console.error("Error controlling scheduler:", error);
+      res.status(500).json({ message: "Error controlling scheduler" });
+    }
+  });
+
+  // Manual trigger for threat feed ingestion (admin only, for testing)
+  app.post("/api/threat-intelligence/ingest-now", isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      assertUser(req.user);
+      console.log('🔄 Manual threat feed ingestion triggered by admin...');
+      await threatIntelligenceService.ingestAllFeeds();
+      res.json({ message: "Threat feed ingestion completed successfully" });
+    } catch (error) {
+      console.error("Error triggering manual ingestion:", error);
+      res.status(500).json({ message: "Error triggering threat feed ingestion" });
+    }
+  });
+
+  // Initialize threat feed scheduler
+  console.log('🔐 Starting threat intelligence feed scheduler...');
+  threatFeedScheduler.start(2); // Run every 2 hours
 
   // Add error handling middleware (must be last)
   app.use(errorHandler.middleware);

@@ -100,20 +100,8 @@ try {
     Add-Error
 }
 
-# Check Redis
-Write-Info "Checking Redis installation..."
-try {
-    $redisTest = redis-cli ping 2>$null
-    if ($redisTest -eq "PONG") {
-        Write-Success "Redis service is running"
-    } else {
-        Write-Warning "Redis not found or not running (optional but recommended)"
-        Add-Warning
-    }
-} catch {
-    Write-Warning "Redis not found or not running (optional but recommended)"
-    Add-Warning
-}
+# Skip Redis checks (not required)
+Write-Info "Skipping Redis verification (no longer required)"
 
 # Check Git
 Write-Info "Checking Git installation..."

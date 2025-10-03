@@ -75,7 +75,7 @@ The project includes comprehensive database setup files:
 ### Prerequisites
 - Node.js 18+ with npm
 - PostgreSQL 15+
-- Redis 6+ (optional but recommended)
+<!-- Redis removed: not required -->
 - Git
 
 ### Step-by-Step Installation
@@ -84,13 +84,13 @@ The project includes comprehensive database setup files:
 ```bash
 # Ubuntu/Debian
 sudo apt update
-sudo apt install nodejs npm postgresql redis-server git
+sudo apt install nodejs npm postgresql git
 
 # CentOS/RHEL
-sudo yum install nodejs npm postgresql-server redis git
+sudo yum install nodejs npm postgresql-server git
 
 # macOS
-brew install node postgresql redis git
+brew install node postgresql git
 ```
 
 2. **Database Setup:**
@@ -179,9 +179,7 @@ PORT="3001"
 NODE_ENV="production"
 SESSION_SECRET="your-very-long-random-session-secret"
 
-# Redis Configuration (Optional)
-REDIS_URL="redis://localhost:6379"
-REDIS_PASSWORD="redis_password"
+<!-- Redis configuration removed -->
 
 # SMTP Configuration
 SMTP_HOST="smtp.gmail.com"
@@ -242,7 +240,7 @@ SMTP_SECURE="false"
 - [ ] **Change default passwords**
   - Admin account password
   - Database passwords
-  - Redis password
+  - Database password
   - Session secret
 
 - [ ] **Enable HTTPS**

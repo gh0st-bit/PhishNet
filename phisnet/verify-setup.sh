@@ -83,21 +83,7 @@ else
 fi
 
 # Check Redis
-info "Checking Redis installation..."
-if command -v redis-cli >/dev/null 2>&1; then
-    success "Redis CLI installed"
-    
-    # Check if Redis service is running
-    if redis-cli ping >/dev/null 2>&1; then
-        success "Redis service is running"
-    else
-        warning "Redis service not running"
-        ((WARNINGS++))
-    fi
-else
-    warning "Redis not found (optional but recommended)"
-    ((WARNINGS++))
-fi
+info "Skipping Redis check (no longer required)"
 
 # Check Git
 info "Checking Git installation..."

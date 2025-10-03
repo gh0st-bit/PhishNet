@@ -43,7 +43,7 @@ This guide provides step-by-step instructions for setting up PhishNet in various
 - [ ] **Node.js:** Version 18.0 or newer
 - [ ] **npm:** Version 8.0 or newer (comes with Node.js)
 - [ ] **PostgreSQL:** Version 15 or newer
-- [ ] **Redis:** Version 6 or newer (optional but recommended)
+- [ ] Redis: Not required (sessions use PostgreSQL)
 - [ ] **Git:** Any recent version
 
 ### Network Requirements
@@ -54,7 +54,7 @@ This guide provides step-by-step instructions for setting up PhishNet in various
   - 443 (HTTPS)
   - 3001 (Application)
   - 5432 (PostgreSQL)
-  - 6379 (Redis)
+   - (Redis removed)
 
 ---
 
@@ -76,8 +76,7 @@ sudo apt install -y nodejs
 # Install PostgreSQL 15
 sudo apt install -y postgresql postgresql-contrib
 
-# Install Redis
-sudo apt install -y redis-server
+# Redis not required
 
 # Install Git
 sudo apt install -y git
@@ -98,10 +97,7 @@ sudo postgresql-setup initdb
 sudo systemctl start postgresql
 sudo systemctl enable postgresql
 
-# Install Redis
-sudo yum install -y redis
-sudo systemctl start redis
-sudo systemctl enable redis
+# Redis not required
 
 # Install Git
 sudo yum install -y git
@@ -116,17 +112,17 @@ sudo yum groupinstall -y "Development Tools"
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
 # Install dependencies
-brew install node@18 postgresql@15 redis git
+brew install node@18 postgresql@15 git
 
 # Start services
 brew services start postgresql@15
-brew services start redis
+# Redis not required
 ```
 
 #### Windows
 ```powershell
 # Install using Chocolatey
-choco install nodejs postgresql redis-64 git
+choco install nodejs postgresql git
 
 # Or install manually:
 # Node.js: https://nodejs.org/
@@ -162,22 +158,7 @@ GRANT ALL PRIVILEGES ON DATABASE phishnet TO phishnet_user;
 ALTER USER phishnet_user CREATEDB;
 ```
 
-### Step 3: Configure Redis (Optional)
-
-```bash
-# Ubuntu/Debian
-sudo systemctl start redis-server
-sudo systemctl enable redis-server
-
-# CentOS/RHEL
-sudo systemctl start redis
-sudo systemctl enable redis
-
-# Configure Redis password (recommended)
-sudo nano /etc/redis/redis.conf
-# Uncomment and set: requirepass your_redis_password
-sudo systemctl restart redis-server
-```
+<!-- Redis configuration removed: not required -->
 
 ### Step 4: Clone and Setup Application
 
@@ -239,9 +220,7 @@ SMTP_USER="your-email@gmail.com"
 SMTP_PASS="your-app-password"
 SMTP_SECURE="false"
 
-# Redis Configuration
-REDIS_URL="redis://localhost:6379"
-# REDIS_PASSWORD="your_redis_password"  # If you set a password
+<!-- Redis environment removed: not required -->
 
 # Security Settings
 BCRYPT_ROUNDS="12"
@@ -461,8 +440,7 @@ curl http://localhost/health
 # Check database connection
 curl http://localhost/api/health/database
 
-# Check Redis connection
-curl http://localhost/api/health/redis
+<!-- Redis health check removed -->
 ```
 
 ### Service Status
@@ -477,11 +455,10 @@ ps aux | grep node
 # Check PostgreSQL
 sudo systemctl status postgresql
 
-# Check Redis
-sudo systemctl status redis
+<!-- Redis service status removed -->
 
 # Check ports
-netstat -tulpn | grep -E '(3001|5432|6379)'
+netstat -tulpn | grep -E '(3001|5432)'
 ```
 
 ### Functional Testing

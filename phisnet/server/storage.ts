@@ -12,7 +12,9 @@ import {
   groups,
   smtpProfiles, // Add missing imports
   landingPages,
-  passwordResetTokens
+  passwordResetTokens,
+  threatIntelligence,
+  threatStatistics
 } from "@shared/schema";
 import { eq, and, count, sql, gte } from "drizzle-orm";
 
@@ -37,7 +39,11 @@ import type {
   CampaignResult,
   InsertCampaignResult,
   PasswordResetToken,
-  InsertPasswordResetToken
+  InsertPasswordResetToken,
+  ThreatIntelligence,
+  InsertThreatIntelligence,
+  ThreatStatistics,
+  InsertThreatStatistics
 } from "@shared/schema";
 
 // Create PostgreSQL session store

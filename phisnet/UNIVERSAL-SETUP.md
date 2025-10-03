@@ -45,7 +45,7 @@ The setup scripts detect:
 - PostgreSQL versions and configurations
 - Service management systems
 
-## � What the Scripts Do
+## ✅ What the Scripts Do
 
 ### 1. Environment Detection
 - Identifies your OS and distribution
@@ -55,13 +55,13 @@ The setup scripts detect:
 ### 2. Dependency Installation
 - Node.js 18+
 - PostgreSQL 15+
-- Redis
+- (Redis removed)
 - Git
 - Build tools
 
 ### 3. Service Management
 - Starts and enables PostgreSQL
-- Starts and enables Redis
+- (Redis removed)
 - Configures auto-start
 
 ### 4. Database Setup
@@ -161,17 +161,14 @@ If automatic installation fails, install manually:
 ### Git
 - Download from: https://git-scm.com
 
-### Redis
-- **Linux**: Install via package manager
-- **Windows**: Use Chocolatey or manual install
-- **macOS**: Install via Homebrew
+<!-- Redis not used by runtime; no installation needed -->
 
 ## 🔄 Recovery Steps
 
 ### Complete Reset
 ```bash
-# Stop all services
-sudo systemctl stop postgresql redis-server
+# Stop service
+sudo systemctl stop postgresql
 
 # Remove existing database
 sudo -u postgres dropdb phishnet 2>/dev/null || true
@@ -208,7 +205,7 @@ After setup completion, verify:
 
 ```bash
 # Check services
-sudo systemctl status postgresql redis-server
+sudo systemctl status postgresql
 
 # Test database connection
 export PGPASSWORD="kali"

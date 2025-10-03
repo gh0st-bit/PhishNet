@@ -4,6 +4,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { isAuthenticated, isAdmin } from './auth';
 import { pool } from './db';
 import { startCampaignScheduler } from './services/campaign-scheduler';
+import { threatFeedScheduler } from './services/threat-intelligence/threat-feed-scheduler';
 
 const app = express();
 
@@ -74,9 +75,15 @@ app.use((req, res, next) => {
   const port = 5000;
   server.listen(port, "localhost", () => {
     log(`Server running at http://localhost:${port}`);
-  // Start background scheduler to auto-send due campaigns
-  const intervalMs = parseInt(process.env.CAMPAIGN_SCHEDULER_INTERVAL_MS || '60000', 10);
-  startCampaignScheduler(intervalMs);
+    
+    // Start background scheduler to auto-send due campaigns
+    const intervalMs = parseInt(process.env.CAMPAIGN_SCHEDULER_INTERVAL_MS || '60000', 10);
+    startCampaignScheduler(intervalMs);
+    
+    // Start threat intelligence feed scheduler (runs every 2 hours)
+    const threatIntervalHours = parseInt(process.env.THREAT_FEED_INTERVAL_HOURS || '2', 10);
+    threatFeedScheduler.start(threatIntervalHours);
+    log(`Threat intelligence scheduler started (every ${threatIntervalHours} hours)`);
   });
 })();
 

@@ -32,7 +32,6 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 #### Prerequisites
 - Node.js 18+ 
 - PostgreSQL 13+
-- Redis 6+
 - Git
 
 #### Installation Steps
@@ -61,14 +60,10 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
    npm run db:migrate
    ```
 
-4. **Start Services**
-   ```bash
-   # Start Redis
-   redis-server
-   
-   # Start the application
-   npm start
-   ```
+4. **Start Application**
+```bash
+npm start
+```
 
 ## 📁 Project Structure
 
@@ -104,8 +99,6 @@ phishnet/
 - **Detailed Reporting**: Export results to CSV/PDF
 
 ### Security Features
-- **Multi-tenant Architecture**: Organization-based isolation
-- **Role-based Access Control**: Admin and user roles
 - **Session Management**: Secure session handling
 - **Input Validation**: Comprehensive data validation
 - **SQL Injection Protection**: Parameterized queries
@@ -131,8 +124,7 @@ PORT=3000
 # Database
 DATABASE_URL=postgresql://phishnet_user:password@localhost:5432/phishnet_db
 
-# Redis
-REDIS_URL=redis://localhost:6379
+<!-- Redis not required; sessions use PostgreSQL store -->
 
 # Security
 SESSION_SECRET=your-secure-session-secret-here
@@ -153,7 +145,7 @@ ADMIN_PASSWORD=AdminPassword123!
 
 PhishNet uses PostgreSQL with Drizzle ORM. The database schema includes:
 
-- **Users & Organizations**: Multi-tenant user management
+- **Users**: Application users and admin accounts
 - **Campaigns**: Phishing campaign configurations
 - **Email Templates**: HTML/text email templates
 - **Landing Pages**: Phishing landing page content
@@ -291,14 +283,7 @@ sudo systemctl status postgresql
 psql -U phishnet_user -d phishnet_db -h localhost
 ```
 
-**Redis Connection Error:**
-```bash
-# Check Redis status
-sudo systemctl status redis
-
-# Test Redis connection
-redis-cli ping
-```
+<!-- Redis troubleshooting removed: not applicable -->
 
 **Port Already in Use:**
 ```bash

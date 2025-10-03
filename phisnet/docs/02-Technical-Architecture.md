@@ -28,22 +28,22 @@ PhishNet follows a modern three-tier architecture with clear separation of conce
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      DATA LAYER                            │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
-│  │   PostgreSQL    │  │   File System   │  │    Redis    │ │
-│  │   Database      │  │   (Uploads)     │  │  (Sessions) │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
+│  ┌─────────────────┐  ┌─────────────────┐                 │
+│  │   PostgreSQL    │  │   File System   │                 │
+│  │   Database      │  │   (Uploads)     │                 │
+│  └─────────────────┘  └─────────────────┘                 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## 🗄️ Database Architecture
 
 ### Schema Design
-The database follows a multi-tenant architecture with clear data isolation:
+The database follows a straightforward schema with clear data boundaries:
 
 ```sql
 -- Core Tables Structure
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  organizations  │────│      users      │────│    campaigns    │
+│      users      │────│    campaigns    │
 │                 │    │                 │    │                 │
 │ • id (PK)       │    │ • id (PK)       │    │ • id (PK)       │
 │ • name          │    │ • org_id (FK)   │    │ • org_id (FK)   │
@@ -56,7 +56,7 @@ The database follows a multi-tenant architecture with clear data isolation:
 ```
 
 ### Key Design Principles
-1. **Multi-Tenancy**: Each organization's data is completely isolated
+1. **Data Isolation**: Clear ownership and references between entities
 2. **Referential Integrity**: Strong foreign key relationships
 3. **Audit Trail**: Comprehensive logging of all operations
 4. **Scalability**: Optimized indexes and query patterns
@@ -66,52 +66,40 @@ The database follows a multi-tenant architecture with clear data isolation:
 
 #### Core Tables
 ```sql
--- Organizations (Tenants)
-CREATE TABLE organizations (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    domain VARCHAR(255) UNIQUE,
-    settings JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Users (Multi-tenant)
+-- Users
 CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    organization_id INTEGER REFERENCES organizations(id),
-    email VARCHAR(255) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    first_name VARCHAR(255),
-    last_name VARCHAR(255),
-    role VARCHAR(50) DEFAULT 'user',
-    department VARCHAR(255),
-    position VARCHAR(255),
-    phone VARCHAR(50),
-    last_login TIMESTAMP,
-    status VARCHAR(20) DEFAULT 'active',
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+  id SERIAL PRIMARY KEY,
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  first_name VARCHAR(255),
+  last_name VARCHAR(255),
+  role VARCHAR(50) DEFAULT 'user',
+  department VARCHAR(255),
+  position VARCHAR(255),
+  phone VARCHAR(50),
+  last_login TIMESTAMP,
+  status VARCHAR(20) DEFAULT 'active',
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 
 -- Campaigns
 CREATE TABLE campaigns (
-    id SERIAL PRIMARY KEY,
-    organization_id INTEGER REFERENCES organizations(id),
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    status VARCHAR(50) DEFAULT 'draft',
-    template_id INTEGER REFERENCES templates(id),
-    launch_date TIMESTAMP,
-    end_date TIMESTAMP,
-    target_count INTEGER DEFAULT 0,
-    sent_count INTEGER DEFAULT 0,
-    opened_count INTEGER DEFAULT 0,
-    clicked_count INTEGER DEFAULT 0,
-    submitted_count INTEGER DEFAULT 0,
-    created_by INTEGER REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  status VARCHAR(50) DEFAULT 'draft',
+  template_id INTEGER REFERENCES templates(id),
+  launch_date TIMESTAMP,
+  end_date TIMESTAMP,
+  target_count INTEGER DEFAULT 0,
+  sent_count INTEGER DEFAULT 0,
+  opened_count INTEGER DEFAULT 0,
+  clicked_count INTEGER DEFAULT 0,
+  submitted_count INTEGER DEFAULT 0,
+  created_by INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
@@ -173,26 +161,13 @@ interface CampaignRepository {
 // Session-based Authentication
 interface AuthSession {
   userId: number;
-  organizationId: number;
   role: string;
   permissions: string[];
   lastActivity: Date;
 }
 
-// Role-based Access Control
-enum UserRole {
-  ADMIN = 'admin',
-  MANAGER = 'manager',
-  USER = 'user',
-  VIEWER = 'viewer'
-}
-
-// Permission System
-interface Permission {
-  resource: string;
-  action: string;
-  conditions?: object;
-}
+// Basic roles
+type UserRole = 'admin' | 'user';
 ```
 
 ## 🖥️ Frontend Architecture
@@ -351,7 +326,6 @@ interface RealtimeUpdate {
   type: 'campaign_event' | 'notification' | 'status_change';
   data: any;
   timestamp: Date;
-  organizationId: number;
 }
 
 // Server-Sent Events (Current)

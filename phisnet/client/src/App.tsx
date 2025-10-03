@@ -18,6 +18,7 @@ import ProfilePage from "@/pages/profile-page";
 import OrganizationPage from "@/pages/organization-page";
 import ForgotPasswordPage from "@/pages/forgot-password-page";
 import ResetPasswordPage from "@/pages/reset-password-page";
+import ThreatLandscapePage from "@/pages/threat-landscape-page";
 import SessionTimeoutWrapper from "@/components/session-timeout-wrapper";
 import { ProtectedRoute } from "./lib/protected-route";
 import { ThemeProvider } from "next-themes";
@@ -43,6 +44,7 @@ function Router() {
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/profile" component={ProfilePage} />
       <ProtectedRoute path="/organization" component={OrganizationPage} />
+      <ProtectedRoute path="/threat-landscape" component={ThreatLandscapePage} />
       <Route component={NotFound} />
     </Switch>
   );

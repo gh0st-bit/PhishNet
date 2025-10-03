@@ -3,7 +3,7 @@
 ## 🚨 **Common Kali Issues & Fixes**
 
 ### **1. Legacy Container Issues (Removed)**
-Container tooling was removed. Use native deployment via `./deploy.sh` and system services (PostgreSQL, Redis, Node.js). Optional cleanup: remove any old container packages if still installed.
+Container tooling was removed. Use native deployment via `./deploy.sh` and system services (PostgreSQL, Node.js). Optional cleanup: remove any old container packages if still installed.
 
 ### **2. Database Configuration Missing**
 **Problem:** `Database configuration missing. Check your .env file.`
@@ -16,7 +16,6 @@ cat .env
 # If missing, create manually:
 cat > .env << EOF
 DATABASE_URL=postgresql://phishnet_user:phishnet_password@localhost:5432/phishnet_db
-REDIS_URL=redis://localhost:6379
 PORT=3000
 NODE_ENV=development
 SESSION_SECRET=dev-secret-key-change-in-production
@@ -48,19 +47,7 @@ export PGPASSWORD=postgres
 ./deploy.sh
 ```
 
-### **5. Redis Service Not Starting**
-**Problem:** Redis service fails to start on Kali
-
-**Solution:**
-```bash
-# Kali uses different Redis service names:
-sudo systemctl start redis-server
-sudo systemctl enable redis-server
-
-# OR:
-sudo systemctl start redis
-sudo systemctl enable redis
-```
+<!-- Redis troubleshooting removed: not applicable -->
 
 ## 🔧 **Quick Fix Commands for Kali**
 
@@ -77,17 +64,17 @@ chmod +x deploy.sh
 ./deploy.sh
 # 4. If database issues, manually verify:
 cat .env
-sudo systemctl status postgresql redis-server
+sudo systemctl status postgresql
 ```
 
 ### **Manual Service Start:**
 ```bash
-# Start all required services:
-sudo systemctl start postgresql redis-server
-sudo systemctl enable postgresql redis-server
+# Start required service:
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
 
 # Verify services:
-sudo systemctl status postgresql redis-server
+sudo systemctl status postgresql
 ```
 
 ### **Database Manual Setup:**
@@ -104,13 +91,12 @@ Former container-based workflow was deprecated. Ensure only native services run.
 
 ### **Verify Everything Works:**
 ```bash
-sudo systemctl status postgresql redis-server
+sudo systemctl status postgresql
 
 # Check database connection:
 PGPASSWORD=phishnet_password psql -h localhost -U phishnet_user -d phishnet_db -c "SELECT 1;"
 
-# Check Redis:
-redis-cli ping
+<!-- Redis check removed -->
 
 # Check Node.js:
 node --version
@@ -131,7 +117,7 @@ npx tsx server/index.ts
 ### **Clean Installation:**
 ```bash
 # Remove and reinstall everything:
-sudo apt-get remove -y postgresql redis-server nodejs npm
+sudo apt-get remove -y postgresql nodejs npm
 sudo apt-get autoremove -y
 sudo apt-get update
 
@@ -145,7 +131,7 @@ sudo apt-get update
 sudo apt-get update
 sudo apt-get install -y curl wget git build-essential
 sudo apt-get install -y postgresql postgresql-contrib
-sudo apt-get install -y redis-server
+<!-- Redis install step removed -->
 sudo apt-get install -y nodejs npm
 ```
 

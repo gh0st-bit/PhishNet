@@ -11,6 +11,7 @@ import {
   useCampaigns,
   useNotifications
 } from "@/hooks/useApi";
+import { useQuery } from "@tanstack/react-query";
 import { 
   Activity, 
   ChartLine, 
@@ -105,6 +106,17 @@ export default function DashboardPage() {
   
   const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
   const { data: campaigns, isLoading: campaignsLoading } = useCampaigns();
+  
+  // Fetch threat intelligence data
+  const { data: threatData, isLoading: threatLoading } = useQuery({
+    queryKey: ['dashboard-threat-intel'],
+    queryFn: async () => {
+      const response = await fetch('/api/threat-intelligence/analysis');
+      if (!response.ok) throw new Error('Failed to fetch threat data');
+      return response.json();
+    },
+    refetchInterval: 10 * 60 * 1000, // Refetch every 10 minutes
+  });
 
   return (
     <AppLayout>
@@ -156,7 +168,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <ThreatLandscape threats={[]} />
+        <ThreatLandscape threats={threatData?.recentThreats || []} threatAnalysis={threatData} />
         <AtRiskUsers users={[]} />
         <SecurityTraining trainings={[]} />
       </div>

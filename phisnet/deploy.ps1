@@ -30,7 +30,7 @@ Write-Host "🎣 PhishNet Windows Deployment 🎣" -ForegroundColor Blue
 Write-Host "======================================" -ForegroundColor Blue
 Write-Host "🚀 Auto-installs all dependencies" -ForegroundColor Blue
 Write-Host "🔧 Configures services automatically" -ForegroundColor Blue
-Write-Host "Environment: native services (PostgreSQL, Redis, Node.js)" -ForegroundColor Blue
+Write-Host "Environment: native services (PostgreSQL, Node.js)" -ForegroundColor Blue
 Write-Host "======================================" -ForegroundColor Blue
 Write-Host ""
 
@@ -271,52 +271,7 @@ function Install-PostgreSQL {
 }
 
 # Check and install Redis
-function Install-Redis {
-    Write-Info "📦 Checking Redis installation..."
-    
-    # Check if Redis service exists
-    $redisService = Get-Service -Name "Redis" -ErrorAction SilentlyContinue
-    if ($redisService) {
-        Write-Success "Redis service found"
-        
-        try {
-            if ($redisService.Status -ne "Running") {
-                Write-Info "Starting Redis service..."
-                Start-Service "Redis" -ErrorAction Stop
-            }
-            Write-Success "Redis is running"
-            return $true
-        } catch {
-            Write-Warning "Redis service exists but failed to start: $($_.Exception.Message)"
-        }
-    }
-    
-    # Check if redis-cli is available
-    if (Get-Command redis-cli -ErrorAction SilentlyContinue) {
-        Write-Success "Redis client found"
-        return $true
-    }
-    
-    Write-Info "Installing Redis..."
-    
-    if (Get-Command choco -ErrorAction SilentlyContinue) {
-        try {
-            choco install redis-64 -y
-            refreshenv
-            Write-Success "Redis installed via Chocolatey"
-            return $true
-        } catch {
-            Write-Warning "Chocolatey installation failed: $($_.Exception.Message)"
-        }
-    }
-    
-    Write-Warning "Failed to install Redis automatically"
-    Write-Info "Redis for Windows options:"
-    Write-Info "1. Memurai (Redis alternative): https://www.memurai.com/"
-    Write-Info "2. Redis on WSL: wsl --install then install Redis in Linux"
-    Write-Info "3. Native only (containers removed)"
-    return $false
-}
+## Redis removed (no longer required)
 
 # Main dependency installation
 function Install-Dependencies {
@@ -339,7 +294,6 @@ function Install-Dependencies {
     if (Install-NodeJS) { $success += "Node.js" } else { $failed += "Node.js" }
     if (Install-Git) { $success += "Git" } else { $failed += "Git" }
     if (Install-PostgreSQL) { $success += "PostgreSQL" } else { $failed += "PostgreSQL" }
-    if (Install-Redis) { $success += "Redis" } else { $failed += "Redis" }
     
     # Summary
     if ($success.Count -gt 0) {
@@ -442,10 +396,7 @@ DB_NAME=phishnet
 DB_USER=postgres
 DB_PASSWORD=postgres
 
-# Redis Configuration (Sessions & Cache)
-REDIS_URL=redis://localhost:6379
-REDIS_HOST=localhost
-REDIS_PORT=6379
+## Redis removed (sessions use PostgreSQL store)
 
 # Security Settings (Change in production!)
 SESSION_SECRET=phishnet-dev-secret-$((Get-Date).Ticks)
@@ -671,13 +622,7 @@ if ($pgService -and $pgService.Status -eq "Running") {
     $issues += "PostgreSQL not running"
 }
 
-# Check Redis
-$redisService = Get-Service -Name "Redis" -ErrorAction SilentlyContinue
-if ($redisService -and $redisService.Status -eq "Running") {
-    $services += "Redis (Running)"
-} else {
-    $issues += "Redis not running"
-}
+# Redis check removed
 
 # Completion message
 Write-Host ""

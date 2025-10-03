@@ -8,7 +8,6 @@
 - **Node.js 20 LTS** - JavaScript runtime
 - **npm** - Package manager  
 - **PostgreSQL** - Database server
-- **Redis** - Session storage
 - **Git** - Version control
 - **Curl/Wget** - HTTP tools
 - **Build Tools** - For native modules (build-essential, python3-dev, etc.)
@@ -17,14 +16,12 @@
 #### **macOS (Homebrew):**
 - **Node.js** - Latest stable
 - **PostgreSQL** - Database server
-- **Redis** - Session storage
 - **Git** - Version control
 - **Curl/Wget** - HTTP tools
 
 #### **Windows (Chocolatey/Winget):**
 - **Node.js 20** - JavaScript runtime
 - **PostgreSQL** - Database server
-- **Redis** - Session storage
 - **Git** - Version control
 - **Visual Studio Build Tools** - For native modules
 - **Curl/Wget** - HTTP tools
@@ -34,7 +31,6 @@
 #### **Production Dependencies:**
 - **Express** - Web framework
 - **PostgreSQL drivers** - Database connectivity
-- **Redis client** - Session management
 - **Authentication** - Passport, bcrypt, JWT
 - **UI Components** - Radix UI, Tailwind CSS
 - **File handling** - Multer, file uploads
@@ -65,8 +61,7 @@
 
 ### ⚙️ **Services (Auto-Configured)**
 
-- **PostgreSQL Database** - Automatically created with user `phishnet_user`
-- **Redis Server** - Automatically started with daemon mode
+- **PostgreSQL Database** - Automatically created
 - **Environment Variables** - Auto-generated from `.env.example`
 - **Database Schema** - Auto-created with sample data
 - **SSL Certificates** - Ready for HTTPS setup
@@ -83,7 +78,7 @@
 The deployment scripts handle:
 - ✅ **Version checking** (ensures Node.js 18+)
 - ✅ **Package manager detection** (apt/yum/brew/choco)
-- ✅ **Service configuration** (PostgreSQL/Redis)
+- ✅ **Service configuration** (PostgreSQL)
 - ✅ **Database setup** (schema + sample data)
 - ✅ **Build tool installation** (native module support)
 - ✅ **Security hardening** (SSL, secrets generation)

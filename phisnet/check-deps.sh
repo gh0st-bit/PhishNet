@@ -39,7 +39,6 @@ check_command "npm" "--version"
 check_command "git" "--version"
 check_command "curl" "--version"
 check_command "postgresql" "--version"
-check_command "redis-server" "--version"
 
 echo ""
 echo "🔧 Checking Build Tools..."
@@ -55,8 +54,6 @@ echo "(Native stack only)"
 echo ""
 echo "⚙️ Checking Services..."
 check_service "postgresql"
-check_service "redis-server"
-check_service "redis"
 
 echo ""
 echo "📊 Checking Node.js Version..."
@@ -73,19 +70,11 @@ if command -v node >/dev/null 2>&1; then
 fi
 
 echo ""
-echo "🗄️ Checking Database Connection..."
+echo "� Checking Database Connection..."
 if PGPASSWORD="phishnet_password" psql -h localhost -U phishnet_user -d phishnet_db -c "SELECT 1;" >/dev/null 2>&1; then
     echo -e "${GREEN}✅ Database connection successful${NC}"
 else
     echo -e "${YELLOW}⚠️ Database connection failed (may need setup)${NC}"
-fi
-
-echo ""
-echo "🔴 Checking Redis Connection..."
-if redis-cli ping >/dev/null 2>&1; then
-    echo -e "${GREEN}✅ Redis connection successful${NC}"
-else
-    echo -e "${YELLOW}⚠️ Redis connection failed (may need to start service)${NC}"
 fi
 
 echo ""

@@ -10,7 +10,8 @@ import {
   BarChart, 
   Shield, 
   Settings, 
-  Menu 
+  Menu,
+  AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -33,6 +34,7 @@ export default function Sidebar() {
     { name: "Groups", href: "/groups", icon: <Users className="h-5 w-5" /> },
     { name: "Landing Pages", href: "/landing-pages", icon: <Layout className="h-5 w-5" /> },
     { name: "SMTP Profiles", href: "/smtp-profiles", icon: <Send className="h-5 w-5" /> },
+    { name: "Threat Landscape", href: "/threat-landscape", icon: <AlertTriangle className="h-5 w-5" /> },
     { name: "Reports", href: "/reports", icon: <BarChart className="h-5 w-5" /> },
     { name: "Users", href: "/users", icon: <Shield className="h-5 w-5" /> },
     { name: "Settings", href: "/settings", icon: <Settings className="h-5 w-5" /> },

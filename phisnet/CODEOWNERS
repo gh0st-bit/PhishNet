@@ -1,156 +1,24 @@
-# Zero Trust DevOps - Code Owners & Approval Matrix
-# This file defines who can approve changes to different parts of the codebase
-# Follows principle of least privilege and mandatory peer review
+# Simplified CODEOWNERS - unified ownership
+# Minimal owner-based approvals without team segmentation
 
-# =============================================================================
-# CRITICAL INFRASTRUCTURE (Requires Admin + Lead Approval)
-# =============================================================================
-
-# Root configuration files
-package.json                    @gh0st-bit @team-leads
-.env.example                   @gh0st-bit @team-leads
-
-# Security and CI/CD
-.github/                       @gh0st-bit @team-leads @security-team
-.github/workflows/             @gh0st-bit @devops-team
-.github/scripts/               @gh0st-bit @security-team
-
-# Database schema (Critical for multi-tenancy)
-shared/schema.ts               @gh0st-bit @database-team @backend-team
-
-# =============================================================================
-# FRONTEND MODULE (Frontend Team + Lead Review)
-# =============================================================================
-
-# Frontend application
-client/                        @frontend-team
-client/src/components/         @frontend-team @ui-team
-client/src/pages/              @frontend-team
-client/src/stores/             @frontend-team @backend-team  # State management touches backend
-client/src/api/                @frontend-team @backend-team  # API integration
-
-# Frontend configuration
-client/package.json            @frontend-team @team-leads
-client/vite.config.ts          @frontend-team @devops-team
-client/tailwind.config.ts      @frontend-team @ui-team
-
-# =============================================================================
-# BACKEND MODULE (Backend Team + Lead Review)
-# =============================================================================
-
-# Backend application
-server/                        @backend-team
-server/routes.ts               @backend-team @api-team
-server/middleware/             @backend-team @security-team  # Security-critical
-server/services/               @backend-team
-
-# Backend configuration
-server/package.json            @backend-team @team-leads
-
-# =============================================================================
-# DATABASE MODULE (Database Team + Backend Team)
-# =============================================================================
-
-# Database migrations (Critical for data integrity)
-migrations/                    @database-team @backend-team @team-leads
-
-# =============================================================================
-# SHARED MODULES (Cross-team collaboration required)
-# =============================================================================
-
-# Shared types and interfaces
-shared/types/                  @frontend-team @backend-team
-shared/utils/                  @frontend-team @backend-team
-
-# =============================================================================
-# DOCUMENTATION (Technical Writers + Relevant Teams)
-# =============================================================================
-
-# Technical documentation
-docs/                          @tech-writers @team-leads
-docs/api/                      @tech-writers @backend-team
-docs/architecture/             @tech-writers @architects
-
-# User documentation
-README.md                      @tech-writers @team-leads
-DEPLOYMENT.md                  @tech-writers @devops-team
-
-# =============================================================================
-# TESTING (QA Team + Relevant Module Teams)
-# =============================================================================
-
-# End-to-end tests
-e2e/                          @qa-team @frontend-team @backend-team
-
-# Unit tests
-server/tests/                  @backend-team @qa-team
-client/src/**/*.test.tsx       @frontend-team @qa-team
-
-# =============================================================================
-# SECURITY-SENSITIVE FILES (Security Team Mandatory Review)
-# =============================================================================
-
-# Authentication and authorization
-server/middleware/auth.ts      @security-team @backend-team
-server/services/auth*.ts       @security-team @backend-team
-
-# Password and session handling
-server/utils/encryption.ts     @security-team @backend-team
-server/utils/password*.ts      @security-team @backend-team
-
-# File upload handling
-server/middleware/upload*.ts   @security-team @backend-team
-
-# =============================================================================
-# EMERGENCY HOTFIXES (Admin Override)
-# =============================================================================
-
-# Emergency hotfix pattern - requires admin approval but can bypass normal flow
-hotfix/*                       @gh0st-bit
-
-# =============================================================================
-# TEAM DEFINITIONS
-# =============================================================================
-# 
-# @gh0st-bit              - Repository owner/admin
-# @team-leads             - Project leads and senior developers  
-# @frontend-team          - Frontend/UI developers
-# @backend-team           - Backend/API developers
-# @database-team          - Database administrators and developers
-# @security-team          - Security specialists
-# @devops-team            - DevOps and infrastructure engineers
-# @qa-team                - Quality assurance engineers
-# @ui-team                - UI/UX designers
-# @api-team               - API architects
-# @tech-writers           - Technical documentation team
-# @architects             - System architects
-#
-# =============================================================================
-# ACCESS MATRIX SUMMARY
-# =============================================================================
-#
-# 🔴 CRITICAL (Admin + Lead + Specialist Team)
-#   - Database schema
-#   - Security configurations  
-#   - CI/CD pipelines
-#   - Root configuration
-#
-# 🟠 HIGH (Lead + Module Team + Related Teams)
-#   - API endpoints
-#   - Authentication middleware
-#   - Database migrations
-#   - Cross-module interfaces
-#
-# 🟡 MEDIUM (Module Team + Lead)
-#   - Module-specific code
-#   - Component implementations
-#   - Service logic
-#   - Module tests
-#
-# 🟢 LOW (Module Team)
-#   - UI components
-#   - Utility functions
-#   - Documentation updates
-#   - Unit tests
-#
-# =============================================================================
+package.json                    @gh0st-bit
+.env.example                    @gh0st-bit
+.github/                        @gh0st-bit
+.github/workflows/              @gh0st-bit
+shared/schema.ts                @gh0st-bit
+client/                         @gh0st-bit
+server/                         @gh0st-bit
+migrations/                     @gh0st-bit
+shared/                         @gh0st-bit
+docs/                           @gh0st-bit
+README.md                       @gh0st-bit
+DEPLOYMENT.md                   @gh0st-bit
+e2e/                            @gh0st-bit
+server/tests/                   @gh0st-bit
+client/src/**/*.test.tsx        @gh0st-bit
+server/middleware/auth.ts       @gh0st-bit
+server/services/auth*.ts        @gh0st-bit
+server/utils/encryption.ts      @gh0st-bit
+server/utils/password*.ts       @gh0st-bit
+server/middleware/upload*.ts    @gh0st-bit
+hotfix/*                        @gh0st-bit

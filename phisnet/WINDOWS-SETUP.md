@@ -29,9 +29,8 @@ The deployment script will automatically install:
 
 1. **Node.js 18+** - JavaScript runtime
 2. **PostgreSQL** - Database server
-3. **Redis** - Caching and session storage
-4. **Git** - Version control
-5. (Legacy containerization option removed)
+3. **Git** - Version control
+4. (Legacy containerization option removed)
 
 ## Installation Methods
 
@@ -67,12 +66,7 @@ Get-Service postgresql*
 Start-Service postgresql-x64-XX  # Replace XX with version
 ```
 
-**Redis not starting:**
-```powershell
-# Redis for Windows alternatives:
-# 1. Memurai (Redis-compatible): https://www.memurai.com/
-<!-- legacy container example removed -->
-```
+<!-- Redis guidance removed: not required -->
 
 ### Common Issues
 
@@ -104,11 +98,7 @@ Download from: https://www.enterprisedb.com/downloads/postgres-postgresql-downlo
 - Set password to: `postgres`
 - Remember port: `5432`
 
-### Redis
-Windows options:
-1. **Memurai**: https://www.memurai.com/
-2. **Redis on WSL**: Enable WSL and install Redis in Linux
-3. (alternative deprecated)
+<!-- Redis section removed: not required -->
 
 ### Git
 Download from: https://git-scm.com/download/win
@@ -118,7 +108,6 @@ Download from: https://git-scm.com/download/win
 The `.env` file is created automatically with these defaults:
 ```env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/phishnet
-REDIS_URL=redis://localhost:6379
 PORT=3000
 NODE_ENV=development
 SESSION_SECRET=dev-secret-key-change-in-production
@@ -150,7 +139,7 @@ Once started, open your browser to:
 
 ## Windows-Specific Features
 
-- **Service Management**: Automatically starts/stops PostgreSQL and Redis services
+- **Service Management**: Automatically starts/stops PostgreSQL service
 - **Package Manager**: Uses Chocolatey for easy dependency management
 - (legacy integration removed)
 - **Path Management**: Automatically adds tools to system PATH

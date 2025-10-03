@@ -1,4 +1,4 @@
-# 🚀 PhishNet Modular Access Implementation Guide
+# 🚀 PhishNet Unified Setup Guide
 
 ## 📋 Step-by-Step Implementation
 
@@ -44,47 +44,10 @@ npm install
 npm run dev   # runs full stack
 ```
 
-### **Phase 3: Team Setup (20 minutes)**
+### **Phase 3: Repository Access**
+Use standard GitHub permissions for collaborators. No code segmentation is required.
 
-#### 3.1 Configure GitHub Teams
-```bash
-# Run the automated setup script:
-npm run setup:zero-trust
-
-# Or manually create teams in GitHub:
-# Go to: Organization Settings > Teams
-# Create teams:
-# - frontend-team
-# - backend-team  
-# - database-team
-# - team-leads
-```
-
-#### 3.2 Assign Team Members
-```bash
-# In GitHub Teams settings:
-# 1. Add developers to appropriate teams
-# 2. Set team permissions:
-#    - frontend-team: Read access + frontend Codespace
-#    - backend-team: Read access + backend Codespace
-#    - database-team: Read access + database Codespace
-#    - team-leads: Admin access + all Codespaces
-```
-
-### **Phase 4: Access Control Implementation (15 minutes)**
-
-#### 4.1 Update CODEOWNERS
-```bash
-# The CODEOWNERS file is already created
-# Verify it reflects your team structure:
-cat CODEOWNERS
-
-# Update team names to match your actual GitHub teams:
-# Replace @frontend-team with actual usernames like @john-doe
-# Replace @backend-team with actual usernames like @jane-smith
-```
-
-#### 4.2 Enable Branch Protection
+### **Phase 4: Branch Protection**
 ```bash
 # Go to: Repository Settings > Branches
 # Add rule for "main" branch:
@@ -96,18 +59,11 @@ cat CODEOWNERS
 
 ### **Phase 5: Developer Onboarding (10 minutes per developer)**
 
-#### 5.1 Frontend Developer Setup
-Use native environment: clone/pull authorized subset and run:
+#### Developer Setup
+Use native environment:
 ```bash
 npm install
-npm run frontend:dev
-```
-
-#### 5.2 Backend Developer Setup
-Run locally:
-```bash
-npm install
-npm run backend:dev
+npm run dev
 ```
 
 ## 🔧 **Quick Implementation Commands**
@@ -122,27 +78,16 @@ git add -A && git commit -m "feat: modular access setup" && git push
 # 3. Create first test Codespace
 # Go to GitHub > Code > Codespaces > New
 
-# 4. Set up teams and permissions
+# 4. Set up permissions
 npm run setup:zero-trust
 ```
 
-### **For Team Members:**
+### **For Contributors:**
 ```bash
-# Frontend Developer:
-# 1. Access: https://github.com/gh0st-bit/PhishNet
-# 2. Code > Codespaces > frontend workspace
-# 3. npm run validate:frontend
-# 4. npm run frontend:dev
-
-# Backend Developer:  
-# 1. Code > Codespaces > backend workspace
-# 2. npm run validate:backend
-# 3. npm run backend:dev
-
-# Database Developer:
-# 1. Code > Codespaces > database workspace  
-# 2. npm run validate:database
-# 3. npm run db:migrate
+# 1. Fork or get collaborator access
+# 2. Clone repository
+# 3. npm install
+# 4. npm run dev
 ```
 
 ## ⚡ **Immediate Next Steps**
@@ -151,8 +96,8 @@ npm run setup:zero-trust
 ```bash
 # Test the current setup:
 cd phisnet
-npm run validate:frontend  # Should show workspace validation
-git status                 # Check what files are ready to commit
+npm run dev
+git status
 ```
 
 ### **Step 2: Commit and Deploy (5 minutes)**
@@ -165,15 +110,11 @@ git push origin main
 # Go to GitHub and test creating a Codespace
 ```
 
-### **Step 3: Invite First Developer (10 minutes)**
+### **Step 3: Invite a Developer (10 minutes)**
 ```bash
-# 1. Invite a developer to repository (read access only)
-# 2. Ask them to create a frontend Codespace
-# 3. Verify they can:
-#    - Access full PhishNet application
-#    - Edit only client/ files
-#    - Cannot see server/ source code
-#    - Test their changes against real backend
+# 1. Invite a collaborator to repository
+# 2. They clone locally
+# 3. Verify they can run npm run dev and open http://localhost:3000
 ```
 
 ## 🚨 **Troubleshooting**
@@ -182,23 +123,7 @@ git push origin main
 
 <!-- Legacy Codespace container start issue removed after de-containerization -->
 
-**Issue: Workspace validation fails**
-```bash
-# Solution: Check file permissions
-# Run: node scripts/validate-workspace.js frontend
-```
-
-**Issue: App won't run in Codespace**
-```bash
-# Solution: Check port forwarding
-# In Codespace: Ports tab > Forward port 3000, 3001
-```
-
-**Issue: Developer can see restricted files**
-```bash
-# Solution: Verify correct devcontainer used
-# Check: .workspace-info.json for workspace type
-```
+Remove workspace validation and Codespaces restrictions. Use standard local development.
 
 ## 📊 **Success Metrics**
 

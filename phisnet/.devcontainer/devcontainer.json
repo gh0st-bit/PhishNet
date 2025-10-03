@@ -33,7 +33,7 @@
     }
   },
 
-  "forwardPorts": [3001, 5432, 6379],
+  "forwardPorts": [3001, 5432],
   "portsAttributes": {
     "3001": {
       "label": "PhishNet Application",
@@ -41,10 +41,6 @@
     },
     "5432": {
       "label": "PostgreSQL Database",
-      "onAutoForward": "silent"
-    },
-    "6379": {
-      "label": "Redis Cache",
       "onAutoForward": "silent"
     }
   },

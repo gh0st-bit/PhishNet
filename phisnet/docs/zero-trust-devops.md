@@ -1,47 +1,38 @@
-# 🔐 PhishNet Zero Trust DevOps Strategy
+# 🔐 PhishNet Development Workflow (Unified)
 
 ## 🎯 Overview
 
-PhishNet implements a **Zero Trust DevOps model** where no developer has unrestricted access to the entire codebase. This ensures security, maintains code quality, and enforces separation of concerns across our multi-module architecture.
+PhishNet uses a simple, unified development workflow. All contributors work from the same repository and standard scripts, without workspace segmentation.
 
 ## 🏗️ Architecture & Access Control
 
 ### Module Structure
 ```
 phishnet/
-├── 🎨 client/          # Frontend React Application
-├── ⚙️  server/          # Backend Node.js API
+├── client/          # React Application
+├── server/          # Node.js API
 ├── 🗄️  migrations/      # Database Schema Changes
 ├── 🔄 shared/          # Cross-module Types & Schemas
 ├── 📚 docs/            # Documentation
 └── 🧪 tests/          # Testing Infrastructure
 ```
 
-### Access Control Matrix
-
-| Role | Frontend | Backend | Database | Shared | CI/CD | Admin |
-|------|----------|---------|----------|--------|-------|--------|
-| **Frontend Developer** | ✅ Full | ❌ None | ❌ None | ✅ Types | ❌ None | ❌ None |
-| **Backend Developer** | ❌ None | ✅ Full | ❌ Read | ✅ Schema | ❌ None | ❌ None |
-| **Database Developer** | ❌ None | ❌ Read | ✅ Full | ✅ Schema | ❌ None | ❌ None |
-| **Full-Stack Developer** | ✅ Full | ✅ Full | ❌ Read | ✅ Full | ❌ None | ❌ None |
-| **Team Lead** | ✅ Full | ✅ Full | ✅ Review | ✅ Full | ✅ Review | ❌ None |
-| **Admin** | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
+Access is managed via standard GitHub repository permissions and reviews.
 
 ## 🌿 Branching Strategy
 
-### Branch Types & Access Control
+### Branch Types
 
 ```
 main (Production)
-├── 🔒 Protected: Requires ALL approvals
-├── 🤖 Auto-deploy: Production environment
-└── 📋 Access: Admin + Lead approval only
+├── Protected: Requires admin approval
+├── Auto-deploy: Production environment
+└── Access: Admin approval only
 
 develop (Integration)
-├── 🔒 Protected: Requires team lead approval  
-├── 🤖 Auto-deploy: Staging environment
-└── 📋 Access: All teams (with restrictions)
+├── Protected: Requires admin approval  
+├── Auto-deploy: Staging environment
+└── Access: All users (with restrictions)
 
 feature/* (Development)
 ├── 🔓 Open: Module-specific restrictions
@@ -57,30 +48,19 @@ hotfix/* (Emergency)
 ### Branch Naming Convention
 
 ```bash
-# Frontend features
-feature/frontend/campaign-dashboard
-feature/frontend/user-management-ui
+# Features
+feature/campaign-dashboard
+feature/user-management-ui
 feature/ui/responsive-design
-
-# Backend features
-feature/backend/email-service
-feature/backend/auth-middleware
-feature/api/campaign-endpoints
-
-# Database features
-feature/database/multi-tenant-indexes
-feature/db/performance-optimization
-feature/schema/audit-logging
-
-# Cross-module features
-feature/integration/api-contracts
-feature/shared/type-definitions
-
-# Hotfixes
-hotfix/security/session-vulnerability
-hotfix/critical/database-connection
-
-# Release preparation
+feature/email-service
+feature/auth-middleware
+feature/api-campaign-endpoints
+feature/performance-optimization
+feature/audit-logging
+feature/api-contracts
+feature/type-definitions
+hotfix/session-vulnerability
+hotfix/database-connection
 release/v2.1.0
 ```
 
@@ -92,14 +72,11 @@ release/v2.1.0
 - Time-limited access for integration work
 
 ### 2. **Mandatory Peer Review**
-- All changes require team member approval
-- Cross-module changes require multiple team approvals
-- Security-sensitive code requires security team review
+- All changes require admin approval
+- Security-sensitive code requires admin review
 
 ### 3. **Continuous Verification**
 - Every commit triggers security scans
-- Access permissions verified on each push
-- Multi-tenancy isolation tested automatically
 
 ### 4. **Audit Everything**
 - All access attempts logged
@@ -140,7 +117,7 @@ graph TD
 
 4. **Integration Security**
    - API contract validation
-   - Multi-tenancy testing
+   - Unified workflow testing
    - Cross-module security verification
 
 5. **Deployment Security**
@@ -148,13 +125,13 @@ graph TD
    - Deployment approval workflows
    - Rollback capability verification
 
-## 👥 Team Collaboration
+## Collaboration
 
-### Frontend Team Workflow
+### Example Workflow
 
 ```bash
 # 1. Create feature branch
-git checkout -b feature/frontend/new-dashboard
+git checkout -b feature/new-dashboard
 
 # 2. Work only in allowed directories
 # ✅ Allowed: client/, shared/types/
@@ -165,13 +142,13 @@ git add client/src/pages/dashboard/
 git commit -m "feat: add campaign dashboard"
 
 # 4. Push and create PR
-git push origin feature/frontend/new-dashboard
+git push origin feature/new-dashboard
 
-# 5. Request review from frontend team
+# 5. Request review from admin
 # Auto-assigned via CODEOWNERS
 ```
 
-### Backend Team Workflow
+### Example Backend Workflow
 
 ```bash
 # 1. Create feature branch
@@ -182,18 +159,18 @@ git checkout -b feature/backend/email-service
 # ❌ Forbidden: client/ (except for API contracts)
 
 # 3. Implement with security focus
-# - Validate organizationId isolation
+# - Validate data isolation
 # - Implement proper input validation
 # - Add comprehensive logging
 
 # 4. Cross-module integration
-# For API changes affecting frontend:
+# For API changes:
 # - Update shared/types/ for TypeScript contracts
-# - Coordinate with frontend team for integration
-# - Request frontend team review for API contracts
+# - Coordinate with admin for integration
+# - Request admin review for API contracts
 ```
 
-### Database Team Workflow
+### Database Changes
 
 ```bash
 # 1. Create migration branch
@@ -204,19 +181,17 @@ git checkout -b feature/database/audit-logging
 # ❌ Forbidden: client/, server/ implementation
 
 # 3. Create migration with security focus
-# - Maintain multi-tenancy (organizationId foreign keys)
 # - Add proper indexes for performance
 # - Include rollback procedures
 
 # 4. Schema updates
 # Update shared/schema.ts
-# Coordinate with backend team for implementation
-# Request review from both database and backend teams
+# Coordinate with admin for implementation
 ```
 
 ## 🔧 Development Environment Setup
 
-### Individual Developer Environment
+### Developer Environment
 
 ```bash
 # 1. Clone with limited scope (if possible)
@@ -225,19 +200,15 @@ git clone --filter=blob:none https://github.com/gh0st-bit/PhishNet.git
 # 2. Setup module-specific environment
 cd PhishNet/phisnet
 
-# Frontend developers
+# Developers
 cd client && npm install
-npm run dev  # Frontend only
-
-# Backend developers  
+npm run dev  # Start development server
 cd server && npm install
-npm run dev  # Backend only
-
-# Full environment (for integration work)
-npm run dev:all  # Requires approval
+npm run dev  # Start development server
+npm run dev:all  # Full environment (requires approval)
 ```
 
-### Access Request Process
+### Access Request Process (optional)
 
 ```bash
 # Request additional module access
@@ -248,7 +219,7 @@ git commit -m "request: temporary backend access for API integration"
 git push origin access-request/backend-integration
 
 # Create PR with justification
-# Team lead reviews and grants temporary access
+# Admin reviews and grants temporary access
 # Access automatically revoked after merge
 ```
 
@@ -266,7 +237,7 @@ git push origin access-request/backend-integration
 # Incident response:
 # 1. Immediate access revocation
 # 2. Change rollback if necessary  
-# 3. Security team investigation
+# 3. Admin investigation
 # 4. Process improvement recommendations
 ```
 
@@ -278,7 +249,7 @@ git checkout -b hotfix/security/critical-vulnerability
 
 # Emergency override process:
 # 1. Admin approval required
-# 2. Immediate security team notification
+# 2. Immediate admin notification
 # 3. Expedited review process
 # 4. Post-incident analysis mandatory
 ```
@@ -294,7 +265,7 @@ git checkout -b hotfix/security/critical-vulnerability
 ### Security Metrics
 - Vulnerability detection time
 - Time to patch critical issues
-- Multi-tenancy isolation test results
+- Unified workflow test results
 - Failed access attempts
 
 ### Performance Metrics
@@ -310,7 +281,7 @@ git checkout -b hotfix/security/critical-vulnerability
 1. **Security Training**
    - Zero Trust principles
    - PhishNet-specific security requirements
-   - Multi-tenancy best practices
+   - Unified workflow best practices
 
 2. **Module-Specific Training**
    - Assigned module architecture
@@ -345,8 +316,8 @@ git checkout -b hotfix/security/critical-vulnerability
 ---
 
 **📧 Questions or Issues?**
-- Security concerns: security-team@phishnet.dev
-- Access requests: team-leads@phishnet.dev  
-- Process improvements: devops-team@phishnet.dev
+- Security concerns: admin@phishnet.dev
+- Access requests: admin@phishnet.dev  
+- Process improvements: devops@phishnet.dev
 
 **🔒 Remember: Zero Trust means verify everything, trust nothing!**

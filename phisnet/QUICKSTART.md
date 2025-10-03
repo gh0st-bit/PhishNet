@@ -31,7 +31,7 @@ deploy.bat
 start.bat
 ```
 
-**📋 What gets installed:** Node.js, PostgreSQL, Redis, Git  
+**📋 What gets installed:** Node.js, PostgreSQL, Git  
 **🔐 Database Credentials:** `postgres` / `postgres`
 
 ### 🐧 Linux/macOS (Universal)
@@ -102,11 +102,10 @@ cd PhishNet\phisnet
 6. ✅ **Service Start** - Launches all services with health checks
 
 ### Sample Data Included:
-- **3 Organizations:** Corporate, Education, Healthcare
-- **7 User Accounts:** Various roles (admin, manager, user)
-- **4 Email Templates:** Professional phishing templates
-- **2 Landing Pages:** Credential harvesting pages
-- **Admin Access:** Ready-to-use administrative accounts
+- **Users:** Pre-populated test accounts
+- **Email Templates:** Professional phishing templates
+- **Landing Pages:** Credential harvesting pages
+- **Admin Access:** Ready-to-use administrative account
 
 ---
 
@@ -118,20 +117,8 @@ cd PhishNet\phisnet
 - **Password:** `admin123`
 - **Role:** Super Administrator
 
-### Sample Organization Accounts
-
-#### Corporate Organization
-- **Admin:** `corp.admin@corporate.example.com` / `admin123`
-- **Manager:** `security.manager@corporate.example.com` / `manager123`
-- **User:** `john.doe@corporate.example.com` / `user123`
-
-#### Education Organization  
-- **Admin:** `it.admin@company.com` / `admin123`
-- **User:** `jane.smith@company.com` / `user123`
-
-#### Healthcare Organization
-- **Admin:** `security@hospital.org` / `admin123`
-- **User:** `mike.johnson@hospital.org` / `user123`
+### Additional Sample Accounts (optional)
+- Additional demo users may be included for testing different views.
 
 **⚠️ IMPORTANT:** Change all default passwords immediately after first login!
 
@@ -176,8 +163,7 @@ http://localhost
 
 ### 5. Explore Sample Data (5 minutes)
 - **Dashboard:** View analytics and metrics
-- **Organizations:** See sample corporate, education, healthcare setups
-- **Users:** Browse different user roles and permissions
+- **Users:** Browse sample users
 - **Templates:** Explore pre-built phishing templates
 - **Reports:** Check sample campaign results
 
@@ -229,15 +215,14 @@ curl http://localhost/api/health/all
 4. **Click** the phishing link (safe in test mode)
 5. **View Results** in the dashboard
 
-### Scenario 2: Multi-User Organization (10 minutes)
-1. **Switch** to Corporate organization
-2. **Login** as security manager
-3. **Create Training Campaign:**
+### Scenario 2: Team Training Campaign (10 minutes)
+1. **Login** as admin
+2. **Create Training Campaign:**
    - Select multiple users
    - Use "Fake Invoice" template
    - Schedule for next hour
-4. **Monitor** user interactions
-5. **Generate** compliance report
+3. **Monitor** user interactions
+4. **Generate** compliance report
 
 ### Scenario 3: Landing Page Test (5 minutes)
 1. **Go to** Landing Pages section
@@ -260,7 +245,6 @@ After setup, verify these components are working:
 
 ### ✅ Database Integration
 - [ ] User accounts visible in Users section
-- [ ] Organizations display with sample data
 - [ ] Campaign history shows sample campaigns
 - [ ] Reports generate successfully
 
@@ -272,7 +256,6 @@ After setup, verify these components are working:
 
 ### ✅ Security Features
 - [ ] Password change works
-- [ ] User roles enforce permissions
 - [ ] Session timeout functions
 - [ ] Audit logs record activities
 
@@ -406,7 +389,7 @@ Congratulations! You now have a fully functional PhishNet installation with:
 
 - ✅ **Complete phishing simulation platform**
 - ✅ **Sample data for immediate testing**
-- ✅ **Multiple user accounts and organizations**
+- ✅ **Multiple user accounts**
 - ✅ **Professional email templates**
 - ✅ **Analytics and reporting dashboards**
 - ✅ **Security best practices implemented**

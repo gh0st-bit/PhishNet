@@ -49,7 +49,7 @@ echo -e "${BLUE}🎣 PhishNet Universal Deployment 🎣${NC}"
 echo -e "${BLUE}======================================${NC}"
 echo -e "${BLUE}🚀 Auto-installs all dependencies${NC}"
 echo -e "${BLUE}🔧 Configures services automatically${NC}"
-echo -e "${BLUE}Environment: native services (PostgreSQL, Redis, Node.js)${NC}"
+echo -e "${BLUE}Environment: native services (PostgreSQL, Node.js)${NC}"
 echo -e "${BLUE}======================================${NC}"
 echo ""
 
@@ -68,7 +68,7 @@ auto_chmod() {
         "deploy.sh"
         "start.sh" 
     # legacy container fix script removed
-        "kali-redis-fix.sh"
+    # redis fix script removed
         "reset-db.sh"
         "check-deps.sh"
         "start-dev.sh"
@@ -147,14 +147,14 @@ create_missing_scripts() {
     # Create start.sh if missing
     if [[ ! -f "start.sh" ]]; then
         info "Creating start.sh script..."
-        cat > start.sh << 'EOF'
+    cat > start.sh << 'EOF'
 #!/bin/bash
 # 🎣 PhishNet Universal Startup Script
 
 echo "🚀 Starting PhishNet..."
 
 # Start services
-sudo systemctl start postgresql redis-server 2>/dev/null || sudo systemctl start postgresql redis 2>/dev/null || true
+sudo systemctl start postgresql 2>/dev/null || true
 
 # Check .env file
 if [[ ! -f ".env" ]]; then
@@ -253,7 +253,7 @@ install_dependencies() {
     case "$DISTRO" in
         ubuntu|debian|kali)
             sudo apt-get update
-            sudo apt-get install -y curl wget git build-essential postgresql postgresql-contrib redis-server nodejs npm
+            sudo apt-get install -y curl wget git build-essential postgresql postgresql-contrib nodejs npm
             
             #
             
@@ -267,7 +267,7 @@ install_dependencies() {
         centos|rhel)
             sudo yum update -y
             sudo yum groupinstall -y "Development Tools"
-            sudo yum install -y curl wget git postgresql-server postgresql-contrib redis nodejs npm
+            sudo yum install -y curl wget git postgresql-server postgresql-contrib nodejs npm
             
             # Initialize PostgreSQL if needed
             if [[ ! -d "/var/lib/pgsql/data/postgresql.conf" ]]; then
@@ -278,12 +278,12 @@ install_dependencies() {
         fedora)
             sudo dnf update -y
             sudo dnf groupinstall -y "Development Tools"
-            sudo dnf install -y curl wget git postgresql-server postgresql-contrib redis nodejs npm
+            sudo dnf install -y curl wget git postgresql-server postgresql-contrib nodejs npm
             ;;
             
         arch)
             sudo pacman -Syu --noconfirm
-            sudo pacman -S --noconfirm base-devel curl wget git postgresql redis nodejs npm
+            sudo pacman -S --noconfirm base-devel curl wget git postgresql nodejs npm
             ;;
             
         macOS)
@@ -293,7 +293,7 @@ install_dependencies() {
             fi
             
             brew update
-            brew install postgresql redis node git
+            brew install postgresql node git
             ;;
             
         *)
@@ -349,25 +349,15 @@ install_dependencies
 info "🗄️ Setting up PostgreSQL..."
 case "$DISTRO" in
     ubuntu|debian|kali)
-        # Handle Kali Redis service naming
-        if [[ "$DISTRO" == "kali" ]]; then
-            sudo systemctl start redis-server || sudo systemctl start redis
-            sudo systemctl enable redis-server || sudo systemctl enable redis
-        else
-            sudo systemctl start redis-server
-            sudo systemctl enable redis-server
-        fi
-        
         sudo systemctl start postgresql
         sudo systemctl enable postgresql
         ;;
     centos|rhel|fedora)
-        sudo systemctl start redis postgresql
-        sudo systemctl enable redis postgresql
+        sudo systemctl start postgresql
+        sudo systemctl enable postgresql
         ;;
     macOS)
         brew services start postgresql
-        brew services start redis
         ;;
 esac
 
@@ -455,11 +445,6 @@ DB_PORT=5432
 DB_NAME=phishnet
 DB_USER=postgres
 DB_PASSWORD=
-
-# Redis Configuration (Sessions & Cache)
-REDIS_URL=redis://localhost:6379
-REDIS_HOST=localhost
-REDIS_PORT=6379
 
 # Security Settings (Change in production!)
 SESSION_SECRET=phishnet-dev-secret-$(date +%s)
@@ -688,7 +673,6 @@ create_friend_package() {
 ## What Gets Auto-Installed
 ✅ Node.js 18+ (JavaScript runtime)
 ✅ PostgreSQL (Database)
-✅ Redis (Cache & Sessions)
 ✅ Git (Version control)
 #
 
@@ -720,7 +704,7 @@ Right-click PowerShell → "Run as Administrator"
 chmod +x *.sh
 
 # Service issues  
-sudo systemctl status postgresql redis-server
+sudo systemctl status postgresql
 
 # Restart deployment
 ./deploy.sh

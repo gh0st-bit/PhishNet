@@ -121,7 +121,7 @@ If you encounter issues with the universal setup:
 
 2. **Check Dependencies**
    - Ensure Node.js is installed
-   - Verify PostgreSQL and Redis services are running
+   - Verify PostgreSQL service is running
 
 3. **Port Conflicts**
    - If port 3000 is already in use:

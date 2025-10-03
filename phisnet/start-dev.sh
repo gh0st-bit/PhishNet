@@ -9,18 +9,6 @@ if [[ ! -f "package.json" ]]; then
     exit 1
 fi
 
-# Start Redis if not running
-echo "🔧 Checking Redis..."
-if ! redis-cli ping >/dev/null 2>&1; then
-    echo "🚀 Starting Redis..."
-    if command -v systemctl >/dev/null 2>&1; then
-        sudo systemctl start redis-server 2>/dev/null || sudo redis-server --daemonize yes
-    else
-        sudo redis-server --daemonize yes
-    fi
-    sleep 2
-fi
-
 # Start PostgreSQL if not running
 echo "🔧 Checking PostgreSQL..."
 if command -v systemctl >/dev/null 2>&1; then
@@ -34,7 +22,6 @@ if [[ ! -f .env ]]; then
     echo "📝 Creating environment file..."
     cat > .env << 'EOF'
 DATABASE_URL=postgresql://phishnet_user:phishnet_password@localhost:5432/phishnet_db
-REDIS_URL=redis://localhost:6379
 PORT=3000
 NODE_ENV=development
 SESSION_SECRET=dev-secret-key-change-in-production

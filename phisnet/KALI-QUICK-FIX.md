@@ -5,7 +5,7 @@ The deployment scripts have been updated with all the fixes we discovered during
 ### **✅ What's Fixed:**
 - **Database password consistency** - All scripts now use `phishnet_password`
 - **Cross-platform Node.js scripts** - Works on Linux, macOS, and Windows
-- **Smart Redis detection** - Handles different service names across distributions
+<!-- Redis detection removed: not required -->
 - **Database connection verification** - Tests connections before proceeding
 - **Environment file automation** - Creates correct .env automatically
 
@@ -56,4 +56,4 @@ The deployment is now truly "zero setup struggles":
 2. **Run `./deploy.sh`** 
 3. **Done!**
 
-All the password mismatches, Redis issues, and environment problems are automatically handled! 🚀
+All the password mismatches and environment problems are automatically handled! 🚀

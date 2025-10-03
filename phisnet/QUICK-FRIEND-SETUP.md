@@ -92,7 +92,7 @@ chmod +x *.sh
 ./deploy.sh
 
 # Check if services are running:
-sudo systemctl status postgresql redis-server
+sudo systemctl status postgresql
 ```
 
 ### Universal Troubleshooting:

@@ -43,16 +43,6 @@ fi
 # Auto-start services
 log "🔧 Starting services..."
 
-# Start Redis (multiple methods)
-if ! redis-cli ping >/dev/null 2>&1; then
-    if command -v systemctl >/dev/null 2>&1; then
-        sudo systemctl start redis-server 2>/dev/null || sudo systemctl start redis 2>/dev/null || sudo redis-server --daemonize yes
-    else
-        sudo redis-server --daemonize yes 2>/dev/null || true
-    fi
-    sleep 1
-fi
-
 # Start PostgreSQL
 if command -v systemctl >/dev/null 2>&1; then
     sudo systemctl start postgresql 2>/dev/null || true
@@ -60,13 +50,6 @@ elif command -v service >/dev/null 2>&1; then
     sudo service postgresql start 2>/dev/null || true
 elif command -v brew >/dev/null 2>&1; then
     brew services start postgresql 2>/dev/null || true
-fi
-
-# Verify services
-if redis-cli ping >/dev/null 2>&1; then
-    log "✅ Redis running"
-else
-    warn "⚠️ Redis may not be running"
 fi
 
 # Create .env if missing (align with deploy scripts naming)
@@ -85,8 +68,6 @@ DB_PORT=5432
 DB_NAME=phishnet
 DB_USER=postgres
 DB_PASSWORD=
-
-REDIS_URL=redis://localhost:6379
 SESSION_SECRET=dev-secret-key
 EOF
 fi
