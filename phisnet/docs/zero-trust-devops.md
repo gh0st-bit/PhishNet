@@ -35,14 +35,14 @@ develop (Integration)
 └── Access: All users (with restrictions)
 
 feature/* (Development)
-├── 🔓 Open: Module-specific restrictions
-├── 🧪 Testing: Module CI pipelines
-└── 📋 Access: Based on module ownership
+├── Open: Module-specific restrictions
+├── Testing: Module CI pipelines
+└── Access: Based on module ownership
 
 hotfix/* (Emergency)
-├── 🚨 Emergency: Admin override allowed
-├── 🚀 Fast-track: Reduced approval requirements
-└── 📋 Access: Admin + Senior developers
+├── Emergency: Admin override allowed
+├── Fast-track: Reduced approval requirements
+└── Access: Admin + Senior developers
 ```
 
 ### Branch Naming Convention
@@ -83,47 +83,34 @@ release/v2.1.0
 - Change tracking with detailed attribution
 - Security events monitored and alerted
 
-## 🚀 CI/CD Pipeline Security
+## � Manual Security Process
 
-### Pipeline Stages
+### Security Practices
 
-```mermaid
-graph TD
-    A[Code Push] --> B[Security Scan]
-    B --> C[Access Control Check]
-    C --> D[Module Detection]
-    D --> E[Parallel Module CI]
-    E --> F[Integration Tests]
-    F --> G[Security Validation]
-    G --> H[Deployment]
-```
+1. **Pre-commit Practices**
+   - Manual secret detection review
+   - Code formatting checks
+   - Basic lint checks with npm scripts
 
-### Security Gates
-
-1. **Pre-commit Hooks**
-   - Secret detection
-   - Code formatting
-   - Basic lint checks
-
-2. **Push-time Validation**
-   - Access control verification
+2. **Code Review Process**
+   - Manual access control verification
    - File permission checks
-   - Branch protection enforcement
+   - Branch protection through GitHub settings
 
-3. **CI Pipeline Security**
-   - Dependency vulnerability scanning
-   - Static code analysis
+3. **Security Validation**
+   - Manual dependency vulnerability scanning with `npm audit`
+   - Static code analysis with local tools
    - License compliance checking
 
 4. **Integration Security**
    - API contract validation
-   - Unified workflow testing
+   - Manual testing of unified workflow
    - Cross-module security verification
 
 5. **Deployment Security**
-   - Environment validation
-   - Deployment approval workflows
-   - Rollback capability verification
+   - Manual environment validation
+   - Manual deployment approval process
+   - Manual rollback capability
 
 ## Collaboration
 
@@ -228,15 +215,15 @@ git push origin access-request/backend-integration
 ### Access Violation Detection
 
 ```bash
-# Automated alerts for:
+# Manual monitoring for:
 # 1. Unauthorized file modifications
 # 2. Cross-module access without approval
 # 3. Security-sensitive code changes without security review
 # 4. Direct pushes to protected branches
 
 # Incident response:
-# 1. Immediate access revocation
-# 2. Change rollback if necessary  
+# 1. Manual access revocation
+# 2. Manual change rollback if necessary  
 # 3. Admin investigation
 # 4. Process improvement recommendations
 ```
@@ -247,7 +234,7 @@ git push origin access-request/backend-integration
 # Critical security hotfix
 git checkout -b hotfix/security/critical-vulnerability
 
-# Emergency override process:
+# Manual emergency override process:
 # 1. Admin approval required
 # 2. Immediate admin notification
 # 3. Expedited review process

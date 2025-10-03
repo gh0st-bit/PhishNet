@@ -6,7 +6,7 @@ PhishNet is a comprehensive phishing simulation platform designed for cybersecur
 
 ## 🚀 Quick Start
 
-### Option 1: Automated Deployment (Recommended)
+### Option 1: Manual Deployment (Recommended)
 
 **For Linux/macOS:**
 ```bash

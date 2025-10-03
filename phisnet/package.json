@@ -54,7 +54,7 @@
     "backend:dev": "cross-env NODE_ENV=development tsx server/index.ts",
     "app:preview": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
     "app:full": "npm run dev",
-    "ci:security": "npm run security:scan && npm run access:verify"
+    "manual:security": "npm run security:scan && npm run access:verify"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

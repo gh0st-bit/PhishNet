@@ -85,6 +85,7 @@ temp/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+.playwright/
 
 # Testing
 /test-results/
