@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import DashboardPage from "@/pages/dashboard-page";
 import AuthPage from "@/pages/auth-page";
 import CampaignsPage from "@/pages/campaigns-page";
+import ReconnaissancePage from "@/pages/reconnaissance-page";
 import TemplatesPage from "@/pages/templates-page";
 import GroupsPage from "@/pages/groups-page";
 import LandingPagesPage from "@/pages/landing-pages-page";
@@ -35,6 +36,7 @@ function Router() {
       <Route path="/reset-password/:token" component={ResetPasswordPage} />
       <ProtectedRoute path="/" component={DashboardPage} />
       <ProtectedRoute path="/campaigns" component={CampaignsPage} />
+      <ProtectedRoute path="/reconnaissance" component={ReconnaissancePage} />
       <ProtectedRoute path="/templates" component={TemplatesPage} />
       <ProtectedRoute path="/groups" component={GroupsPage} />
       <ProtectedRoute path="/landing-pages" component={LandingPagesPage} />

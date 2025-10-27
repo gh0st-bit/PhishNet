@@ -202,7 +202,7 @@ export default function SettingsPage() {
     } catch (error) {
       toast({
         title: "Error saving settings",
-        description: error.message,
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
       });
     }

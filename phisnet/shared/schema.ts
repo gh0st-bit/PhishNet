@@ -557,6 +557,101 @@ export const resetPasswordSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
+// Reconnaissance tables
+export const reconnaissanceDomains = pgTable("reconnaissance_domains", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaign_id").references(() => campaigns.id, { onDelete: 'cascade' }).notNull(),
+  domain: varchar("domain", { length: 255 }).notNull(),
+  emailFormats: jsonb("email_formats"), // Array of detected email format patterns
+  mxRecords: jsonb("mx_records"), // Array of MX records
+  txtRecords: jsonb("txt_records"), // Array of TXT records
+  subdomains: jsonb("subdomains"), // Array of discovered subdomains
+  discoveryStatus: varchar("discovery_status", { length: 50 }).default('pending'),
+  discoveredAt: timestamp("discovered_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const discoveredContacts = pgTable("discovered_contacts", {
+  id: serial("id").primaryKey(),
+  domainId: integer("domain_id").references(() => reconnaissanceDomains.id, { onDelete: 'cascade' }).notNull(),
+  email: varchar("email", { length: 255 }),
+  firstName: varchar("first_name", { length: 100 }),
+  lastName: varchar("last_name", { length: 100 }),
+  fullName: varchar("full_name", { length: 255 }),
+  title: varchar("title", { length: 200 }),
+  company: varchar("company", { length: 200 }),
+  linkedinUrl: text("linkedin_url"),
+  source: varchar("source", { length: 50 }).notNull(),
+  confidence: varchar("confidence", { length: 10 }).default('0.5'),
+  verificationStatus: varchar("verification_status", { length: 50 }).default('unverified'),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const aiProfiles = pgTable("ai_profiles", {
+  id: serial("id").primaryKey(),
+  contactId: integer("contact_id").references(() => discoveredContacts.id, { onDelete: 'cascade' }).notNull(),
+  summary: text("summary"),
+  interests: jsonb("interests"), // Array of interests
+  workStyle: text("work_style"),
+  vulnerabilities: jsonb("vulnerabilities"), // Array of potential vulnerabilities
+  recommendedApproach: text("recommended_approach"),
+  profileData: jsonb("profile_data"), // Full AI response for flexibility
+  generatedAt: timestamp("generated_at").defaultNow(),
+  modelUsed: varchar("model_used", { length: 50 }).default('gemini-pro'),
+});
+
+export const aiPretexts = pgTable("ai_pretexts", {
+  id: serial("id").primaryKey(),
+  profileId: integer("profile_id").references(() => aiProfiles.id, { onDelete: 'cascade' }).notNull(),
+  pretextType: varchar("pretext_type", { length: 50 }).notNull(),
+  subject: text("subject"),
+  content: text("content"),
+  tone: varchar("tone", { length: 50 }),
+  urgency: varchar("urgency", { length: 50 }),
+  personalization: jsonb("personalization"),
+  approved: boolean("approved").default(false),
+  generatedAt: timestamp("generated_at").defaultNow(),
+  modelUsed: varchar("model_used", { length: 50 }).default('gemini-pro'),
+});
+
+export const scrapedContent = pgTable("scraped_content", {
+  id: serial("id").primaryKey(),
+  domainId: integer("domain_id").references(() => reconnaissanceDomains.id, { onDelete: 'cascade' }).notNull(),
+  url: text("url").notNull(),
+  title: text("title"),
+  content: text("content"),
+  markdownContent: text("markdown_content"),
+  extractedContacts: jsonb("extracted_contacts"),
+  scrapedAt: timestamp("scraped_at").defaultNow(),
+  contentType: varchar("content_type", { length: 100 }),
+});
+
+export const contactSources = pgTable("contact_sources", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  apiEndpoint: text("api_endpoint"),
+  isActive: boolean("is_active").default(true),
+  rateLimit: integer("rate_limit"),
+  cost: varchar("cost", { length: 50 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const reconnaissanceJobs = pgTable("reconnaissance_jobs", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaign_id").references(() => campaigns.id, { onDelete: 'cascade' }).notNull(),
+  status: varchar("status", { length: 50 }).default('pending'),
+  progress: integer("progress").default(0),
+  totalSteps: integer("total_steps").default(0),
+  currentStep: text("current_step"),
+  results: jsonb("results"),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+  createdBy: integer("created_by").references(() => users.id).notNull(),
+});
+
 // Default roles configuration
 export const DEFAULT_ROLES = [
   {

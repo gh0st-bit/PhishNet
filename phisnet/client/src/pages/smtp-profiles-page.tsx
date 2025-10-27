@@ -1,6 +1,7 @@
 import { useState } from "react";
 import AppLayout from "@/components/layout/app-layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSmtpProfiles } from "@/hooks/useApi";
 import {
   Table,
   TableBody,
@@ -43,9 +44,7 @@ export default function SmtpProfilesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [profileToDelete, setProfileToDelete] = useState<any>(null);
   
-  const { data: profiles, isLoading } = useQuery({
-    queryKey: ['/api/smtp-profiles'],
-  });
+  const { data: profiles = [], isLoading } = useSmtpProfiles();
 
   const form = useForm<SmtpProfileFormValues>({
     resolver: zodResolver(smtpProfileSchema),
@@ -148,7 +147,7 @@ export default function SmtpProfilesPage() {
   };
 
   // Add this helper component
-  const FieldWithHelp = ({ label, help, children }) => (
+  const FieldWithHelp = ({ label, help, children }: { label: string; help: string; children: React.ReactNode }) => (
     <FormItem>
       <FormLabel className="flex items-center gap-2">
         {label}

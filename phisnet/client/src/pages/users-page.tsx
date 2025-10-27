@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useUsers } from "@/hooks/useApi";
 import {
   Plus,
   Edit,
@@ -69,13 +70,15 @@ export default function UsersPage() {
   const canDeleteUsers = canAccess(PERMISSIONS.USERS_DELETE);
   const canManageRoles = canAccess(PERMISSIONS.ORG_MANAGE); // Use a permission that exists
 
-  const { data: users, refetch } = useQuery({
-    queryKey: ['/api/users'],
-    enabled: canViewUsers,
-  });
+  const { data: users = [], refetch } = useUsers();
 
-  const { data: roles } = useQuery({
-    queryKey: ['/api/roles'],
+  const { data: roles = [] } = useQuery({
+    queryKey: ['roles'],
+    queryFn: async () => {
+      const response = await fetch('/api/roles');
+      if (!response.ok) throw new Error('Failed to fetch roles');
+      return response.json();
+    },
     enabled: canManageRoles,
   });
 
@@ -251,9 +254,9 @@ export default function UsersPage() {
                     <TableCell>
                       <div className="flex items-center space-x-3">
                         <Avatar>
-                          <AvatarImage src={user.profilePicture} />
+                          <AvatarImage src={user.profilePicture ?? undefined} />
                           <AvatarFallback>
-                            {getInitials(user.firstName, user.lastName)}
+                            {getInitials(user.firstName ?? '', user.lastName ?? '')}
                           </AvatarFallback>
                         </Avatar>
                         <div>
@@ -264,28 +267,30 @@ export default function UsersPage() {
                     <TableCell>{user.email}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        {user.roles?.map((role) => (
-                          <Badge 
-                            key={role.id}
-                            variant="secondary"
-                            className={`${getRoleColor(role.name)} text-white`}
-                          >
-                            <Shield className="w-3 h-3 mr-1" />
-                            {role.name}
-                          </Badge>
-                        )) || (
-                          <Badge variant="outline">No Roles</Badge>
-                        )}
+                          {Array.isArray((user as any).roles) && (user as any).roles.length > 0 ? (
+                            (user as any).roles.map((role: any) => (
+                              <Badge 
+                                key={role.id}
+                                variant="secondary"
+                                className={`${getRoleColor(role.name)} text-white`}
+                              >
+                                <Shield className="w-3 h-3 mr-1" />
+                                {role.name}
+                              </Badge>
+                            ))
+                          ) : (
+                            <Badge variant="outline">No Roles</Badge>
+                          )}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={user.isActive ? "default" : "secondary"}>
-                        {user.isActive ? "Active" : "Inactive"}
+                      <Badge variant={(user as any).isActive ? "default" : "secondary"}>
+                        {(user as any).isActive ? "Active" : "Inactive"}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {user.lastLogin 
-                        ? new Date(user.lastLogin).toLocaleDateString()
+                      {(user as any).lastLogin 
+                        ? new Date((user as any).lastLogin as string).toLocaleDateString()
                         : "Never"
                       }
                     </TableCell>
@@ -410,7 +415,7 @@ export default function UsersPage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {roles?.map((role) => (
+                          {roles?.map((role: any) => (
                             <SelectItem key={role.id} value={String(role.id)}>
                               {role.name}
                             </SelectItem>

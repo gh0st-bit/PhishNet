@@ -204,7 +204,7 @@ export default function TemplatesPage() {
       <Dialog open={isEditing} onOpenChange={setIsEditing}>
         <DialogContent className="max-w-5xl h-[85vh]">
           <TemplateEditor 
-            template={selectedTemplate} 
+            template={selectedTemplate ? { ...selectedTemplate, type: selectedTemplate.type ?? null } : null} 
             onClose={() => setIsEditing(false)} 
           />
         </DialogContent>
@@ -214,9 +214,12 @@ export default function TemplatesPage() {
       <Dialog open={isPreviewing} onOpenChange={setIsPreviewing}>
         <DialogContent className="max-w-5xl h-[85vh] dialog-content-preview">
           {selectedTemplate && (
-            <TemplatePreview 
-              template={selectedTemplate}
-            />
+            <TemplatePreview template={{
+              ...selectedTemplate,
+              type: selectedTemplate.type ?? null,
+              description: selectedTemplate.description ?? '',
+              created_by_id: selectedTemplate.created_by_id ?? null
+            }} />
           )}
         </DialogContent>
       </Dialog>

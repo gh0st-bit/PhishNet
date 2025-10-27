@@ -1,0 +1,41 @@
+name: CI Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      DB_NAME: ${{ secrets.DB_NAME }}
+      DB_USER: ${{ secrets.DB_USER }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+      NODE_ENV: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - name: Install system deps (PostgreSQL client)
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Deploy (generate .env from secrets)
+        run: |
+          chmod +x deploy.sh
+          ./deploy.sh --production --skip-deps --from-env
+      - name: Archive production build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phishnet-dist
+          path: |
+            dist/**
+            package.json
+            package-lock.json

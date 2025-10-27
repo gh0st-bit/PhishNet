@@ -33,6 +33,9 @@ export interface User {
   role: 'admin' | 'user' | 'viewer';
   organizationId: string;
   created_at: string;
+  firstName?: string;
+  lastName?: string;
+  profilePicture?: string | null;
 }
 
 // Dashboard Stats
@@ -129,6 +132,10 @@ export interface SmtpProfile {
   host: string;
   port: number;
   isDefault: boolean;
+  username: string;
+  password?: string;
+  fromName: string;
+  fromEmail: string;
 }
 
 export interface LandingPage {
@@ -137,4 +144,7 @@ export interface LandingPage {
   pageType: string;
   url: string;
   isActive: boolean;
+  thumbnail?: string;
+  description?: string;
+  createdAt: string;
 }

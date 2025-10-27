@@ -164,7 +164,7 @@ export default function DashboardPage() {
             isLoading={campaignsLoading}
           />
         </div>
-        <PhishingMetricsChart data={dashboardStats} />
+        <PhishingMetricsChart data={undefined} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

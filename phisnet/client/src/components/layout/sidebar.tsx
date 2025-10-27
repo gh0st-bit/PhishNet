@@ -11,7 +11,8 @@ import {
   Shield, 
   Settings, 
   Menu,
-  AlertTriangle
+  AlertTriangle,
+  Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -30,6 +31,7 @@ export default function Sidebar() {
   const navigation: NavigationItem[] = [
     { name: "Dashboard", href: "/", icon: <BarChart3 className="h-5 w-5" /> },
     { name: "Campaigns", href: "/campaigns", icon: <Mail className="h-5 w-5" /> },
+    { name: "Reconnaissance", href: "/reconnaissance", icon: <Search className="h-5 w-5" /> },
     { name: "Templates", href: "/templates", icon: <FolderOpen className="h-5 w-5" /> },
     { name: "Groups", href: "/groups", icon: <Users className="h-5 w-5" /> },
     { name: "Landing Pages", href: "/landing-pages", icon: <Layout className="h-5 w-5" /> },

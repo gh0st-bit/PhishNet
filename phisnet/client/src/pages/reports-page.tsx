@@ -315,7 +315,7 @@ export default function ReportsPage() {
                           }
                         >
                           {(reportData?.chartData?.campaignTypes || []).map(
-                            (entry, index) => (
+                            (entry: any, index: number) => (
                               <Cell
                                 key={`cell-${index}`}
                                 fill={
@@ -369,7 +369,7 @@ export default function ReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reportData?.campaigns?.map((campaign) => (
+                  {reportData?.campaigns?.map((campaign: any) => (
                     <TableRow key={campaign.id}>
                       <TableCell className="font-medium">{campaign.name}</TableCell>
                       <TableCell>
@@ -433,7 +433,7 @@ export default function ReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reportData?.users?.map((user) => (
+                  {reportData?.users?.map((user: any) => (
                     <TableRow key={user.id}>
                       <TableCell className="font-medium">{user.name}</TableCell>
                       <TableCell>{user.department}</TableCell>

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import AppLayout from "@/components/layout/app-layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useGroups } from "@/hooks/useApi";
+import type { Group, Target } from "@shared/types/index";
 import {
   Table,
   TableBody,
@@ -42,13 +44,13 @@ export default function GroupsPage() {
   const [targetToEdit, setTargetToEdit] = useState<any>(null);
   const [showActiveCampaignsDialog, setShowActiveCampaignsDialog] = useState(false);
   const [activeCampaignsError, setActiveCampaignsError] = useState<any>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [showTargetsModal, setShowTargetsModal] = useState(false);
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  const { data: groups, refetch: refetchGroups } = useQuery({
-    queryKey: ['/api/groups'],
-  });
+  const { data: groups = [], refetch: refetchGroups } = useGroups();
 
   const { data: targets, refetch: refetchTargets } = useQuery({
     queryKey: ['/api/groups', selectedGroup?.id, 'targets'],
@@ -57,15 +59,18 @@ export default function GroupsPage() {
       if (!selectedGroup?.id) return [];
       const res = await apiRequest('GET', `/api/groups/${selectedGroup.id}/targets`);
       return await res.json();
-    },
-    onSuccess: (data) => {
-      console.log('Targets data:', data);
-      if (data && data.length > 0) {
-        console.log('First target structure:', data[0]);
-        console.log('Available keys:', Object.keys(data[0]));
-      }
     }
   });
+
+  useEffect(() => {
+    if (targets) {
+      console.log('Targets data:', targets);
+      if (targets && targets.length > 0) {
+        console.log('First target structure:', targets[0]);
+        console.log('Available keys:', Object.keys(targets[0]));
+      }
+    }
+  }, [targets]);
 
   // Add delete mutation for groups
   const deleteGroupMutation = useMutation({
@@ -167,25 +172,20 @@ export default function GroupsPage() {
     setIsCreatingGroup(true);
   };
 
-  const handleEditGroup = (group) => {
+  const handleEditGroup = (group: Group) => {
     setSelectedGroup(group);
-    setIsCreatingGroup(true);
+    setShowModal(true);
   };
 
-  const handleViewGroup = (group) => {
-    console.log('Selecting group:', group);
+  const handleViewGroup = (group: Group) => {
     setSelectedGroup(group);
-    
-    // Show success message
-    toast({
-      title: "Group selected",
-      description: `Now viewing targets for "${group.name}"`,
-    });
+    setShowTargetsModal(true);
+    // Note: targets will be automatically fetched by useQuery when selectedGroup changes
   };
 
-  const handleDeleteGroup = (group) => {
+  // Updated delete with better error handling
+  const handleDeleteGroup = (group: Group) => {
     setGroupToDelete(group);
-    setDeleteDialogOpen(true);
   };
 
   const confirmDeleteGroup = () => {
@@ -207,7 +207,7 @@ export default function GroupsPage() {
     deleteTargetMutation.mutate(targetId);
   };
 
-  const handleEditTarget = (target) => {
+  const handleEditTarget = (target: Target) => {
     setTargetToEdit(target);
     setIsEditingTarget(true);
   };
@@ -329,18 +329,16 @@ export default function GroupsPage() {
                         </TableCell>
                       </TableRow>
                     ) : targets.length > 0 ? (
-                      targets.map((target) => (
+                      (targets || []).map((target: Target) => (
                         <TableRow key={target.id}>
                           <TableCell>
                             {/* Fix the name display logic */}
                             {target.firstName && target.lastName 
                               ? `${target.firstName} ${target.lastName}` 
-                              : target.first_name && target.last_name
-                              ? `${target.first_name} ${target.last_name}`
-                              : target.name || 'Unknown'}
+                              : `${target.firstName || ''} ${target.lastName || ''}`.trim() || 'Unknown'}
                           </TableCell>
                           <TableCell>{target.email || 'No email'}</TableCell>
-                          <TableCell>{target.position || target.job_title || target.title || '-'}</TableCell>
+                          <TableCell>{target.position || '-'}</TableCell>
                           <TableCell>
                             <div className="flex space-x-1">
                               <Button 

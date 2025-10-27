@@ -11,9 +11,6 @@ import { getQueryFn } from "@/lib/queryClient";
 import { Loader2, UsersRound, Lock, Building, Users, UserCheck, Shield, X, ArrowLeft } from "lucide-react";
 import { useLocation } from "wouter";
 
-interface UserWithDetails extends User {
-  profilePicture?: string | null;
-}
 
 export default function OrganizationPage() {
   const { user } = useAuth();
@@ -21,7 +18,7 @@ export default function OrganizationPage() {
   const orgName = user?.organizationName;
 
   // Fetch users in organization
-  const { data: users, isLoading } = useQuery<UserWithDetails[]>({
+  const { data: users, isLoading } = useQuery<User[]>({
     queryKey: ["/api/users"],
     queryFn: getQueryFn({ on401: "throw" }),
   });

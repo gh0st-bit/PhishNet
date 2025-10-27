@@ -64,10 +64,10 @@ export default function ImportCSV({ groupId, onClose }: ImportCSVProps) {
             return;
           }
           
-          const previewData = [];
+          const previewData: Record<string, string>[] = [];
           for (let i = 1; i < Math.min(lines.length, 6); i++) {
             const values = lines[i].split(",").map(v => v.trim());
-            const row = {};
+            const row: Record<string, string> = {};
             headers.forEach((header, index) => {
               row[header] = values[index] || '';
             });

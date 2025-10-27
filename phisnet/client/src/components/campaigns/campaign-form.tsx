@@ -10,6 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Loader2 } from "lucide-react";
+import { 
+  useGroups, 
+  useSmtpProfiles, 
+  useTemplates, 
+  useLandingPages 
+} from "@/hooks/useApi";
 
 const campaignSchema = z.object({
   name: z.string().min(1, "Campaign name is required"),
@@ -32,21 +38,11 @@ export default function CampaignForm({ onClose }: CampaignFormProps) {
   const queryClient = useQueryClient();
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   
-  const { data: groups } = useQuery({
-    queryKey: ['/api/groups'],
-  });
-  
-  const { data: smtpProfiles } = useQuery({
-    queryKey: ['/api/smtp-profiles'],
-  });
-  
-  const { data: emailTemplates } = useQuery({
-    queryKey: ['/api/email-templates'],
-  });
-  
-  const { data: landingPages } = useQuery({
-    queryKey: ['/api/landing-pages'],
-  });
+  const { data: groups = [] } = useGroups();
+  const { data: smtpProfiles = [] } = useSmtpProfiles();
+  const { data: templatesResponse } = useTemplates();
+  const emailTemplates = templatesResponse?.templates || [];
+  const { data: landingPages = [] } = useLandingPages();
 
   const form = useForm<CampaignFormValues>({
     resolver: zodResolver(campaignSchema),

@@ -2,6 +2,7 @@ import { useState } from "react";
 import AppLayout from "@/components/layout/app-layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useLandingPages } from "@/hooks/useApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -25,9 +26,7 @@ export default function LandingPagesPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   
-  const { data: landingPages } = useQuery({
-    queryKey: ['/api/landing-pages'],
-  });
+  const { data: landingPages = [] } = useLandingPages();
 
   const handleCreate = () => {
     setSelectedPage(null);

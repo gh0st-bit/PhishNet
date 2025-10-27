@@ -10,7 +10,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Calendar } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
-import { useCampaignDetails } from "@/hooks/useApi";
+import { 
+  useCampaignDetails, 
+  useGroups, 
+  useSmtpProfiles, 
+  useTemplates, 
+  useLandingPages 
+} from "@/hooks/useApi";
 
 const campaignSchema = z.object({
   name: z.string().min(1, "Campaign name is required"),
@@ -40,22 +46,12 @@ export default function CampaignEditor({ campaignId, onClose }: CampaignEditorPr
   // Fetch the campaign we're editing
   const { data: campaign, isLoading: isLoadingCampaign, error: campaignError } = useCampaignDetails(Number(campaignId!));
 
-  // Add debugging for all related data
-  const { data: groups } = useQuery({
-    queryKey: ['/api/groups'],
-  });
-  
-  const { data: smtpProfiles } = useQuery({
-    queryKey: ['/api/smtp-profiles'],
-  });
-  
-  const { data: emailTemplates } = useQuery({
-    queryKey: ['/api/email-templates'],
-  });
-  
-  const { data: landingPages } = useQuery({
-    queryKey: ['/api/landing-pages'],
-  });
+  // Fetch related data using proper hooks
+  const { data: groups = [] } = useGroups();
+  const { data: smtpProfiles = [] } = useSmtpProfiles();
+  const { data: templatesResponse } = useTemplates();
+  const emailTemplates = templatesResponse?.templates || [];
+  const { data: landingPages = [] } = useLandingPages();
 
   // Initialize form with safe default values
   const form = useForm<CampaignFormValues>({

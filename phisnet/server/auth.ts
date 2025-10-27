@@ -196,7 +196,7 @@ export function setupAuth(app: Express) {
           // Check if account is locked
           const lockStatus = await checkAccountLockStatus(user);
           if (lockStatus.locked) {
-            return done(null, false, { message: lockStatus.message });
+            return done(null, false, { message: lockStatus.message ?? "Account locked." });
           }
 
           const isValid = await comparePasswords(password, user.password);
@@ -221,7 +221,7 @@ export function setupAuth(app: Express) {
           return done(null, user);
         } catch (error) {
           console.error('Login error:', error);
-          return done(error);
+          return done(error instanceof Error ? error : new Error("Unknown error"));
         }
       }
     )
@@ -316,7 +316,7 @@ export function setupAuth(app: Express) {
 
   // Login endpoint
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err, user, info) => {
+    passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
         return next(err);
       }
@@ -360,7 +360,8 @@ export function setupAuth(app: Express) {
       const filePath = `/uploads/${req.file.filename}`;
       
       // Update user profile with the new picture path
-      await storage.updateUser(req.user.id, {
+  if (!req.user) throw new Error("User not authenticated");
+  await storage.updateUser(req.user.id, {
         profilePicture: filePath
       });
 
@@ -372,19 +373,19 @@ export function setupAuth(app: Express) {
       console.error("Error uploading profile picture:", error);
       
       // Handle multer errors specifically
-      if (error.code === 'LIMIT_FILE_SIZE') {
+  if (typeof error === 'object' && error !== null && 'code' in error && (error as any).code === 'LIMIT_FILE_SIZE') {
         return res.status(400).json({ 
           message: "File too large. Maximum size is 10MB." 
         });
       }
       
-      if (error.code === 'LIMIT_FILE_COUNT') {
+  if (typeof error === 'object' && error !== null && 'code' in error && (error as any).code === 'LIMIT_FILE_COUNT') {
         return res.status(400).json({ 
           message: "Too many files. Only one file allowed." 
         });
       }
       
-      if (error.message && error.message.includes('Only image files')) {
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as any).message === 'string' && (error as any).message.includes('Only image files')) {
         return res.status(400).json({ 
           message: "Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed." 
         });
@@ -403,12 +404,13 @@ export function setupAuth(app: Express) {
       // Only include allowed fields to prevent mass assignment vulnerabilities
       for (const field of allowedFields) {
         if (req.body[field] !== undefined) {
-          updates[field] = sanitizeInput(req.body[field]);
+      (updates as any)[field] = sanitizeInput(req.body[field]);
         }
       }
       
       // Update the user profile
-      const updatedUser = await storage.updateUser(req.user.id, updates);
+  if (!req.user) throw new Error("User not authenticated");
+  const updatedUser = await storage.updateUser(req.user.id, updates);
       
       if (!updatedUser) {
         return res.status(404).json({ message: "User not found" });
@@ -542,7 +544,8 @@ export function setupAuth(app: Express) {
       }
       
       // Get current user
-      const user = await storage.getUser(req.user.id);
+  if (!req.user) throw new Error("User not authenticated");
+  const user = await storage.getUser(req.user.id);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }

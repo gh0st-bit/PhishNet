@@ -33,7 +33,7 @@ export abstract class BaseThreatFeedProvider implements ThreatFeedProvider {
     }
   }
 
-  protected withTimeout<T>(promise: Promise<T>, timeoutMs: number = 10000): Promise<T> {
+  protected withTimeout<T>(promise: Promise<T>, timeoutMs: number = 30000): Promise<T> {
     return Promise.race([
       promise,
       new Promise<T>((_, reject) => 

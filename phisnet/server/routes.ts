@@ -31,6 +31,7 @@ import fs from 'fs';
 import { sendCampaignEmails } from './services/email-service';
 import { ThreatIntelligenceService } from './services/threat-intelligence/threat-intelligence.service';
 import { threatFeedScheduler } from './services/threat-intelligence/threat-feed-scheduler';
+import reconnaissanceRoutes from './routes/reconnaissance';
 
 const upload = multer();
 
@@ -154,10 +155,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let severity: 'High' | 'Medium' | 'Low' = 'Medium';
         
         // Determine threat level based on confidence and type
-        if (threat.confidence >= 80 || threat.threatType === 'phishing') {
+  if ((typeof threat.confidence === 'number' && threat.confidence >= 80) || threat.threatType === 'phishing') {
           level = 'high';
           severity = 'High';
-        } else if (threat.confidence >= 60) {
+        } else if (typeof threat.confidence === 'number' && threat.confidence >= 60) {
           level = 'medium';
           severity = 'Medium';
         } else {
@@ -877,13 +878,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     organizationId: campaign.organizationId,
                     type: 'campaign',
                     title: 'Email Opened',
-                    message: `${target.firstName} ${target.lastName} (${target.email}) opened the email from campaign "${campaign.name}".`,
+                    message: `${target?.firstName ?? ''} ${target?.lastName ?? ''} (${target?.email ?? ''}) opened the email from campaign "${campaign.name}".`,
                     priority: 'medium',
                     actionUrl: `/campaigns/${campaignId}`,
                     metadata: {
                       campaignId,
                       targetId,
-                      targetEmail: target.email,
+                      targetEmail: target?.email ?? '',
                       eventType: 'opened'
                     }
                   });
@@ -980,13 +981,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     organizationId: campaign.organizationId,
                     type: 'campaign',
                     title: 'Link Clicked',
-                    message: `${target.firstName} ${target.lastName} (${target.email}) clicked a link in the email from campaign "${campaign.name}".`,
+                    message: `${target?.firstName ?? ''} ${target?.lastName ?? ''} (${target?.email ?? ''}) clicked a link in the email from campaign "${campaign.name}".`,
                     priority: 'high', // Higher priority than just opening an email
                     actionUrl: `/campaigns/${campaignId}`,
                     metadata: {
                       campaignId,
                       targetId,
-                      targetEmail: target.email,
+                      targetEmail: target?.email ?? '',
                       eventType: 'clicked',
                       url: url // Include the URL that was clicked
                     }
@@ -1124,13 +1125,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     organizationId: campaign.organizationId,
                     type: 'campaign',
                     title: 'Form Submitted',
-                    message: `${target.firstName} ${target.lastName} (${target.email}) submitted information on the landing page from campaign "${campaign.name}".`,
+                    message: `${target?.firstName ?? ''} ${target?.lastName ?? ''} (${target?.email ?? ''}) submitted information on the landing page from campaign "${campaign.name}".`,
                     priority: 'urgent', // Highest priority - user submitted form data
                     actionUrl: `/campaigns/${campaignId}`,
                     metadata: {
                       campaignId,
                       targetId,
-                      targetEmail: target.email,
+                      targetEmail: target?.email ?? '',
                       eventType: 'submitted'
                     }
                   });
@@ -2166,13 +2167,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       assertUser(req.user);
       console.log('🔄 Manual threat feed ingestion triggered by admin...');
-      await threatIntelligenceService.ingestAllFeeds();
+      await threatService.ingestAllFeeds();
       res.json({ message: "Threat feed ingestion completed successfully" });
     } catch (error) {
       console.error("Error triggering manual ingestion:", error);
       res.status(500).json({ message: "Error triggering threat feed ingestion" });
     }
   });
+
+  // ===============================================
+  // RECONNAISSANCE ROUTES
+  // ===============================================
+
+  // Register reconnaissance routes
+  app.use('/api/reconnaissance', reconnaissanceRoutes);
+  console.log('✅ Reconnaissance routes registered');
 
   // Initialize threat feed scheduler
   console.log('🔐 Starting threat intelligence feed scheduler...');
