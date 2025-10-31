@@ -13,6 +13,7 @@ import GroupsPage from "@/pages/groups-page";
 import LandingPagesPage from "@/pages/landing-pages-page";
 import SmtpProfilesPage from "@/pages/smtp-profiles-page";
 import ReportsPage from "@/pages/reports-page";
+import ReportSchedulesPage from "@/pages/report-schedules-page";
 import UsersPage from "@/pages/users-page";
 import SettingsPage from "@/pages/settings-page";
 import ProfilePage from "@/pages/profile-page";
@@ -42,6 +43,7 @@ function Router() {
       <ProtectedRoute path="/landing-pages" component={LandingPagesPage} />
       <ProtectedRoute path="/smtp-profiles" component={SmtpProfilesPage} />
       <ProtectedRoute path="/reports" component={ReportsPage} />
+      <ProtectedRoute path="/report-schedules" component={ReportSchedulesPage} />
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/profile" component={ProfilePage} />

@@ -233,31 +233,31 @@ export default function ReconnaissancePage() {
           <TabsList className="mb-6 bg-muted p-1 h-auto">
             <TabsTrigger 
               value="overview" 
-              className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
             >
               Overview
             </TabsTrigger>
             <TabsTrigger 
               value="start" 
-              className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
             >
               Start Recon
             </TabsTrigger>
             <TabsTrigger 
               value="results" 
-              className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
             >
               Results
             </TabsTrigger>
             <TabsTrigger 
               value="testing" 
-              className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
             >
               Testing
             </TabsTrigger>
             <TabsTrigger 
               value="ai-tools" 
-              className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
             >
               AI Tools
             </TabsTrigger>

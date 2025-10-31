@@ -5,6 +5,7 @@ import PhishingMetricsChart from "@/components/dashboard/phishing-metrics-chart"
 import ThreatLandscape from "@/components/dashboard/threat-landscape";
 import AtRiskUsers from "@/components/dashboard/at-risk-users";
 import SecurityTraining from "@/components/dashboard/security-training";
+import { ReportExportButton } from "@/components/reports/report-export-button";
 import { useAuth } from "@/hooks/use-auth";
 import { 
   useDashboardStats, 
@@ -102,13 +103,44 @@ function RecentNotifications() {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  // auth is available if needed later
+  useAuth();
   
-  const { data: dashboardStats, isLoading: statsLoading } = useDashboardStats();
+  const { data: dashboardStats } = useDashboardStats();
   const { data: campaigns, isLoading: campaignsLoading } = useCampaigns();
+  // Real metrics for chart
+  const { data: phishingMetrics } = useQuery({
+    queryKey: ["/api/dashboard/phishing-metrics"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/phishing-metrics");
+      if (!res.ok) throw new Error("Failed to fetch phishing metrics");
+      return res.json();
+    },
+    refetchInterval: 10 * 60 * 1000,
+  });
+  // Real at-risk users
+  const { data: riskUsersRaw } = useQuery({
+    queryKey: ["/api/dashboard/risk-users"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/risk-users");
+      if (!res.ok) throw new Error("Failed to fetch risk users");
+      return res.json();
+    },
+    refetchInterval: 10 * 60 * 1000,
+  });
+  // Trainings (placeholder endpoint until real training module exists)
+  const { data: trainings } = useQuery({
+    queryKey: ["/api/dashboard/trainings"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/trainings");
+      if (!res.ok) throw new Error("Failed to fetch trainings");
+      return res.json();
+    },
+    staleTime: 30 * 60 * 1000,
+  });
   
   // Fetch threat intelligence data
-  const { data: threatData, isLoading: threatLoading } = useQuery({
+  const { data: threatData } = useQuery({
     queryKey: ['dashboard-threat-intel'],
     queryFn: async () => {
       const response = await fetch('/api/threat-intelligence/analysis');
@@ -120,6 +152,16 @@ export default function DashboardPage() {
 
   return (
     <AppLayout>
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground mt-1">
+            Overview of your phishing awareness campaigns
+          </p>
+        </div>
+        <ReportExportButton />
+      </div>
+      
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard 
           title="Active Campaigns"
@@ -164,13 +206,42 @@ export default function DashboardPage() {
             isLoading={campaignsLoading}
           />
         </div>
-        <PhishingMetricsChart data={undefined} />
+        <PhishingMetricsChart 
+          data={(phishingMetrics || []).map((m: any) => {
+            const hasRate = typeof m.rate === 'number';
+            let fallbackRate = 0;
+            if (!hasRate) {
+              const sent = Number(m.sent || 0);
+              const clicked = Number(m.clicked || 0);
+              fallbackRate = sent > 0 ? Math.round((clicked / sent) * 100) : 0;
+            }
+            return {
+              date: m.date,
+              rate: hasRate ? m.rate : fallbackRate,
+            };
+          })}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <ThreatLandscape threats={threatData?.recentThreats || []} threatAnalysis={threatData} />
-        <AtRiskUsers users={[]} />
-        <SecurityTraining trainings={[]} />
+        <AtRiskUsers 
+          users={(riskUsersRaw || []).map((u: any) => {
+            // Derive risk level if not provided
+            let derivedRisk: 'High Risk' | 'Medium Risk' | 'Low Risk' = 'Low Risk';
+            if (typeof u?.riskScore === 'number') {
+              if (u.riskScore >= 3) derivedRisk = 'High Risk';
+              else if (u.riskScore >= 2) derivedRisk = 'Medium Risk';
+            }
+            return {
+              id: u.id,
+              name: u.name,
+              department: u.department || 'Unknown',
+              riskLevel: u.riskLevel || derivedRisk,
+            };
+          })}
+        />
+        <SecurityTraining trainings={trainings || []} />
       </div>
 
       <div className="mt-6">

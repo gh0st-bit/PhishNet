@@ -14,7 +14,7 @@ import { Shield, Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { customToast } from "@/components/ui/custom-toast";
-import LogoImg from "@/assets/logo.jpg";
+import { Logo } from "@/components/common/logo";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -150,7 +150,7 @@ export default function AuthPage() {
         <div className="w-full max-w-md">
           <div className="flex justify-center mb-8">
             <div className="flex flex-col items-center">
-              <img src={LogoImg} alt="PhishNet Logo" className="h-20 w-20 mb-2" />
+              <Logo className="h-20 w-20 mb-2" />
               <span className="text-2xl font-bold text-foreground">PhishNet</span>
             </div>
           </div>
