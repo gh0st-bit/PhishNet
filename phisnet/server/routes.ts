@@ -7,8 +7,6 @@ import {
   campaigns, 
   campaignResults, 
   users, 
-  rolesSchema,
-  userRolesSchema,
   insertGroupSchema, 
   insertTargetSchema, 
   insertSmtpProfileSchema, 
@@ -18,8 +16,7 @@ import {
   reportSchedules,
   insertReportScheduleSchema,
   targets,
-  type User,
-  DEFAULT_ROLES
+  type User
 } from "@shared/schema";
 import { eq, and, sql, gte, lte, inArray } from "drizzle-orm";
 import multer from "multer";
@@ -27,7 +24,6 @@ import Papa from "papaparse";
 import { z } from "zod";
 import { errorHandler, assertUser } from './error-handler';
 import { NotificationService } from './services/notification-service';
-import { exportReportToCsv } from './utils/report-exporter';
 import { exportReport, ExportFormat } from './utils/report-exporter-enhanced';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -36,6 +32,7 @@ import { ThreatIntelligenceService } from './services/threat-intelligence/threat
 import { threatFeedScheduler } from './services/threat-intelligence/threat-feed-scheduler';
 import { reportingScheduler } from './services/reporting-scheduler';
 import reconnaissanceRoutes from './routes/reconnaissance';
+import { registerModularRoutes } from './routes/index';
 
 const upload = multer();
 
@@ -81,29 +78,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   setupAuth(app);
 
-  // API Health Check
-  app.get("/api/status", (_req, res) => {
-    res.status(200).json({ status: "ok" });
-  });
-  
-  // Session ping endpoint for refreshing user sessions
-  app.post("/api/session-ping", isAuthenticated, (req, res) => {
-    if (req.session) {
-      // Reset session expiry
-      req.session.touch();
-      
-      // Calculate time remaining in session
-      const maxAge = req.session.cookie.maxAge || 0;
-      const expiresIn = maxAge;
-      
-      console.log(`Session refreshed for user: ${req.user?.email}. Expires in ${Math.round(expiresIn/1000/60)} minutes`);
-    }
-    
-    res.status(200).json({ 
-      status: "ok", 
-      sessionExpiresIn: req.session?.cookie?.maxAge || 0
-    });
-  });
+  // Register modular routes (health, dashboard, notifications, threat intelligence)
+  registerModularRoutes(app);
+
+  // ===============================================
+  // LEGACY ROUTES BELOW (Being migrated to modular structure)
+  // Note: User management and roles endpoints have been moved to server/routes/users.ts
+  // NOTE: This file contains endpoints that are pending modularization migration
+  // ===============================================
 
   // Dashboard Stats - Real Data
   app.get("/api/dashboard/stats", isAuthenticated, hasOrganization, async (req, res) => {
@@ -1587,189 +1569,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/users", isAuthenticated, hasOrganization, async (req, res) => {
-    try {
-      assertUser(req.user);
-      // Ensure default roles are seeded (so users list always has roles available)
-      try {
-        const existingRole = await db.select({ id: rolesSchema.id }).from(rolesSchema).limit(1);
-        if (existingRole.length === 0) {
-          for (const r of DEFAULT_ROLES) {
-            try {
-              await db.insert(rolesSchema).values({
-                name: r.name,
-                description: r.description,
-                // store permissions as raw array (schema default now array JSON)
-                permissions: Array.isArray((r as any).permissions) ? (r as any).permissions : (r as any).permissions?.permissions || []
-              } as any);
-            } catch {}
-          }
-        }
-      } catch (e) {
-        console.error('Role seeding check failed:', e);
-      }
-
-      const userList = await db.select({
-        id: users.id,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        email: users.email,
-        isActive: users.isActive,
-        lastLogin: users.lastLogin,
-        profilePicture: users.profilePicture,
-        createdAt: users.createdAt,
-        isAdmin: users.isAdmin,
-      })
-      .from(users)
-      .where(eq(users.organizationId, req.user.organizationId));
-      
-      // Get roles for each user, auto-assign Admin if needed
-      const usersWithRoles = await Promise.all(
-        userList.map(async (user) => {
-          let userRoles = await db.select({
-            id: rolesSchema.id,
-            name: rolesSchema.name,
-            description: rolesSchema.description,
-            permissions: rolesSchema.permissions,
-          })
-          .from(userRolesSchema)
-          .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
-          .where(eq(userRolesSchema.userId, user.id));
-
-          if (userRoles.length === 0 && (user.isAdmin || user.email.toLowerCase() === 'admin@phishnet.com')) {
-            // Auto-assign Admin role if missing
-            const [adminRole] = await db.select({ id: rolesSchema.id, name: rolesSchema.name, description: rolesSchema.description, permissions: rolesSchema.permissions })
-              .from(rolesSchema)
-              .where(eq(rolesSchema.name, 'Admin'));
-            if (adminRole) {
-              try {
-                await db.insert(userRolesSchema).values({ userId: user.id, roleId: adminRole.id });
-                userRoles.push(adminRole);
-              } catch (e) {
-                // Ignore duplicates racing, but log for diagnostics
-                console.warn('Role auto-assign duplicate or race condition:', e);
-              }
-            }
-          }
-          
-          return {
-            ...user,
-            roles: userRoles,
-          };
-        })
-      );
-      
-      res.json(usersWithRoles);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      res.status(500).json({ message: "Error fetching users" });
-    }
-  });
-
-  app.post("/api/users", isAuthenticated, hasOrganization, isAdmin, async (req, res) => {
-    try {
-  assertUser(req.user);
-      const { firstName, lastName, email, password, roleId, isActive } = req.body;
-      
-      // Check if user already exists
-      const existingUser = await db.select()
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
-      
-      if (existingUser.length > 0) {
-        return res.status(400).json({ message: "User with this email already exists" });
-      }
-      
-      // Hash password
-      const hashedPassword = await hashPassword(password);
-      
-      // Create user
-      const [newUser] = await db.insert(users).values({
-        firstName,
-        lastName,
-        email,
-        password: hashedPassword,
-        isActive: isActive ?? true,
-        organizationId: req.user.organizationId,
-      }).returning();
-      
-      // Assign roles
-      if (roleId) {
-        await db.insert(userRolesSchema).values({ userId: newUser.id, roleId: Number(roleId) });
-      }
-      
-      res.status(201).json({ 
-        message: "User created successfully", 
-        user: { 
-          id: newUser.id, 
-          firstName: newUser.firstName, 
-          lastName: newUser.lastName,
-          email: newUser.email 
-        } 
-      });
-    } catch (error) {
-      console.error("Error creating user:", error);
-      res.status(500).json({ message: "Error creating user" });
-    }
-  });
-
-  app.put("/api/users/:id", isAuthenticated, hasOrganization, isAdmin, async (req, res) => {
-    try {
-  assertUser(req.user);
-  const userId = Number.parseInt(req.params.id, 10);
-      const { firstName, lastName, email, roleId, isActive } = req.body;
-      
-      // Update user
-      const [updatedUser] = await db.update(users)
-        .set({ 
-          firstName, 
-          lastName, 
-          email, 
-          isActive,
-          updatedAt: new Date() 
-        })
-        .where(eq(users.id, userId))
-        .returning();
-      
-      // Update roles
-      if (roleId) {
-        // Remove existing roles
-        await db.delete(userRolesSchema).where(eq(userRolesSchema.userId, userId));
-        
-        // Add new roles
-        await db.insert(userRolesSchema).values({ userId, roleId: Number(roleId) });
-      }
-      
-      res.json({ message: "User updated successfully", user: updatedUser });
-    } catch (error) {
-      console.error("Error updating user:", error);
-      res.status(500).json({ message: "Error updating user" });
-    }
-  });
-
-  app.delete("/api/users/:id", isAuthenticated, hasOrganization, isAdmin, async (req, res) => {
-    try {
-  assertUser(req.user);
-  const userId = Number.parseInt(req.params.id, 10);
-      
-      // Don't allow deleting self
-      if (userId === req.user.id) {
-        return res.status(400).json({ message: "Cannot delete your own account" });
-      }
-      
-      // Delete user roles first
-      await db.delete(userRolesSchema).where(eq(userRolesSchema.userId, userId));
-      
-      // Delete user
-      await db.delete(users).where(eq(users.id, userId));
-      
-      res.json({ message: "User deleted successfully" });
-    } catch (error) {
-      console.error("Error deleting user:", error);
-      res.status(500).json({ message: "Error deleting user" });
-    }
-  });
+  // NOTE: User management endpoints (GET, POST, PUT, DELETE /api/users) have been
+  // moved to server/routes/users.ts for better modularization
 
   // Reports Export Endpoints
   app.post("/api/reports/export", isAuthenticated, hasOrganization, async (req, res) => {
@@ -2146,43 +1947,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Roles listing endpoint
-  app.get("/api/roles", isAuthenticated, hasOrganization, async (req, res) => {
-    try {
-      assertUser(req.user);
-      let roles = await db.select({
-        id: rolesSchema.id,
-        name: rolesSchema.name,
-        description: rolesSchema.description,
-        permissions: rolesSchema.permissions,
-      }).from(rolesSchema);
-
-      if (!roles || roles.length === 0) {
-        // Seed default roles if table empty
-        for (const r of DEFAULT_ROLES) {
-          try {
-            await db.insert(rolesSchema).values({
-              name: r.name,
-              description: r.description,
-              permissions: Array.isArray((r as any).permissions) ? (r as any).permissions : (r as any).permissions?.permissions || []
-            } as any);
-          } catch (e) {
-            console.warn('Role seed duplicate or race condition:', e);
-          }
-        }
-        roles = await db.select({
-          id: rolesSchema.id,
-          name: rolesSchema.name,
-          description: rolesSchema.description,
-          permissions: rolesSchema.permissions,
-        }).from(rolesSchema);
-      }
-
-      res.json(roles);
-    } catch (error) {
-      console.error("Error fetching roles:", error);
-      res.status(500).json({ message: "Error fetching roles" });
-    }
-  });
+  // NOTE: Roles endpoint (GET /api/roles) has been moved to server/routes/users.ts
+  // since roles are closely related to user management
 
   // ===============================================
   // THREAT INTELLIGENCE ROUTES
@@ -2633,8 +2399,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Initialize threat feed scheduler
-  console.log('🔐 Starting threat intelligence feed scheduler...');
-  threatFeedScheduler.start(2); // Run every 2 hours
+  // TEMPORARILY DISABLED FOR TESTING - causing crashes
+  // console.log('🔐 Starting threat intelligence feed scheduler...');
+  // threatFeedScheduler.start(2); // Run every 2 hours
 
   // Initialize reporting scheduler
   console.log('📊 Starting report scheduler...');

@@ -73,8 +73,13 @@ export function trackActivity() {
   // Ping server to refresh session (but not too frequently)
   const now = Date.now();
   const lastPing = sessionStorage.getItem('lastSessionPing');
-  if (!lastPing || now - parseInt(lastPing) > 5 * 60 * 1000) { // 5 minutes
+  // On first load (no lastPing), skip the immediate ping since login just established the session
+  // Otherwise, only ping if more than 5 minutes have passed
+  if (lastPing && now - parseInt(lastPing) > 5 * 60 * 1000) { // 5 minutes
     refreshSession();
+  } else if (!lastPing) {
+    // Mark initial session time without pinging (login just established the session)
+    sessionStorage.setItem('lastSessionPing', now.toString());
   }
 }
 

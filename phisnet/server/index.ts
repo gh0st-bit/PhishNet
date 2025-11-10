@@ -81,9 +81,10 @@ app.use((req, res, next) => {
     startCampaignScheduler(intervalMs);
     
     // Start threat intelligence feed scheduler (runs every 2 hours)
-    const threatIntervalHours = parseInt(process.env.THREAT_FEED_INTERVAL_HOURS || '2', 10);
-    threatFeedScheduler.start(threatIntervalHours);
-    log(`Threat intelligence scheduler started (every ${threatIntervalHours} hours)`);
+    // TEMPORARILY DISABLED FOR TESTING - causing crashes
+    // const threatIntervalHours = parseInt(process.env.THREAT_FEED_INTERVAL_HOURS || '2', 10);
+    // threatFeedScheduler.start(threatIntervalHours);
+    // log(`Threat intelligence scheduler started (every ${threatIntervalHours} hours)`);
   });
 })();
 

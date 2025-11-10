@@ -111,7 +111,20 @@ export default function CampaignsPage() {
         throw new Error(error.message || 'Failed to export campaign report');
       }
       
-      return await response.json();
+      // Get the blob from the response
+      const blob = await response.blob();
+      
+      // Extract filename from Content-Disposition header
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `campaign-${campaignId}-results.${format}`;
+      if (contentDisposition) {
+        const matches = /filename="([^"]+)"/.exec(contentDisposition);
+        if (matches && matches[1]) {
+          filename = matches[1];
+        }
+      }
+      
+      return { blob, filename, format };
     },
     onSuccess: (data) => {
       const formatName = data.format === 'xlsx' ? 'Excel' : 
@@ -119,12 +132,14 @@ export default function CampaignsPage() {
                          data.format === 'csv' ? 'CSV' : 'PDF';
       
       // Create a download link and trigger it
+      const url = window.URL.createObjectURL(data.blob);
       const link = document.createElement('a');
-      link.href = data.downloadUrl;
+      link.href = url;
       link.download = data.filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      window.URL.revokeObjectURL(url); // Clean up
       
       toast({
         title: "Report exported",
