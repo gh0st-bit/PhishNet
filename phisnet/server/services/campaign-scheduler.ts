@@ -4,13 +4,14 @@ import { and, lte, isNotNull, inArray, eq } from "drizzle-orm";
 import { sendCampaignEmails } from "./email-service";
 
 let schedulerStarted = false;
+let intervalHandle: NodeJS.Timeout | null = null;
 
 export function startCampaignScheduler(intervalMs: number = 60_000) {
   if (schedulerStarted) return;
   schedulerStarted = true;
   console.log(`[Scheduler] Campaign scheduler started (every ${intervalMs / 1000}s)`);
 
-  setInterval(async () => {
+  intervalHandle = setInterval(async () => {
     try {
       const now = new Date();
       // Pick campaigns that are scheduled and due now or in the past.
@@ -44,4 +45,13 @@ export function startCampaignScheduler(intervalMs: number = 60_000) {
       console.error('[Scheduler] Tick error:', e);
     }
   }, intervalMs);
+}
+
+export function stopCampaignScheduler() {
+  if (intervalHandle) {
+    clearInterval(intervalHandle);
+    intervalHandle = null;
+  }
+  schedulerStarted = false;
+  console.log('[Scheduler] Campaign scheduler stopped');
 }

@@ -90,19 +90,16 @@ phishnet/
 ## 🔧 Features
 
 ### Core Functionality
-- **Campaign Management**: Create and manage phishing campaigns
-- **Email Templates**: Pre-built and custom email templates
-- **Landing Pages**: Realistic phishing landing pages
-- **Target Management**: Organize targets into groups
-- **SMTP Profiles**: Configure email sending settings
-- **Real-time Analytics**: Track campaign performance
-- **Detailed Reporting**: Export results to CSV/PDF
+
+### Threat Intelligence & Notifications
+- **Live Threat Feed**: Automated ingestion from AlienVault OTX, AbuseIPDB, URLhaus
+- **Per-User Notifications**: Smart notification system for threat intelligence updates
+- **Priority Alerts**: Automatic priority assignment (low/medium/high) based on threat volume
+- **Notification Center**: Centralized `/notifications` page with unread badges
+- **Direct Navigation**: Click notifications to jump to threat landscape analysis
+- **Scheduled Ingestion**: Background job runs hourly via GitHub Actions workflow
 
 ### Security Features
-- **Session Management**: Secure session handling
-- **Input Validation**: Comprehensive data validation
-- **SQL Injection Protection**: Parameterized queries
-- **XSS Protection**: Content sanitization
 
 ### Runtime Error Detection
 - **Automatic Error Logging**: Captures and logs all runtime errors

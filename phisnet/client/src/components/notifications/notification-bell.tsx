@@ -1,7 +1,7 @@
 // Create: phisnet/client/src/components/notifications/notification-bell.tsx
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, Check, Trash2, Settings } from "lucide-react";
+import { Bell, Check, Trash2, Settings, AlertTriangle, Shield, BrainCircuit } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -101,7 +101,7 @@ export default function NotificationBell() {
     }
     
     if (notification.actionUrl) {
-      window.location.href = notification.actionUrl;
+      globalThis.location.href = notification.actionUrl;
     }
   };
 
@@ -116,12 +116,14 @@ export default function NotificationBell() {
   };
 
   const getTypeIcon = (type: string) => {
+    // Use lucide icons for consistency; fallback emojis where not mapped
     switch (type) {
       case 'campaign': return '📧';
-      case 'security': return '🔒';
+      case 'security': return <Shield className="h-4 w-4 text-blue-500" />;
       case 'system': return '⚙️';
       case 'training': return '📚';
-      default: return '📢';
+      case 'threat_intel': return <AlertTriangle className="h-4 w-4 text-red-500" />;
+      default: return <BrainCircuit className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
@@ -164,7 +166,7 @@ export default function NotificationBell() {
                 <DropdownMenuItem
                   onClick={() => {
                     setIsOpen(false);
-                    window.location.href = '/settings?tab=notifications';
+                    globalThis.location.href = '/settings?tab=notifications';
                   }}
                 >
                   Notification Settings
@@ -185,35 +187,51 @@ export default function NotificationBell() {
                 <div
                   key={notification.id}
                   className={cn(
-                    "p-4 hover:bg-muted/50 cursor-pointer transition-colors",
+                    "transition-colors",
                     !notification.isRead && "bg-blue-50 dark:bg-blue-950/20"
                   )}
-                  onClick={() => handleNotificationClick(notification)}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-shrink-0">
-                      <div className={cn(
-                        "w-2 h-2 rounded-full mt-2",
-                        getPriorityColor(notification.priority)
-                      )} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">{getTypeIcon(notification.type)}</span>
-                        <h4 className={cn(
-                          "text-sm",
-                          !notification.isRead && "font-semibold"
-                        )}>
-                          {notification.title}
-                        </h4>
+                  <div className="flex items-start gap-1">
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex items-start gap-3 flex-1 min-w-0 p-4 hover:bg-muted/50 outline-none text-left bg-transparent"
+                      )}
+                      onClick={() => handleNotificationClick(notification)}
+                      aria-label={`Notification: ${notification.title}`}
+                    >
+                      <div className="flex-shrink-0">
+                        <div
+                          className={cn(
+                            "w-2 h-2 rounded-full mt-2",
+                            getPriorityColor(notification.priority)
+                          )}
+                        />
                       </div>
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                        {notification.message}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
-                      </p>
-                    </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg flex items-center justify-center">
+                            {getTypeIcon(notification.type)}
+                          </span>
+                          <h4
+                            className={cn(
+                              "text-sm",
+                              !notification.isRead && "font-semibold"
+                            )}
+                          >
+                            {notification.title}
+                          </h4>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                          {notification.message}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {formatDistanceToNow(new Date(notification.createdAt), {
+                            addSuffix: true,
+                          })}
+                        </p>
+                      </div>
+                    </button>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -221,7 +239,7 @@ export default function NotificationBell() {
                         e.stopPropagation();
                         deleteMutation.mutate(notification.id);
                       }}
-                      className="flex-shrink-0"
+                      className="flex-shrink-0 m-2"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -241,7 +259,7 @@ export default function NotificationBell() {
                 className="w-full text-sm"
                 onClick={() => {
                   setIsOpen(false);
-                  window.location.href = '/notifications';
+                  globalThis.location.href = '/notifications';
                 }}
               >
                 View All Notifications

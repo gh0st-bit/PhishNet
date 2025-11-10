@@ -1973,14 +1973,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const limit = Number.parseInt(req.query.limit as string, 10) || 20;
       const offset = (page - 1) * limit;
       
-      const notifications = await NotificationService.getUserNotifications(
+      const rows = await NotificationService.getUserNotifications(
         req.user.id, 
         limit, 
         offset
       );
-      
+
+      // Normalize to camelCase for client
+      const notifications = (rows || []).map((n: any) => ({
+        id: n.id,
+        userId: n.user_id,
+        organizationId: n.organization_id,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        priority: n.priority,
+        isRead: n.is_read,
+        readAt: n.read_at,
+        actionUrl: n.action_url,
+        createdAt: n.created_at,
+        metadata: n.metadata,
+      }));
+
       const unreadCount = await NotificationService.getUnreadCount(req.user.id);
-      
+
       res.json({
         notifications,
         unreadCount,
