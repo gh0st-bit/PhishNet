@@ -2398,10 +2398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Initialize threat feed scheduler
-  // TEMPORARILY DISABLED FOR TESTING - causing crashes
-  // console.log('🔐 Starting threat intelligence feed scheduler...');
-  // threatFeedScheduler.start(2); // Run every 2 hours
+  // Initialize threat feed scheduler (now controlled via THREAT_FEED_ENABLED env var in index.ts)
 
   // Initialize reporting scheduler
   console.log('📊 Starting report scheduler...');

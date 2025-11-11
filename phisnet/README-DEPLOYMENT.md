@@ -127,6 +127,12 @@ DATABASE_URL=postgresql://phishnet_user:password@localhost:5432/phishnet_db
 SESSION_SECRET=your-secure-session-secret-here
 JWT_SECRET=your-jwt-secret-here
 
+# Threat Intelligence Scheduler
+# Set THREAT_FEED_ENABLED=false to disable ingestion in low-resource or test environments
+THREAT_FEED_ENABLED=true
+# Interval (hours) between automatic threat feed ingestions
+THREAT_FEED_INTERVAL_HOURS=2
+
 # SMTP (for sending phishing emails)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587

@@ -55,6 +55,7 @@ app.use((req, res, next) => {
   next();
 });
 
+// eslint-disable-next-line prefer-top-level-await
 (async () => {
   const server = await registerRoutes(app);
 
@@ -77,14 +78,23 @@ app.use((req, res, next) => {
     log(`Server running at http://localhost:${port}`);
     
     // Start background scheduler to auto-send due campaigns
-    const intervalMs = parseInt(process.env.CAMPAIGN_SCHEDULER_INTERVAL_MS || '60000', 10);
+  const intervalMs = Number.parseInt(process.env.CAMPAIGN_SCHEDULER_INTERVAL_MS || '60000', 10);
     startCampaignScheduler(intervalMs);
     
-    // Start threat intelligence feed scheduler (runs every 2 hours)
-    // TEMPORARILY DISABLED FOR TESTING - causing crashes
-    // const threatIntervalHours = parseInt(process.env.THREAT_FEED_INTERVAL_HOURS || '2', 10);
-    // threatFeedScheduler.start(threatIntervalHours);
-    // log(`Threat intelligence scheduler started (every ${threatIntervalHours} hours)`);
+    // Start threat intelligence feed scheduler (runs every N hours)
+    // Controlled via env var THREAT_FEED_ENABLED=true to avoid accidental start in constrained environments
+    try {
+      const enabled = (process.env.THREAT_FEED_ENABLED || 'true').toLowerCase() === 'true';
+      if (enabled) {
+  const threatIntervalHours = Number.parseInt(process.env.THREAT_FEED_INTERVAL_HOURS || '2', 10);
+        threatFeedScheduler.start(threatIntervalHours);
+        log(`Threat intelligence scheduler started (every ${threatIntervalHours} hours)`);
+      } else {
+        log('Threat intelligence scheduler disabled via THREAT_FEED_ENABLED env var');
+      }
+    } catch (err) {
+      console.error('Failed to start threat intelligence scheduler:', err);
+    }
   });
 })();
 
