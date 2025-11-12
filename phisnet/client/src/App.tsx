@@ -13,6 +13,7 @@ import GroupsPage from "@/pages/groups-page";
 import LandingPagesPage from "@/pages/landing-pages-page";
 import SmtpProfilesPage from "@/pages/smtp-profiles-page";
 import ReportsPage from "@/pages/reports-page";
+import ReportSchedulesPage from "@/pages/report-schedules-page";
 import UsersPage from "@/pages/users-page";
 import SettingsPage from "@/pages/settings-page";
 import ProfilePage from "@/pages/profile-page";
@@ -20,6 +21,7 @@ import OrganizationPage from "@/pages/organization-page";
 import ForgotPasswordPage from "@/pages/forgot-password-page";
 import ResetPasswordPage from "@/pages/reset-password-page";
 import ThreatLandscapePage from "@/pages/threat-landscape-page";
+import NotificationsPage from "./pages/notifications-page";
 import SessionTimeoutWrapper from "@/components/session-timeout-wrapper";
 import { ProtectedRoute } from "./lib/protected-route";
 import { ThemeProvider } from "next-themes";
@@ -42,11 +44,13 @@ function Router() {
       <ProtectedRoute path="/landing-pages" component={LandingPagesPage} />
       <ProtectedRoute path="/smtp-profiles" component={SmtpProfilesPage} />
       <ProtectedRoute path="/reports" component={ReportsPage} />
+      <ProtectedRoute path="/report-schedules" component={ReportSchedulesPage} />
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/profile" component={ProfilePage} />
       <ProtectedRoute path="/organization" component={OrganizationPage} />
       <ProtectedRoute path="/threat-landscape" component={ThreatLandscapePage} />
+  <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <Route component={NotFound} />
     </Switch>
   );

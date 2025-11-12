@@ -28,9 +28,11 @@ vi.mock('@/components/ui/custom-toast', () => ({
   },
 }));
 
-// Mock logo import
-vi.mock('@/assets/logo.jpg', () => ({
-  default: 'mocked-logo.jpg',
+// Mock Logo component
+vi.mock('@/components/common/logo', () => ({
+  Logo: ({ className, alt }: { className?: string; alt?: string }) => (
+    <img src="mocked-logo.png" alt={alt || "PhishNet Logo"} className={className} />
+  ),
 }));
 
 describe('AuthPage', () => {

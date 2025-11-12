@@ -60,6 +60,13 @@ docs/incident-reports/
 **/INTERNAL*
 **/RESTRICTED*
 
+# Development Roadmap & Task Tracking (PRIVATE - DO NOT COMMIT)
+DEVELOPMENT-ROADMAP.md
+TASK-TRACKER.md
+PROJECT-ROADMAP.md
+TODO-PRIVATE.md
+FEATURES-BACKLOG.md
+
 # Development artifacts
 .DS_Store
 .vscode/settings.json

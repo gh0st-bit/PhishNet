@@ -3,43 +3,44 @@
 @tailwind utilities;
 
 :root {
-  --background: 0 0% 15%; /* #262626 - Dark grey */
-  --foreground: 0 0% 90%; /* #E5E5E5 - Light grey text */
-  --muted: 0 0% 45%; /* #737373 - Medium grey */
-  --muted-foreground: 0 0% 65%; /* #A6A6A6 - Lighter grey text */
-  --popover: 0 0% 15%; /* #262626 - Dark grey */
-  --popover-foreground: 0 0% 90%; /* #E5E5E5 - Light grey text */
-  --card: 0 0% 20%; /* #333333 - Medium-dark grey */
-  --card-foreground: 0 0% 90%; /* #E5E5E5 - Light grey text */
-  --border: 0 0% 25%; /* #404040 - Border grey */
-  --input: 0 0% 25%; /* #404040 - Input grey */
-  --primary: 30 100% 50%; /* #FF8000 - Vibrant orange */
+  /* Light theme (white background) */
+  --background: 0 0% 100%; /* #FFFFFF - White */
+  --foreground: 0 0% 0%;   /* #000000 - Black text */
+  --muted: 0 0% 96%;       /* #F5F5F5 - Light grey surface */
+  --muted-foreground: 0 0% 40%; /* #666666 - Muted text */
+  --popover: 0 0% 100%;    /* White */
+  --popover-foreground: 0 0% 0%;   /* Black text */
+  --card: 0 0% 100%;       /* White cards */
+  --card-foreground: 0 0% 0%; /* Black text on cards */
+  --border: 0 0% 88%;      /* #E0E0E0 - Light border */
+  --input: 0 0% 88%;       /* #E0E0E0 - Input border */
+  --primary: 30 100% 50%;  /* #FF8000 - Vibrant orange */
   --primary-foreground: 0 0% 100%; /* White text on orange */
-  --secondary: 0 0% 25%; /* #404040 - Dark grey */
-  --secondary-foreground: 0 0% 90%; /* #E5E5E5 - Light grey text */
-  --accent: 30 90% 55%; /* #FFA333 - Slightly lighter orange */
-  --accent-foreground: 0 0% 100%; /* White text on accent */
-  --destructive: 0 75% 50%; /* #BF4040 - Muted red */
+  --secondary: 0 0% 96%;   /* #F5F5F5 - Subtle secondary bg */
+  --secondary-foreground: 0 0% 0%;  /* Black text */
+  --accent: 30 90% 55%;    /* #FFA333 - Slightly lighter orange */
+  --accent-foreground: 0 0% 100%;   /* White text on accent */
+  --destructive: 0 75% 50%; /* #BF4040 - Red */
   --destructive-foreground: 0 0% 100%; /* White text on destructive */
-  --ring: 30 100% 50%; /* #FF8000 - Orange ring */
+  --ring: 30 100% 50%;     /* #FF8000 - Orange ring */
   --radius: 0.5rem;
   
-  /* Chart colors */
+  /* Chart colors (kept consistent) */
   --chart-1: 30 100% 50%; /* #FF8000 - Orange */
-  --chart-2: 30 80% 60%; /* #FFA64D - Light orange */
-  --chart-3: 0 0% 65%; /* #A6A6A6 - Light grey */
-  --chart-4: 0 0% 35%; /* #595959 - Dark grey */
-  --chart-5: 0 0% 50%; /* #808080 - Medium grey */
+  --chart-2: 30 80% 60%;  /* #FFA64D - Light orange */
+  --chart-3: 0 0% 65%;    /* #A6A6A6 - Light grey */
+  --chart-4: 0 0% 35%;    /* #595959 - Dark grey */
+  --chart-5: 0 0% 50%;    /* #808080 - Medium grey */
   
-  /* Sidebar */
-  --sidebar-background: 0 0% 12%; /* #1F1F1F - Darker grey */
-  --sidebar-foreground: 0 0% 90%; /* #E5E5E5 - Light grey text */
-  --sidebar-primary: 30 100% 50%; /* #FF8000 - Orange */
+  /* Sidebar for light theme */
+  --sidebar-background: 0 0% 100%;   /* White */
+  --sidebar-foreground: 0 0% 13%;    /* #222222 - Dark text */
+  --sidebar-primary: 30 100% 50%;    /* Orange */
   --sidebar-primary-foreground: 0 0% 100%; /* White */
-  --sidebar-accent: 0 0% 18%; /* #2E2E2E - Dark grey */
-  --sidebar-accent-foreground: 0 0% 90%; /* #E5E5E5 - Light grey text */
-  --sidebar-border: 0 0% 20%; /* #333333 - Border grey */
-  --sidebar-ring: 30 100% 50%; /* #FF8000 - Orange */
+  --sidebar-accent: 0 0% 96%;        /* #F5F5F5 */
+  --sidebar-accent-foreground: 0 0% 20%; /* #333333 */
+  --sidebar-border: 0 0% 90%;        /* #E6E6E6 */
+  --sidebar-ring: 30 100% 50%;       /* Orange */
 }
 
 .dark {

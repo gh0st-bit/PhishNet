@@ -12,11 +12,12 @@ import {
   Settings, 
   Menu,
   AlertTriangle,
-  Search
+  Search,
+  Calendar
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import LogoImg from '@/assets/logo.jpg';
+import { Logo } from "@/components/common/logo";
 
 interface NavigationItem {
   name: string;
@@ -38,6 +39,7 @@ export default function Sidebar() {
     { name: "SMTP Profiles", href: "/smtp-profiles", icon: <Send className="h-5 w-5" /> },
     { name: "Threat Landscape", href: "/threat-landscape", icon: <AlertTriangle className="h-5 w-5" /> },
     { name: "Reports", href: "/reports", icon: <BarChart className="h-5 w-5" /> },
+    { name: "Report Schedules", href: "/report-schedules", icon: <Calendar className="h-5 w-5" /> },
     { name: "Users", href: "/users", icon: <Shield className="h-5 w-5" /> },
     { name: "Settings", href: "/settings", icon: <Settings className="h-5 w-5" /> },
   ];
@@ -64,7 +66,7 @@ export default function Sidebar() {
       )}>
         <div className="flex items-center justify-center h-16 border-b border-border">
           <div className="flex items-center space-x-2">
-            <img src={LogoImg} alt="PhishNet Logo" className="h-6 w-6" />
+            <Logo className="h-8 w-8" />
             <span className="text-xl font-bold text-foreground">PhishNet</span>
           </div>
         </div>

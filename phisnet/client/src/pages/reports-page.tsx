@@ -9,6 +9,13 @@ import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
 import { addDays, format } from "date-fns";
 import { DateRange } from "react-day-picker";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { 
   Download, 
   FileDown, 
@@ -17,11 +24,15 @@ import {
   Activity,
   Mail,
   TrendingUp,
-  Users
+  Users,
+  FileSpreadsheet,
+  FileText,
+  FileJson
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { useLocation } from "wouter";
 import {
   LineChart,
   Line,
@@ -41,14 +52,16 @@ import {
 export default function ReportsPage() {
   const { theme } = useTheme();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const isDark = theme === "dark";
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: addDays(new Date(), -30),
+    from: addDays(new Date(), -365),
     to: new Date(),
   });
 
   const [activeTab, setActiveTab] = useState("overview");
+  const [exportFormat, setExportFormat] = useState<string>("pdf");
 
   // Fetch real report data
   const { data: reportData, isLoading } = useQuery({
@@ -65,9 +78,11 @@ export default function ReportsPage() {
 
   // Export mutation
   const exportMutation = useMutation({
-    mutationFn: async (exportType: string) => {
+    mutationFn: async ({ exportType, format }: { exportType: string; format: string }) => {
       const response = await apiRequest("POST", "/api/reports/export", {
         type: exportType,
+        format: format,
+        theme: theme, // Pass current theme to server
         dateRange: dateRange
           ? {
               start: dateRange.from?.toISOString(),
@@ -78,9 +93,16 @@ export default function ReportsPage() {
       return await response.json();
     },
     onSuccess: (data) => {
+      const formatLabels: Record<string, string> = {
+        pdf: 'PDF',
+        xlsx: 'Excel',
+        json: 'JSON',
+        csv: 'CSV'
+      };
+      
       toast({
         title: "Export successful",
-        description: "Your report has been exported successfully.",
+        description: `Your ${formatLabels[data.format] || data.format.toUpperCase()} report has been generated successfully.`,
       });
 
       // Download the file
@@ -101,7 +123,7 @@ export default function ReportsPage() {
   });
 
   const handleExport = (type: string) => {
-    exportMutation.mutate(type);
+    exportMutation.mutate({ exportType: type, format: exportFormat });
   };
 
   // Colors for charts
@@ -123,13 +145,44 @@ export default function ReportsPage() {
             onDateChange={setDateRange}
             className="w-[300px]"
           />
+          <Select value={exportFormat} onValueChange={setExportFormat}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue placeholder="Select format" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pdf">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  <span>PDF Document</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="xlsx">
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span>Excel (.xlsx)</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="json">
+                <div className="flex items-center gap-2">
+                  <FileJson className="h-4 w-4" />
+                  <span>JSON Data</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="csv">
+                <div className="flex items-center gap-2">
+                  <FileDown className="h-4 w-4" />
+                  <span>CSV File</span>
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             variant="outline"
             onClick={() => handleExport("comprehensive")}
             disabled={exportMutation.isPending}
           >
             <Download className="mr-2 h-4 w-4" />
-            Export All
+            {exportMutation.isPending ? 'Exporting...' : 'Export All'}
           </Button>
         </div>
       </div>
@@ -388,7 +441,11 @@ export default function ReportsPage() {
                       <TableCell>{campaign.clickedCount}</TableCell>
                       <TableCell>{campaign.successRate}%</TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="sm">
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          onClick={() => setLocation('/campaigns')}
+                        >
                           View Details
                         </Button>
                       </TableCell>

@@ -216,9 +216,13 @@ export default function TemplatesPage() {
           {selectedTemplate && (
             <TemplatePreview template={{
               ...selectedTemplate,
+              created_at: selectedTemplate.created_at instanceof Date ? selectedTemplate.created_at : new Date(selectedTemplate.created_at),
+              updated_at: selectedTemplate.updated_at instanceof Date ? selectedTemplate.updated_at : new Date(selectedTemplate.updated_at),
               type: selectedTemplate.type ?? null,
               description: selectedTemplate.description ?? '',
-              created_by_id: selectedTemplate.created_by_id ?? null
+              created_by_id: selectedTemplate.created_by_id ?? null,
+              complexity: selectedTemplate.complexity ?? null,
+              category: selectedTemplate.category ?? null
             }} />
           )}
         </DialogContent>

@@ -26,13 +26,22 @@ import {
 import CampaignForm from "@/components/campaigns/campaign-form";
 import CampaignEditor from "@/components/campaigns/campaign-editor";
 import CampaignDetails from "@/components/campaigns/campaign-details";
-import { Plus, ChevronRight, Calendar, Mail, Users, Edit, Trash2, Loader2 } from "lucide-react";
+import { Plus, ChevronRight, Calendar, Mail, Users, Edit, Trash2, Loader2, FileText, FileSpreadsheet, FileJson, FileDown } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useCampaigns } from "@/hooks/useApi";
 import { getBadgeVariant, safeToString } from "@/lib/utils";
 import type { Campaign } from "@shared/types/api";
+import { useTheme } from "next-themes";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function CampaignsPage() {
   const [isCreating, setIsCreating] = useState(false);
@@ -44,6 +53,7 @@ export default function CampaignsPage() {
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { theme } = useTheme();
   
   const { data: campaigns = [], isLoading, error } = useCampaigns();
 
@@ -88,6 +98,66 @@ export default function CampaignsPage() {
       });
     }
   });
+
+  const exportMutation = useMutation({
+    mutationFn: async ({ campaignId, format }: { campaignId: number; format: string }) => {
+      const response = await apiRequest('POST', `/api/campaigns/${campaignId}/export`, {
+        format: format,
+        theme: theme // Pass current theme to server
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to export campaign report');
+      }
+      
+      // Get the blob from the response
+      const blob = await response.blob();
+      
+      // Extract filename from Content-Disposition header
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `campaign-${campaignId}-results.${format}`;
+      if (contentDisposition) {
+        const matches = /filename="([^"]+)"/.exec(contentDisposition);
+        if (matches && matches[1]) {
+          filename = matches[1];
+        }
+      }
+      
+      return { blob, filename, format };
+    },
+    onSuccess: (data) => {
+      const formatName = data.format === 'xlsx' ? 'Excel' : 
+                         data.format === 'json' ? 'JSON' : 
+                         data.format === 'csv' ? 'CSV' : 'PDF';
+      
+      // Create a download link and trigger it
+      const url = window.URL.createObjectURL(data.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = data.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url); // Clean up
+      
+      toast({
+        title: "Report exported",
+        description: `Campaign report has been exported as ${formatName}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Export failed",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  });
+
+  const handleExport = (campaignId: number, format: string) => {
+    exportMutation.mutate({ campaignId, format });
+  };
 
   const handleEdit = (campaignId: number) => {
     console.log('Edit button clicked for campaign ID:', campaignId);
@@ -185,7 +255,42 @@ export default function CampaignsPage() {
                       {campaign.created_at ? formatDistanceToNow(new Date(campaign.created_at), { addSuffix: true }) : "-"}
                     </TableCell>
                     <TableCell>
-                      <div className="flex space-x-2">
+                      <div className="flex justify-end space-x-2">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button 
+                              variant="outline" 
+                              size="sm"
+                              disabled={exportMutation.isPending}
+                            >
+                              {exportMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <FileDown className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel>Export Report</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleExport(campaign.id, 'pdf')}>
+                              <FileText className="mr-2 h-4 w-4" />
+                              PDF
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleExport(campaign.id, 'xlsx')}>
+                              <FileSpreadsheet className="mr-2 h-4 w-4" />
+                              Excel
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleExport(campaign.id, 'json')}>
+                              <FileJson className="mr-2 h-4 w-4" />
+                              JSON
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleExport(campaign.id, 'csv')}>
+                              <FileDown className="mr-2 h-4 w-4" />
+                              CSV
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <Button 
                           variant="ghost" 
                           size="icon"

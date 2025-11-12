@@ -108,25 +108,25 @@ export default function LandingPagesPage() {
         <TabsList className="mb-6 bg-muted p-1 h-auto">
           <TabsTrigger 
             value="all" 
-            className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
           >
             All Pages
           </TabsTrigger>
           <TabsTrigger 
             value="login" 
-            className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
           >
             Login Pages
           </TabsTrigger>
           <TabsTrigger 
             value="form" 
-            className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
           >
             Form Pages
           </TabsTrigger>
           <TabsTrigger 
             value="educational" 
-            className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+            className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm"
           >
             Educational
           </TabsTrigger>

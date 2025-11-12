@@ -252,6 +252,26 @@ export const threatStatistics = pgTable("threat_statistics", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Report Schedules table (for automated PDF/email reports)
+export const reportSchedules = pgTable("report_schedules", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  // Report type: 'executive' | 'detailed' | 'compliance'
+  type: varchar("type", { length: 20 }).notNull(),
+  // Cadence: 'daily' | 'weekly' | 'monthly'
+  cadence: varchar("cadence", { length: 20 }).notNull(),
+  // Time of day in HH:mm (24h) format, local or specified timezone
+  timeOfDay: varchar("time_of_day", { length: 5 }).notNull(),
+  timezone: varchar("timezone", { length: 64 }).default('UTC').notNull(),
+  // Comma-separated list of recipient emails (MVP)
+  recipients: text("recipients").notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  lastRunAt: timestamp("last_run_at"),
+  nextRunAt: timestamp("next_run_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Define permission types
 export const PERMISSIONS = {
   // Dashboard permissions
@@ -374,6 +394,8 @@ export type ThreatIntelligence = typeof threatIntelligence.$inferSelect;
 export type InsertThreatIntelligence = typeof threatIntelligence.$inferInsert;
 export type ThreatStatistics = typeof threatStatistics.$inferSelect;
 export type InsertThreatStatistics = typeof threatStatistics.$inferInsert;
+export type ReportSchedule = typeof reportSchedules.$inferSelect;
+export type InsertReportSchedule = typeof reportSchedules.$inferInsert;
 
 // Validation schemas - ONLY DECLARE ONCE
 export const userValidationSchema = z.object({
@@ -452,6 +474,16 @@ export const insertEmailTemplateSchema = z.object({
 }).refine(data => data.senderEmail || data.sender_email, {
   message: "Sender email is required",
   path: ["senderEmail"]
+});
+
+// Report schedule validation
+export const insertReportScheduleSchema = z.object({
+  type: z.enum(["executive", "detailed", "compliance"]),
+  cadence: z.enum(["daily", "weekly", "monthly"]),
+  timeOfDay: z.string().regex(/^\d{2}:\d{2}$/i, "timeOfDay must be HH:mm"),
+  timezone: z.string().min(2).default("UTC"),
+  recipients: z.string().min(3, "Provide at least one recipient email (comma-separated)"),
+  enabled: z.boolean().optional(),
 });
 
 export const insertLandingPageSchema = createInsertSchema(landingPages).pick({

@@ -25,11 +25,14 @@ import {
   Info as InfoIcon
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { useTheme } from "next-themes";
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [location, navigate] = useLocation();
+  const { theme, setTheme } = useTheme();
+  
   // Get tab from query string
   const getTabFromQuery = () => {
     if (typeof window !== 'undefined') {
@@ -47,7 +50,6 @@ export default function SettingsPage() {
     setSelectedTab(getTabFromQuery());
   }, [location]);
   // State for various settings
-  const [darkMode, setDarkMode] = useState(false);
   const [sessionTimeout, setSessionTimeout] = useState(30);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   // Password form state
@@ -65,16 +67,15 @@ export default function SettingsPage() {
     }
   }, []);
   
-  // Handle settings toggle
-  const handleToggle = (setting: string, value: boolean) => {
-    if (setting === "darkMode") {
-      setDarkMode(value);
-      
-      toast({
-        title: "Setting updated",
-        description: "Your preference has been saved.",
-      });
-    }
+  // Handle theme toggle
+  const handleThemeToggle = (isDark: boolean) => {
+    const newTheme = isDark ? "dark" : "light";
+    setTheme(newTheme);
+    
+    toast({
+      title: "Theme Updated",
+      description: `Switched to ${newTheme} mode`,
+    });
   };
   
   // Handle session timeout change
@@ -391,7 +392,11 @@ export default function SettingsPage() {
                 <div className="space-y-0.5">
                   <Label htmlFor="darkMode">
                     <div className="flex items-center">
-                      <Moon className="h-4 w-4 mr-2" />
+                      {theme === "dark" ? (
+                        <Moon className="h-4 w-4 mr-2" />
+                      ) : (
+                        <Sun className="h-4 w-4 mr-2" />
+                      )}
                       Dark Mode
                     </div>
                   </Label>
@@ -401,8 +406,8 @@ export default function SettingsPage() {
                 </div>
                 <Switch
                   id="darkMode"
-                  checked={darkMode}
-                  onCheckedChange={(value) => handleToggle("darkMode", value)}
+                  checked={theme === "dark"}
+                  onCheckedChange={handleThemeToggle}
                 />
               </div>
             </CardContent>

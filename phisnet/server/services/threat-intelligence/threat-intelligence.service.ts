@@ -1,4 +1,4 @@
-import { db } from '../../db';
+import { db, pool } from '../../db';
 import { threatIntelligence, threatStatistics } from '@shared/schema';
 import { eq, sql, and, desc, gte } from 'drizzle-orm';
 import type { ThreatIntelligence, InsertThreatIntelligence } from '@shared/schema';
@@ -8,6 +8,7 @@ import { ThreatFoxProvider } from './threatfox-provider';
 import { OTXProvider } from './otx-provider';
 import { PhishingDatabaseProvider } from './phishing-database-provider';
 import type { ThreatData, ThreatFeedProvider } from './threat-feed-base';
+import { NotificationService } from '../notification-service';
 
 export interface ThreatAnalysis {
   totalThreats: number;
@@ -50,20 +51,66 @@ export class ThreatIntelligenceService {
       );
 
       let totalIngested = 0;
-      results.forEach((result, index) => {
+      const perProviderCounts: Array<{ name: string; ingested: number }> = [];
+      for (let index = 0; index < results.length; index++) {
+        const result = results[index];
         const providerName = this.providers[index].name;
         if (result.status === 'fulfilled') {
           totalIngested += result.value;
+          perProviderCounts.push({ name: providerName, ingested: result.value });
           console.log(`✅ ${providerName}: ${result.value} threats ingested`);
         } else {
           console.error(`❌ ${providerName} failed:`, result.reason);
         }
-      });
+      }
 
       // Update statistics
       await this.updateThreatStatistics();
 
       console.log(`🎉 Threat feed ingestion completed. Total: ${totalIngested} new threats`);
+
+      // Emit per-user notifications summarizing new threats
+      if (totalIngested > 0) {
+        try {
+          // Fetch all active users (per-user notifications as requested)
+          const usersRes = await pool.query('SELECT id, organization_id FROM users WHERE is_active = true');
+          const users = usersRes.rows as Array<{ id: number; organization_id: number | null }>;
+
+          // Build a concise summary message
+          const topProviders = perProviderCounts
+            .filter(p => p.ingested > 0)
+            .sort((a, b) => b.ingested - a.ingested)
+            .slice(0, 3)
+            .map(p => `${p.name}: ${p.ingested}`)
+            .join(', ');
+
+          const title = 'New Threat Intelligence Ingested';
+          const message = topProviders
+            ? `${totalIngested} new threats ingested. Top sources — ${topProviders}.`
+            : `${totalIngested} new threats ingested from multiple sources.`;
+          let priority: 'urgent' | 'high' | 'medium' = 'medium';
+          if (totalIngested >= 100) priority = 'urgent';
+          else if (totalIngested >= 25) priority = 'high';
+
+          for (const u of users) {
+            await NotificationService.createNotification({
+              userId: u.id,
+              organizationId: u.organization_id ?? null,
+              type: 'threat_intel',
+              title,
+              message,
+              priority,
+              actionUrl: '/threat-landscape',
+              metadata: {
+                totalIngested,
+                perProviderCounts,
+              }
+            });
+          }
+        } catch (error_) {
+          console.error('Failed to create threat intel notifications:', error_);
+        }
+      }
     } catch (error) {
       console.error('💥 Threat feed ingestion failed:', error);
     } finally {

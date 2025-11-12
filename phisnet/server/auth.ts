@@ -330,8 +330,17 @@ export function setupAuth(app: Express) {
           return next(loginErr);
         }
         
-        const { password, ...userWithoutPassword } = user;
-        return res.status(200).json(userWithoutPassword);
+        // Explicitly save the session before responding to ensure it's persisted
+        // This prevents race conditions where subsequent requests arrive before session is saved
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            console.error("Session save error:", saveErr);
+            return next(saveErr);
+          }
+          
+          const { password, ...userWithoutPassword } = user;
+          return res.status(200).json(userWithoutPassword);
+        });
       });
     })(req, res, next);
   });

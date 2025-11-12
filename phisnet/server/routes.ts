@@ -1,37 +1,38 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import { createServer, type Server } from "node:http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, isAdmin, hasOrganization, hashPassword, comparePasswords } from "./auth";
 import { db } from "./db";
 import { 
   campaigns, 
   campaignResults, 
-  emailTemplates, 
   users, 
-  rolesSchema,
-  userRolesSchema,
   insertGroupSchema, 
   insertTargetSchema, 
   insertSmtpProfileSchema, 
   insertEmailTemplateSchema, 
   insertLandingPageSchema, 
   insertCampaignSchema,
-  type User,
-  DEFAULT_ROLES
+  reportSchedules,
+  insertReportScheduleSchema,
+  targets,
+  type User
 } from "@shared/schema";
-import { eq, and, sql, gte, lte } from "drizzle-orm";
+import { eq, and, sql, gte, lte, inArray } from "drizzle-orm";
 import multer from "multer";
 import Papa from "papaparse";
 import { z } from "zod";
 import { errorHandler, assertUser } from './error-handler';
 import { NotificationService } from './services/notification-service';
-import { exportReportToCsv } from './utils/report-exporter';
-import path from 'path';
-import fs from 'fs';
+import { exportReport, ExportFormat } from './utils/report-exporter-enhanced';
+import path from 'node:path';
+import fs from 'node:fs';
 import { sendCampaignEmails } from './services/email-service';
 import { ThreatIntelligenceService } from './services/threat-intelligence/threat-intelligence.service';
 import { threatFeedScheduler } from './services/threat-intelligence/threat-feed-scheduler';
+import { reportingScheduler } from './services/reporting-scheduler';
 import reconnaissanceRoutes from './routes/reconnaissance';
+import { registerModularRoutes } from './routes/index';
 
 const upload = multer();
 
@@ -77,29 +78,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   setupAuth(app);
 
-  // API Health Check
-  app.get("/api/status", (_req, res) => {
-    res.status(200).json({ status: "ok" });
-  });
-  
-  // Session ping endpoint for refreshing user sessions
-  app.post("/api/session-ping", isAuthenticated, (req, res) => {
-    if (req.session) {
-      // Reset session expiry
-      req.session.touch();
-      
-      // Calculate time remaining in session
-      const maxAge = req.session.cookie.maxAge || 0;
-      const expiresIn = maxAge;
-      
-      console.log(`Session refreshed for user: ${req.user?.email}. Expires in ${Math.round(expiresIn/1000/60)} minutes`);
-    }
-    
-    res.status(200).json({ 
-      status: "ok", 
-      sessionExpiresIn: req.session?.cookie?.maxAge || 0
-    });
-  });
+  // Register modular routes (health, dashboard, notifications, threat intelligence)
+  registerModularRoutes(app);
+
+  // ===============================================
+  // LEGACY ROUTES BELOW (Being migrated to modular structure)
+  // Note: User management and roles endpoints have been moved to server/routes/users.ts
+  // NOTE: This file contains endpoints that are pending modularization migration
+  // ===============================================
 
   // Dashboard Stats - Real Data
   app.get("/api/dashboard/stats", isAuthenticated, hasOrganization, async (req, res) => {
@@ -122,6 +108,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching dashboard metrics:", error);
       res.status(500).json({ message: "Error fetching dashboard metrics" });
+    }
+  });
+
+  // Alias for phishing metrics to match frontend client
+  app.get("/api/dashboard/phishing-metrics", isAuthenticated, hasOrganization, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const metrics = await storage.getPhishingMetrics(req.user.organizationId);
+      res.json(metrics);
+    } catch (error) {
+      console.error("Error fetching phishing metrics:", error);
+      res.status(500).json({ message: "Error fetching phishing metrics" });
     }
   });
 
@@ -151,11 +149,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Convert threat intelligence to dashboard format
       const threatData = recentThreats.map(threat => {
-        let level: 'high' | 'medium' | 'low' = 'medium';
-        let severity: 'High' | 'Medium' | 'Low' = 'Medium';
+        let level: 'high' | 'medium' | 'low';
+        let severity: 'High' | 'Medium' | 'Low';
         
         // Determine threat level based on confidence and type
-  if ((typeof threat.confidence === 'number' && threat.confidence >= 80) || threat.threatType === 'phishing') {
+        if ((typeof threat.confidence === 'number' && threat.confidence >= 80) || threat.threatType === 'phishing') {
           level = 'high';
           severity = 'High';
         } else if (typeof threat.confidence === 'number' && threat.confidence >= 60) {
@@ -197,54 +195,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Dashboard Risk Users
-  app.get("/api/dashboard/risk-users", isAuthenticated, (req, res) => {
-    // Provide mock risk user data
-    const users = [
-      {
-        id: 1,
-        name: "Mike Miller",
-        department: "Finance Department",
-        riskLevel: "High Risk"
-      },
-      {
-        id: 2,
-        name: "Sarah Johnson",
-        department: "Marketing Team",
-        riskLevel: "Medium Risk"
-      },
-      {
-        id: 3,
-        name: "Tom Parker",
-        department: "Executive Team",
-        riskLevel: "Medium Risk"
-      }
-    ];
-    res.json(users);
-  });
-
-  // Dashboard Training Data
-  app.get("/api/dashboard/training", isAuthenticated, (req, res) => {
-    // Provide mock training data
+  // Dashboard Training Data (alias to match frontend expectation)
+  app.get("/api/dashboard/trainings", isAuthenticated, (req, res) => {
+    // Provide simple training modules (placeholder until real training module exists)
     const trainings = [
-      {
-        id: 1,
-        name: "Phishing Awareness",
-        progress: 65,
-        icon: "shield"
-      },
-      {
-        id: 2,
-        name: "Password Security",
-        progress: 82,
-        icon: "lock"
-      },
-      {
-        id: 3,
-        name: "Mobile Device Security",
-        progress: 43,
-        icon: "smartphone"
-      }
+      { id: 1, name: "Phishing Awareness", progress: 65, icon: "shield" },
+      { id: 2, name: "Password Security", progress: 82, icon: "lock" },
+      { id: 3, name: "Mobile Device Security", progress: 43, icon: "smartphone" },
     ];
     res.json(trainings);
   });
@@ -254,8 +211,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       assertUser(req.user);
       const campaigns = await storage.listCampaigns(req.user.organizationId);
-      // Sort by created date and take the most recent 5
-      const recentCampaigns = campaigns
+      // Sort by created date and take the most recent 5 (avoid mutating original array)
+      const recentCampaigns = [...campaigns]
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .slice(0, 5)
         .map(campaign => ({
@@ -268,6 +225,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }));
       res.json(recentCampaigns);
     } catch (error) {
+      console.error("Error fetching recent campaigns:", error);
       res.status(500).json({ message: "Error fetching recent campaigns" });
     }
   });
@@ -279,6 +237,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const groups = await storage.listGroups(req.user.organizationId);
       res.json(groups);
     } catch (error) {
+      console.error("Error fetching groups:", error);
       res.status(500).json({ message: "Error fetching groups" });
     }
   });
@@ -305,7 +264,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/groups/:id", isAuthenticated, async (req, res) => {
     try {
       assertUser(req.user);
-      const groupId = parseInt(req.params.id);
+  const groupId = Number.parseInt(req.params.id, 10);
       const group = await storage.getGroup(groupId);
       
       if (!group) {
@@ -331,7 +290,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/groups/:id", isAuthenticated, async (req, res) => {
     try {
       assertUser(req.user);
-      const groupId = parseInt(req.params.id);
+  const groupId = Number.parseInt(req.params.id, 10);
       const group = await storage.getGroup(groupId);
       
       if (!group) {
@@ -346,6 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteGroup(groupId);
       res.status(204).send();
     } catch (error) {
+      console.error("Error deleting group:", error);
       res.status(500).json({ message: "Error deleting group" });
     }
   });
@@ -354,7 +314,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/groups/:id/targets", isAuthenticated, async (req, res) => {
     try {
       assertUser(req.user);
-      const groupId = parseInt(req.params.id);
+  const groupId = Number.parseInt(req.params.id, 10);
       const group = await storage.getGroup(groupId);
       
       if (!group) {
@@ -369,6 +329,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const targets = await storage.listTargets(groupId);
       res.json(targets);
     } catch (error) {
+      console.error("Error fetching targets:", error);
       res.status(500).json({ message: "Error fetching targets" });
     }
   });
@@ -376,7 +337,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/groups/:id/targets", isAuthenticated, async (req, res) => {
     try {
       assertUser(req.user);
-      const groupId = parseInt(req.params.id);
+  const groupId = Number.parseInt(req.params.id, 10);
       const group = await storage.getGroup(groupId);
       
       if (!group) {
@@ -412,7 +373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/groups/:id/import", isAuthenticated, upload.single('file'), async (req, res) => {
     try {
       assertUser(req.user);
-      const groupId = parseInt(req.params.id);
+  const groupId = Number.parseInt(req.params.id, 10);
       const group = await storage.getGroup(groupId);
       
       if (!group) {
@@ -428,7 +389,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "No file uploaded" });
       }
       
-      const csvString = req.file.buffer.toString();
+  const csvString = req.file.buffer.toString();
       const results = Papa.parse(csvString, { header: true, skipEmptyLines: true });
       
       if (results.errors.length > 0) {
@@ -459,8 +420,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Validate the data
           const validatedData = insertTargetSchema.parse(normalizedRow);
           // Provide sensible defaults if names are missing
-          const firstName = validatedData.firstName && (validatedData.firstName as string).toString().trim().length > 0 ? (validatedData.firstName as string) : 'Recipient';
-          const lastName = validatedData.lastName && (validatedData.lastName as string).toString().trim().length > 0 ? (validatedData.lastName as string) : 'User';
+          const firstName = validatedData.firstName && validatedData.firstName.toString().trim().length > 0 ? validatedData.firstName : 'Recipient';
+          const lastName = validatedData.lastName && validatedData.lastName.toString().trim().length > 0 ? validatedData.lastName : 'User';
           // Create the target with required properties
           const targetData = {
             ...validatedData,
@@ -485,6 +446,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         errors: errors.length > 0 ? errors : undefined
       });
     } catch (error) {
+      console.error("Error importing targets:", error);
       res.status(500).json({ message: "Error importing targets" });
     }
   });
@@ -496,6 +458,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const profiles = await storage.listSmtpProfiles(req.user.organizationId);
       res.json(profiles);
     } catch (error) {
+      console.error("Error fetching SMTP profiles:", error);
       res.status(500).json({ message: "Error fetching SMTP profiles" });
     }
   });
@@ -593,7 +556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/email-templates/:id", isAuthenticated, async (req, res) => {
     try {
       assertUser(req.user);
-      const templateId = parseInt(req.params.id);
+  const templateId = Number.parseInt(req.params.id, 10);
       const template = await storage.getEmailTemplate(templateId);
       
       if (!template) {
@@ -619,7 +582,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/email-templates/:id", isAuthenticated, async (req, res) => {
     try {
       assertUser(req.user);
-      const templateId = parseInt(req.params.id);
+  const templateId = Number.parseInt(req.params.id, 10);
       const template = await storage.getEmailTemplate(templateId);
       
       if (!template) {
@@ -650,6 +613,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const pages = await storage.listLandingPages(req.user.organizationId);
       res.json(pages);
     } catch (error) {
+      console.error("Error fetching landing pages:", error);
       res.status(500).json({ message: "Error fetching landing pages" });
     }
   });
@@ -682,7 +646,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/landing-pages/:id", isAuthenticated, hasOrganization, async (req, res) => {
     try {
   assertUser(req.user);
-      const pageId = parseInt(req.params.id);
+  const pageId = Number.parseInt(req.params.id, 10);
       const page = await storage.getLandingPage(pageId);
       
       if (!page) {
@@ -714,7 +678,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/landing-pages/:id", isAuthenticated, hasOrganization, async (req, res) => {
     try {
   assertUser(req.user);
-      const pageId = parseInt(req.params.id);
+  const pageId = Number.parseInt(req.params.id, 10);
       const page = await storage.getLandingPage(pageId);
       
       if (!page) {
@@ -742,7 +706,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/landing-pages/:id/preview", isAuthenticated, hasOrganization, async (req, res) => {
     try {
       assertUser(req.user);
-      const pageId = parseInt(req.params.id);
+  const pageId = Number.parseInt(req.params.id, 10);
       const page = await storage.getLandingPage(pageId);
       if (!page) {
         return res.status(404).send("Not Found");
@@ -787,7 +751,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Try to extract <title>
         let title: string | undefined;
         try {
-          const m = htmlContent.match(/<title>([^<]*)<\/title>/i);
+          const m = /<title>([^<]*)<\/title>/i.exec(htmlContent);
           title = m?.[1]?.trim();
         } catch {}
         // Return JSON used by the client editor
@@ -810,8 +774,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Backward-compatible tracking route: redirect legacy /track?c=&t= to /l/:c/:t
   app.get('/track', async (req, res) => {
-    const c = parseInt(String(req.query.c));
-    const t = parseInt(String(req.query.t));
+  const cParam = req.query.c;
+  const tParam = req.query.t;
+  let cStr = '';
+  let tStr = '';
+  if (typeof cParam === 'string') cStr = cParam;
+  else if (Array.isArray(cParam) && typeof cParam[0] === 'string') cStr = cParam[0];
+  if (typeof tParam === 'string') tStr = tParam;
+  else if (Array.isArray(tParam) && typeof tParam[0] === 'string') tStr = tParam[0];
+  const c = Number.parseInt(cStr, 10);
+  const t = Number.parseInt(tStr, 10);
     if (!Number.isFinite(c) || !Number.isFinite(t)) {
       return res.status(400).send('Bad Request');
     }
@@ -821,8 +793,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Open tracking pixel (1x1 transparent gif)
   app.get('/o/:campaignId/:targetId.gif', async (req, res) => {
     try {
-      const campaignId = parseInt(req.params.campaignId, 10);
-      const targetId = parseInt(req.params.targetId, 10);
+  const campaignId = Number.parseInt(req.params.campaignId, 10);
+  const targetId = Number.parseInt(req.params.targetId, 10);
       if (!Number.isFinite(campaignId) || !Number.isFinite(targetId)) {
         return res.status(400).end();
       }
@@ -915,9 +887,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Click tracking redirect
   app.get('/c/:campaignId/:targetId', async (req, res) => {
     try {
-      const campaignId = parseInt(req.params.campaignId, 10);
-      const targetId = parseInt(req.params.targetId, 10);
-      const encoded = String(req.query.u || '');
+  const campaignId = Number.parseInt(req.params.campaignId, 10);
+  const targetId = Number.parseInt(req.params.targetId, 10);
+  const encoded = String((req.query.u as string) ?? '');
       if (!Number.isFinite(campaignId) || !Number.isFinite(targetId) || !encoded) {
         return res.status(400).send('Bad Request');
       }
@@ -1012,8 +984,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Public Landing Page rendering with form capture injection
   app.get('/l/:campaignId/:targetId', async (req, res) => {
     try {
-      const campaignId = parseInt(req.params.campaignId);
-      const targetId = parseInt(req.params.targetId);
+  const campaignId = Number.parseInt(req.params.campaignId, 10);
+  const targetId = Number.parseInt(req.params.targetId, 10);
       if (!Number.isFinite(campaignId) || !Number.isFinite(targetId)) {
         return res.status(400).send('Bad Request');
       }
@@ -1038,8 +1010,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Public form submission capture (excludes password fields)
   app.post('/l/submit', async (req, res) => {
     try {
-      const campaignId = parseInt(String(req.query.c));
-      const targetId = parseInt(String(req.query.t));
+  const cParam = req.query.c;
+  const tParam = req.query.t;
+  let cStr = '';
+  let tStr = '';
+  if (typeof cParam === 'string') cStr = cParam;
+  else if (Array.isArray(cParam) && typeof cParam[0] === 'string') cStr = cParam[0];
+  if (typeof tParam === 'string') tStr = tParam;
+  else if (Array.isArray(tParam) && typeof tParam[0] === 'string') tStr = tParam[0];
+  const campaignId = Number.parseInt(cStr, 10);
+  const targetId = Number.parseInt(tStr, 10);
       if (!Number.isFinite(campaignId) || !Number.isFinite(targetId)) {
         return res.status(400).send('Bad Request');
       }
@@ -1069,8 +1049,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           submittedData = filtered;
         }
-      } else {
-        submittedData = null; // record the event but don't store data
       }
 
       // Update or create result row
@@ -1079,9 +1057,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         let wasSubmitted = false;
         const existing = await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, {} as any);
         
-        if (existing && !existing.submitted) {
-          wasSubmitted = true;
-        } else if (!existing) {
+        if ((existing && !existing.submitted) || !existing) {
           wasSubmitted = true;
         }
         
@@ -1161,7 +1137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/landing-pages/:id/clone", isAuthenticated, hasOrganization, async (req, res) => {
     try {
       assertUser(req.user);
-      const pageId = parseInt(req.params.id);
+  const pageId = Number.parseInt(req.params.id, 10);
       const page = await storage.getLandingPage(pageId);
       if (!page) {
         return res.status(404).json({ message: "Landing page not found" });
@@ -1310,7 +1286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/campaigns/:id/launch", isAuthenticated, hasOrganization, async (req, res) => {
     try {
   assertUser(req.user);
-      const campaignId = parseInt(req.params.id, 10);
+  const campaignId = Number.parseInt(req.params.id, 10);
       const campaign = await storage.getCampaign(campaignId);
       if (!campaign || campaign.organizationId !== req.user.organizationId) {
         return res.status(404).json({ message: "Campaign not found" });
@@ -1331,7 +1307,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/campaigns/:id", isAuthenticated, hasOrganization, async (req, res) => {
     try {
   assertUser(req.user);
-      const campaignId = parseInt(req.params.id, 10);
+  const campaignId = Number.parseInt(req.params.id, 10);
       const campaign = await storage.getCampaign(campaignId);
       
       if (!campaign || campaign.organizationId !== req.user.organizationId) {
@@ -1376,7 +1352,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/campaigns/:id", isAuthenticated, hasOrganization, async (req, res) => {
     try {
   assertUser(req.user);
-      const campaignId = parseInt(req.params.id, 10);
+  const campaignId = Number.parseInt(req.params.id, 10);
       const campaign = await storage.getCampaign(campaignId);
       
       if (!campaign || campaign.organizationId !== req.user.organizationId) {
@@ -1434,7 +1410,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/campaigns/:id", isAuthenticated, hasOrganization, async (req, res) => {
     try {
   assertUser(req.user);
-      const campaignId = parseInt(req.params.id, 10);
+  const campaignId = Number.parseInt(req.params.id, 10);
       const campaign = await storage.getCampaign(campaignId);
       
       if (!campaign || campaign.organizationId !== req.user.organizationId) {
@@ -1453,7 +1429,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/campaigns/:id/results", isAuthenticated, hasOrganization, async (req, res) => {
     try {
   assertUser(req.user);
-      const campaignId = parseInt(req.params.id, 10);
+  const campaignId = Number.parseInt(req.params.id, 10);
       const campaign = await storage.getCampaign(campaignId);
       
       if (!campaign || campaign.organizationId !== req.user.organizationId) {
@@ -1593,198 +1569,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  app.get("/api/users", isAuthenticated, hasOrganization, async (req, res) => {
-    try {
-      assertUser(req.user);
-      // Ensure default roles are seeded (so users list always has roles available)
-      try {
-        const existingRole = await db.select({ id: rolesSchema.id }).from(rolesSchema).limit(1);
-        if (existingRole.length === 0) {
-          for (const r of DEFAULT_ROLES) {
-            try {
-              await db.insert(rolesSchema).values({
-                name: r.name,
-                description: r.description,
-                // store permissions as raw array (schema default now array JSON)
-                permissions: Array.isArray((r as any).permissions) ? (r as any).permissions : (r as any).permissions?.permissions || []
-              } as any);
-            } catch {}
-          }
-        }
-      } catch (e) {
-        console.error('Role seeding check failed:', e);
-      }
-
-      const userList = await db.select({
-        id: users.id,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        email: users.email,
-        isActive: users.isActive,
-        lastLogin: users.lastLogin,
-        profilePicture: users.profilePicture,
-        createdAt: users.createdAt,
-        isAdmin: users.isAdmin,
-      })
-      .from(users)
-      .where(eq(users.organizationId, req.user.organizationId));
-      
-      // Get roles for each user, auto-assign Admin if needed
-      const usersWithRoles = await Promise.all(
-        userList.map(async (user) => {
-          let userRoles = await db.select({
-            id: rolesSchema.id,
-            name: rolesSchema.name,
-            description: rolesSchema.description,
-            permissions: rolesSchema.permissions,
-          })
-          .from(userRolesSchema)
-          .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
-          .where(eq(userRolesSchema.userId, user.id));
-
-          if (userRoles.length === 0 && (user.isAdmin || user.email.toLowerCase() === 'admin@phishnet.com')) {
-            // Auto-assign Admin role if missing
-            const [adminRole] = await db.select({ id: rolesSchema.id, name: rolesSchema.name, description: rolesSchema.description, permissions: rolesSchema.permissions })
-              .from(rolesSchema)
-              .where(eq(rolesSchema.name, 'Admin'));
-            if (adminRole) {
-              try {
-                await db.insert(userRolesSchema).values({ userId: user.id, roleId: adminRole.id });
-                userRoles.push(adminRole);
-              } catch (e) {
-                // Ignore duplicates racing
-              }
-            }
-          }
-          
-          return {
-            ...user,
-            roles: userRoles,
-          };
-        })
-      );
-      
-      res.json(usersWithRoles);
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      res.status(500).json({ message: "Error fetching users" });
-    }
-  });
-
-  app.post("/api/users", isAuthenticated, hasOrganization, isAdmin, async (req, res) => {
-    try {
-  assertUser(req.user);
-      const { firstName, lastName, email, password, roleId, isActive } = req.body;
-      
-      // Check if user already exists
-      const existingUser = await db.select()
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
-      
-      if (existingUser.length > 0) {
-        return res.status(400).json({ message: "User with this email already exists" });
-      }
-      
-      // Hash password
-      const hashedPassword = await hashPassword(password);
-      
-      // Create user
-      const [newUser] = await db.insert(users).values({
-        firstName,
-        lastName,
-        email,
-        password: hashedPassword,
-        isActive: isActive ?? true,
-        organizationId: req.user.organizationId,
-      }).returning();
-      
-      // Assign roles
-      if (roleId) {
-        await db.insert(userRolesSchema).values({ userId: newUser.id, roleId: Number(roleId) });
-      }
-      
-      res.status(201).json({ 
-        message: "User created successfully", 
-        user: { 
-          id: newUser.id, 
-          firstName: newUser.firstName, 
-          lastName: newUser.lastName,
-          email: newUser.email 
-        } 
-      });
-    } catch (error) {
-      console.error("Error creating user:", error);
-      res.status(500).json({ message: "Error creating user" });
-    }
-  });
-
-  app.put("/api/users/:id", isAuthenticated, hasOrganization, isAdmin, async (req, res) => {
-    try {
-  assertUser(req.user);
-      const userId = parseInt(req.params.id);
-      const { firstName, lastName, email, roleId, isActive } = req.body;
-      
-      // Update user
-      const [updatedUser] = await db.update(users)
-        .set({ 
-          firstName, 
-          lastName, 
-          email, 
-          isActive,
-          updatedAt: new Date() 
-        })
-        .where(eq(users.id, userId))
-        .returning();
-      
-      // Update roles
-      if (roleId) {
-        // Remove existing roles
-        await db.delete(userRolesSchema).where(eq(userRolesSchema.userId, userId));
-        
-        // Add new roles
-        await db.insert(userRolesSchema).values({ userId, roleId: Number(roleId) });
-      }
-      
-      res.json({ message: "User updated successfully", user: updatedUser });
-    } catch (error) {
-      console.error("Error updating user:", error);
-      res.status(500).json({ message: "Error updating user" });
-    }
-  });
-
-  app.delete("/api/users/:id", isAuthenticated, hasOrganization, isAdmin, async (req, res) => {
-    try {
-  assertUser(req.user);
-      const userId = parseInt(req.params.id);
-      
-      // Don't allow deleting self
-      if (userId === req.user.id) {
-        return res.status(400).json({ message: "Cannot delete your own account" });
-      }
-      
-      // Delete user roles first
-      await db.delete(userRolesSchema).where(eq(userRolesSchema.userId, userId));
-      
-      // Delete user
-      await db.delete(users).where(eq(users.id, userId));
-      
-      res.json({ message: "User deleted successfully" });
-    } catch (error) {
-      console.error("Error deleting user:", error);
-      res.status(500).json({ message: "Error deleting user" });
-    }
-  });
+  // NOTE: User management endpoints (GET, POST, PUT, DELETE /api/users) have been
+  // moved to server/routes/users.ts for better modularization
 
   // Reports Export Endpoints
   app.post("/api/reports/export", isAuthenticated, hasOrganization, async (req, res) => {
     try {
       assertUser(req.user);
-      const { type, dateRange } = req.body;
+      const { type, dateRange, format = 'pdf', theme = 'dark' } = req.body;
+
+      // Validate format
+      const validFormats: ExportFormat[] = ['pdf', 'xlsx', 'json', 'csv'];
+      const exportFormat = validFormats.includes(format) ? format : 'pdf';
 
       let reportData: any = {
         type,
         organizationName: req.user.organizationName,
+        theme: theme, // Pass theme to exporter
         dateRange: dateRange ? {
           start: new Date(dateRange.start),
           end: new Date(dateRange.end)
@@ -1799,6 +1600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           lte(campaigns.createdAt, new Date(dateRange.end))
         ) : eq(campaigns.organizationId, req.user.organizationId);
 
+      // Fetch report data based on type
       if (type === 'campaigns') {
         const campaignsData = await db.select().from(campaigns).where(dateFilter);
         reportData.campaigns = campaignsData;
@@ -1811,26 +1613,123 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .where(dateFilter);
         reportData.results = resultsData;
       } else if (type === 'comprehensive') {
+        // Get comprehensive data
         const compCampaigns = await db.select().from(campaigns).where(dateFilter);
         const compUsers = await db.select().from(users).where(eq(users.organizationId, req.user.organizationId));
         const compResults = await db.select().from(campaignResults)
           .innerJoin(campaigns, eq(campaignResults.campaignId, campaigns.id))
           .where(dateFilter);
+        
         reportData.campaigns = compCampaigns;
         reportData.users = compUsers;
         reportData.results = compResults;
+        
+        // Calculate summary metrics
+        const allResults = compResults.map(r => r.campaign_results);
+        const totalEmailsSent = allResults.length;
+        const clickedCount = allResults.filter(r => r.clicked).length;
+        const atRiskUsersSet = new Set<number>();
+        for (const r of allResults) {
+          if (r.clicked || r.submitted) atRiskUsersSet.add(r.targetId);
+        }
+        
+        reportData.summary = {
+          totalCampaigns: compCampaigns.length,
+          totalEmailsSent,
+          successRate: totalEmailsSent > 0 ? Math.round((clickedCount / totalEmailsSent) * 100) : 0,
+          atRiskUsers: atRiskUsersSet.size,
+        };
       }
       
-  const filename = await exportReportToCsv(reportData);
+      // Use enhanced exporter with format support
+      const filename = await exportReport(reportData, exportFormat);
       
       res.json({ 
         success: true,
         filename,
-        downloadUrl: `/api/reports/download/${filename}`
+        downloadUrl: `/api/reports/download/${filename}`,
+        format: exportFormat
       });
     } catch (error) {
       console.error("Error exporting report:", error);
-      res.status(500).json({ message: "Error exporting report" });
+      res.status(500).json({ message: "Error exporting report", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  // Individual Campaign Report Export
+  app.post("/api/campaigns/:id/export", isAuthenticated, hasOrganization, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const campaignId = Number.parseInt(req.params.id, 10);
+      const { format = 'pdf', theme = 'dark' } = req.body;
+
+      // Validate format
+      const validFormats: ExportFormat[] = ['pdf', 'xlsx', 'json', 'csv'];
+      const exportFormat = validFormats.includes(format) ? format : 'pdf';
+
+      // Fetch campaign data
+      const [campaign] = await db.select()
+        .from(campaigns)
+        .where(and(
+          eq(campaigns.id, campaignId),
+          eq(campaigns.organizationId, req.user.organizationId)
+        ));
+
+      if (!campaign) {
+        return res.status(404).json({ message: "Campaign not found" });
+      }
+
+      // Fetch campaign results
+      const results = await db.select()
+        .from(campaignResults)
+        .innerJoin(targets, eq(campaignResults.targetId, targets.id))
+        .where(eq(campaignResults.campaignId, campaignId));
+
+      // Calculate statistics
+      const totalTargets = results.length;
+      const opened = results.filter(r => r.campaign_results.opened).length;
+      const clicked = results.filter(r => r.campaign_results.clicked).length;
+      const submitted = results.filter(r => r.campaign_results.submitted).length;
+      const reported = results.filter(r => r.campaign_results.reported).length;
+
+      const reportData: any = {
+        type: 'campaign',
+        organizationName: req.user.organizationName,
+        theme: theme, // Pass theme to exporter
+        campaigns: [campaign],
+        results: results,
+        summary: {
+          totalCampaigns: 1,
+          totalEmailsSent: totalTargets,
+          successRate: totalTargets > 0 ? Math.round((clicked / totalTargets) * 100) : 0,
+          atRiskUsers: clicked,
+          campaignStats: {
+            name: campaign.name,
+            status: campaign.status,
+            opened,
+            clicked,
+            submitted,
+            reported,
+            openRate: totalTargets > 0 ? Math.round((opened / totalTargets) * 100) : 0,
+            clickRate: totalTargets > 0 ? Math.round((clicked / totalTargets) * 100) : 0,
+            submitRate: totalTargets > 0 ? Math.round((submitted / totalTargets) * 100) : 0,
+            reportRate: totalTargets > 0 ? Math.round((reported / totalTargets) * 100) : 0,
+          }
+        }
+      };
+
+      // Use enhanced exporter with format support
+      const filename = await exportReport(reportData, exportFormat);
+
+      res.json({
+        success: true,
+        filename,
+        downloadUrl: `/api/reports/download/${filename}`,
+        format: exportFormat
+      });
+    } catch (error) {
+      console.error("Error exporting campaign report:", error);
+      res.status(500).json({ message: "Error exporting campaign report", error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
   
@@ -1838,24 +1737,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const filename = req.params.filename;
       const filepath = path.join(process.cwd(), 'uploads', filename);
-      
+
       if (!fs.existsSync(filepath)) {
         return res.status(404).json({ message: "File not found" });
       }
-      
-      res.download(filepath, filename, (err) => {
+
+      const onDownload = (err?: Error) => {
         if (err) {
           console.error("Error downloading file:", err);
           res.status(500).json({ message: "Error downloading file" });
-        } else {
-          // Clean up file after download
-          setTimeout(() => {
-            fs.unlink(filepath, (unlinkErr) => {
-              if (unlinkErr) console.error("Error deleting file:", unlinkErr);
-            });
-          }, 5000);
+          return;
         }
-      });
+        // Clean up file after download
+        const cleanup = async () => {
+          try {
+            await fs.promises.unlink(filepath);
+          } catch (unlinkErr) {
+            console.error("Error deleting file:", unlinkErr);
+          }
+        };
+        setTimeout(() => { void cleanup(); }, 5000);
+      };
+
+      res.download(filepath, filename, onDownload);
     } catch (error) {
       console.error("Error serving download:", error);
       res.status(500).json({ message: "Error serving download" });
@@ -1866,18 +1770,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/notifications", isAuthenticated, async (req, res) => {
     try {
   assertUser(req.user);
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = parseInt(req.query.limit as string) || 20;
+  const page = Number.parseInt(req.query.page as string, 10) || 1;
+  const limit = Number.parseInt(req.query.limit as string, 10) || 20;
       const offset = (page - 1) * limit;
       
-      const notifications = await NotificationService.getUserNotifications(
+      const rows = await NotificationService.getUserNotifications(
         req.user.id, 
         limit, 
         offset
       );
-      
+
+      // Normalize to camelCase for client
+      const notifications = (rows || []).map((n: any) => ({
+        id: n.id,
+        userId: n.user_id,
+        organizationId: n.organization_id,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        priority: n.priority,
+        isRead: n.is_read,
+        readAt: n.read_at,
+        actionUrl: n.action_url,
+        createdAt: n.created_at,
+        metadata: n.metadata,
+      }));
+
       const unreadCount = await NotificationService.getUnreadCount(req.user.id);
-      
+
       res.json({
         notifications,
         unreadCount,
@@ -1907,7 +1827,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/notifications/:id/read", isAuthenticated, async (req, res) => {
     try {
   assertUser(req.user);
-      const notificationId = parseInt(req.params.id);
+  const notificationId = Number.parseInt(req.params.id, 10);
   await NotificationService.markAsRead(notificationId, req.user.id);
   res.json({ success: true });
     } catch (error) {
@@ -1930,7 +1850,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/notifications/:id", isAuthenticated, async (req, res) => {
     try {
   assertUser(req.user);
-      const notificationId = parseInt(req.params.id);
+  const notificationId = Number.parseInt(req.params.id, 10);
       await NotificationService.deleteNotification(notificationId, req.user.id);
       res.json({ message: "Notification deleted successfully" });
     } catch (error) {
@@ -2010,6 +1930,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const stats = errorHandler.getErrorStats();
       res.json(stats);
     } catch (error) {
+      console.error("Error fetching error statistics:", error);
       res.status(500).json({ message: "Error fetching error statistics" });
     }
   });
@@ -2020,48 +1941,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       errorHandler.clearHistory();
       res.json({ message: "Error history cleared" });
     } catch (error) {
+      console.error("Error clearing error history:", error);
       res.status(500).json({ message: "Error clearing error history" });
     }
   });
 
   // Roles listing endpoint
-  app.get("/api/roles", isAuthenticated, hasOrganization, async (req, res) => {
-    try {
-      assertUser(req.user);
-      let roles = await db.select({
-        id: rolesSchema.id,
-        name: rolesSchema.name,
-        description: rolesSchema.description,
-        permissions: rolesSchema.permissions,
-      }).from(rolesSchema);
-
-      if (!roles || roles.length === 0) {
-        // Seed default roles if table empty
-        for (const r of DEFAULT_ROLES) {
-          try {
-            await db.insert(rolesSchema).values({
-              name: r.name,
-              description: r.description,
-              permissions: Array.isArray((r as any).permissions) ? (r as any).permissions : (r as any).permissions?.permissions || []
-            } as any);
-          } catch (e) {
-            // Ignore duplicates
-          }
-        }
-        roles = await db.select({
-          id: rolesSchema.id,
-          name: rolesSchema.name,
-          description: rolesSchema.description,
-          permissions: rolesSchema.permissions,
-        }).from(rolesSchema);
-      }
-
-      res.json(roles);
-    } catch (error) {
-      console.error("Error fetching roles:", error);
-      res.status(500).json({ message: "Error fetching roles" });
-    }
-  });
+  // NOTE: Roles endpoint (GET /api/roles) has been moved to server/routes/users.ts
+  // since roles are closely related to user management
 
   // ===============================================
   // THREAT INTELLIGENCE ROUTES
@@ -2085,8 +1972,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/threat-intelligence/threats", isAuthenticated, async (req, res) => {
     try {
       assertUser(req.user);
-      const limit = parseInt(req.query.limit as string) || 50;
-      const threats = await threatService.getRecentThreats(limit);
+  const limit = Number.parseInt(req.query.limit as string, 10) || 50;
+  const threats = await threatService.getRecentThreats(limit);
       res.json(threats);
     } catch (error) {
       console.error("Error fetching threats:", error);
@@ -2103,7 +1990,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Search query must be at least 3 characters" });
       }
       
-      const limit = parseInt(req.query.limit as string) || 20;
+  const limit = Number.parseInt(req.query.limit as string, 10) || 20;
       const threats = await threatService.searchThreats(query.trim(), limit);
       res.json(threats);
     } catch (error) {
@@ -2147,7 +2034,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const action = req.params.action;
       
       if (action === 'start') {
-        const intervalHours = parseInt(req.body.intervalHours) || 2;
+  const intervalHours = Number.parseInt(String(req.body.intervalHours), 10) || 2;
         threatFeedScheduler.start(intervalHours);
         res.json({ message: `Threat feed scheduler started (every ${intervalHours} hours)` });
       } else if (action === 'stop') {
@@ -2183,9 +2070,339 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use('/api/reconnaissance', reconnaissanceRoutes);
   console.log('✅ Reconnaissance routes registered');
 
-  // Initialize threat feed scheduler
-  console.log('🔐 Starting threat intelligence feed scheduler...');
-  threatFeedScheduler.start(2); // Run every 2 hours
+  // ===============================================
+  // REPORTS API
+  // ===============================================
+
+  // Get report data for reports page and PDF generation
+  app.get("/api/reports/data", isAuthenticated, hasOrganization, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const orgId = req.user.organizationId;
+
+      // Parse optional date range (default to 1 year)
+      const endParam = typeof req.query.endDate === 'string' ? new Date(req.query.endDate) : undefined;
+      const startParam = typeof req.query.startDate === 'string' ? new Date(req.query.startDate) : undefined;
+  const endDate = endParam && !Number.isNaN(endParam.getTime()) ? endParam : new Date();
+  const startDate = startParam && !Number.isNaN(startParam.getTime()) ? startParam : new Date(new Date().setDate(new Date().getDate() - 365));
+
+      // Fetch campaigns in range
+      const orgCampaigns = await db.select().from(campaigns)
+        .where(and(eq(campaigns.organizationId, orgId), gte(campaigns.createdAt, startDate), lte(campaigns.createdAt, endDate)));
+
+      const campaignIds = orgCampaigns.map(c => c.id);
+
+      // Fetch results for those campaigns
+      const allResults = campaignIds.length > 0
+        ? await db.select().from(campaignResults)
+            .where(inArray(campaignResults.campaignId, campaignIds))
+        : [];
+
+      // Summary metrics
+      const totalCampaigns = orgCampaigns.length;
+      const totalEmailsSent = allResults.length;
+      const clickedCount = allResults.filter(r => r.clicked).length;
+      const atRiskUsersSet = new Set<number>();
+      for (const r of allResults) {
+        if (r.clicked || r.submitted) atRiskUsersSet.add(r.targetId);
+      }
+      const atRiskUsers = atRiskUsersSet.size;
+      const successRate = totalEmailsSent > 0 ? Math.round((clickedCount / totalEmailsSent) * 100) : 0;
+
+      // Monthly time series using campaign createdAt buckets
+      const monthKey = (d: Date) => d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+      const monthBuckets = new Map<string, { sent: number; opened: number; clicked: number; submitted: number }>();
+      for (const c of orgCampaigns) {
+        const key = monthKey(new Date(c.createdAt));
+        if (!monthBuckets.has(key)) monthBuckets.set(key, { sent: 0, opened: 0, clicked: 0, submitted: 0 });
+        const bucket = monthBuckets.get(key)!;
+        const results = allResults.filter(r => r.campaignId === c.id);
+        bucket.sent += results.length;
+        bucket.opened += results.filter(r => r.opened).length;
+        bucket.clicked += results.filter(r => r.clicked).length;
+        bucket.submitted += results.filter(r => r.submitted).length;
+      }
+      const monthly = Array.from(monthBuckets.entries())
+        .map(([name, vals]) => ({ name, ...vals }))
+        .sort((a, b) => new Date(a.name).getTime() - new Date(b.name).getTime());
+
+      // Campaign types distribution (use status buckets)
+      const statusTitle = (s: string) => {
+        const v = (s || '').toLowerCase();
+        if (v === 'active') return 'Active';
+        if (v === 'scheduled') return 'Scheduled';
+        if (v === 'completed') return 'Completed';
+        if (v === 'draft') return 'Draft';
+        return (s || 'Unknown');
+      };
+      const typeCounts = new Map<string, number>();
+      for (const c of orgCampaigns) {
+        const key = statusTitle(String(c.status || 'Draft'));
+        typeCounts.set(key, (typeCounts.get(key) || 0) + 1);
+      }
+      const campaignTypes = Array.from(typeCounts.entries()).map(([name, value]) => ({ name, value }));
+
+      // Campaign table data
+      const campaignsTable = orgCampaigns.map(c => {
+        const results = allResults.filter(r => r.campaignId === c.id);
+        const sent = results.length;
+        const opened = results.filter(r => r.opened).length;
+        const clicked = results.filter(r => r.clicked).length;
+        const success = sent > 0 ? Math.round((clicked / sent) * 100) : 0;
+        return {
+          id: c.id,
+          name: c.name,
+          status: statusTitle(String(c.status || 'Draft')),
+          sentCount: sent,
+          openedCount: opened,
+          clickedCount: clicked,
+          successRate: success,
+        };
+      });
+
+      // Users (targets) table data
+      // Aggregate by target from results; enrich with target department
+      const targetAgg = new Map<number, { sent: number; clicked: number; submitted: number }>();
+      for (const r of allResults) {
+        const rec = targetAgg.get(r.targetId) || { sent: 0, clicked: 0, submitted: 0 };
+        rec.sent += 1;
+        if (r.clicked) rec.clicked += 1;
+        if (r.submitted) rec.submitted += 1;
+        targetAgg.set(r.targetId, rec);
+      }
+      let usersTable: any[] = [];
+      if (targetAgg.size > 0) {
+        const targetIds = Array.from(targetAgg.keys());
+        const targetRows = await db.select().from(targets)
+          .where(inArray(targets.id, targetIds));
+        usersTable = targetRows.map(t => {
+          const agg = targetAgg.get(t.id)!;
+          const success = agg.sent > 0 ? Math.round((agg.clicked / agg.sent) * 100) : 0;
+          let riskLevel: 'High Risk' | 'Medium Risk' | 'Low Risk' = 'Low Risk';
+          const riskScore = agg.clicked + agg.submitted * 2;
+          if (riskScore >= 3) riskLevel = 'High Risk';
+          else if (riskScore >= 2) riskLevel = 'Medium Risk';
+          return {
+            id: t.id,
+            name: `${t.firstName} ${t.lastName}`.trim(),
+            department: t.department || 'Unknown',
+            riskLevel,
+            totalCampaigns: agg.sent,
+            clickedCount: agg.clicked,
+            submittedCount: agg.submitted,
+            successRate: success,
+          };
+        });
+      }
+
+      // Trend data: monthly success rate and an awareness proxy (100 - success)
+      const trendData = monthly.map(m => {
+        const sent = m.sent || 0;
+        const clicked = m.clicked || 0;
+        const sr = sent > 0 ? Math.round((clicked / sent) * 100) : 0;
+        const awareness = Math.max(0, 100 - sr);
+        return { month: m.name, successRate: sr, awareness };
+      });
+
+      const response = {
+        summary: {
+          totalCampaigns,
+          totalEmailsSent,
+          successRate,
+          atRiskUsers,
+        },
+        chartData: {
+          monthly,
+          campaignTypes,
+        },
+        campaigns: campaignsTable,
+        users: usersTable,
+        trendData,
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error("Error generating report data:", error);
+      res.status(500).json({ message: "Error generating report data" });
+    }
+  });
+
+  // ===============================================
+  // REPORT SCHEDULES API
+  // ===============================================
+
+  // List report schedules for organization
+  app.get("/api/reports/schedules", isAuthenticated, hasOrganization, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const orgId = req.user.organizationId;
+
+      const schedules = await db.select()
+        .from(reportSchedules)
+        .where(eq(reportSchedules.organizationId, orgId))
+        .orderBy(reportSchedules.createdAt);
+
+      res.json(schedules);
+    } catch (error) {
+      console.error("Error fetching report schedules:", error);
+      res.status(500).json({ message: "Error fetching report schedules" });
+    }
+  });
+
+  // Create report schedule
+  app.post("/api/reports/schedules", isAuthenticated, hasOrganization, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const orgId = req.user.organizationId;
+
+      // Validate input
+      const scheduleData = insertReportScheduleSchema.parse(req.body);
+
+      // Calculate next run time based on cadence
+      const now = new Date();
+      const [hours, minutes] = scheduleData.timeOfDay.split(':').map(Number);
+      const nextRun = new Date();
+      nextRun.setHours(hours, minutes, 0, 0);
+      
+      if (nextRun <= now) {
+        // If time has passed today, schedule for next occurrence
+        switch (scheduleData.cadence) {
+          case 'daily':
+            nextRun.setDate(nextRun.getDate() + 1);
+            break;
+          case 'weekly':
+            nextRun.setDate(nextRun.getDate() + 7);
+            break;
+          case 'monthly':
+            nextRun.setMonth(nextRun.getMonth() + 1);
+            break;
+        }
+      }
+
+      const [newSchedule] = await db.insert(reportSchedules)
+        .values({
+          ...scheduleData,
+          organizationId: orgId,
+          nextRunAt: nextRun,
+        })
+        .returning();
+
+      res.status(201).json(newSchedule);
+    } catch (error) {
+      console.error("Error creating report schedule:", error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ message: "Invalid schedule data", errors: error.errors });
+      } else {
+        res.status(500).json({ message: "Error creating report schedule" });
+      }
+    }
+  });
+
+  // Update report schedule
+  app.put("/api/reports/schedules/:id", isAuthenticated, hasOrganization, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const orgId = req.user.organizationId;
+      const scheduleId = Number.parseInt(req.params.id, 10);
+
+      // Verify schedule belongs to organization
+      const existing = await db.select()
+        .from(reportSchedules)
+        .where(and(
+          eq(reportSchedules.id, scheduleId),
+          eq(reportSchedules.organizationId, orgId)
+        ))
+        .limit(1);
+
+      if (existing.length === 0) {
+        res.status(404).json({ message: "Schedule not found" });
+        return;
+      }
+
+      // Validate input
+      const scheduleData = insertReportScheduleSchema.partial().parse(req.body);
+
+      // Recalculate next run if time or cadence changed
+      let nextRun = existing[0].nextRunAt;
+      if (scheduleData.timeOfDay || scheduleData.cadence) {
+        const timeOfDay = scheduleData.timeOfDay || existing[0].timeOfDay;
+        const [hours, minutes] = timeOfDay.split(':').map(Number);
+        const now = new Date();
+        nextRun = new Date();
+        nextRun.setHours(hours, minutes, 0, 0);
+        
+        if (nextRun <= now) {
+          const cadence = scheduleData.cadence || existing[0].cadence;
+          switch (cadence) {
+            case 'daily':
+              nextRun.setDate(nextRun.getDate() + 1);
+              break;
+            case 'weekly':
+              nextRun.setDate(nextRun.getDate() + 7);
+              break;
+            case 'monthly':
+              nextRun.setMonth(nextRun.getMonth() + 1);
+              break;
+          }
+        }
+      }
+
+      const [updated] = await db.update(reportSchedules)
+        .set({
+          ...scheduleData,
+          nextRunAt: nextRun,
+          updatedAt: new Date(),
+        })
+        .where(eq(reportSchedules.id, scheduleId))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating report schedule:", error);
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ message: "Invalid schedule data", errors: error.errors });
+      } else {
+        res.status(500).json({ message: "Error updating report schedule" });
+      }
+    }
+  });
+
+  // Delete report schedule
+  app.delete("/api/reports/schedules/:id", isAuthenticated, hasOrganization, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const orgId = req.user.organizationId;
+      const scheduleId = Number.parseInt(req.params.id, 10);
+
+      // Verify schedule belongs to organization
+      const existing = await db.select()
+        .from(reportSchedules)
+        .where(and(
+          eq(reportSchedules.id, scheduleId),
+          eq(reportSchedules.organizationId, orgId)
+        ))
+        .limit(1);
+
+      if (existing.length === 0) {
+        res.status(404).json({ message: "Schedule not found" });
+        return;
+      }
+
+      await db.delete(reportSchedules)
+        .where(eq(reportSchedules.id, scheduleId));
+
+      res.json({ message: "Schedule deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting report schedule:", error);
+      res.status(500).json({ message: "Error deleting report schedule" });
+    }
+  });
+
+  // Initialize threat feed scheduler (now controlled via THREAT_FEED_ENABLED env var in index.ts)
+
+  // Initialize reporting scheduler
+  console.log('📊 Starting report scheduler...');
+  reportingScheduler.start(1); // Check every 1 minute for due reports
 
   // Add error handling middleware (must be last)
   app.use(errorHandler.middleware);

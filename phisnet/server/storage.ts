@@ -144,6 +144,19 @@ export class DatabaseStorage implements IStorage {
     
     console.log('Database session store initialized with 30 minute TTL');
   }
+
+  /**
+   * Stop session store cleanup interval to allow graceful shutdown
+   */
+  stopSessionStore() {
+    try {
+      if (this.sessionStore && typeof this.sessionStore.stopInterval === 'function') {
+        this.sessionStore.stopInterval();
+      }
+    } catch {
+      // ignore if not available
+    }
+  }
   
   // User methods
   async getUser(id: number): Promise<User | undefined> {
