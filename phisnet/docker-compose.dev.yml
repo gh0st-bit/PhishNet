@@ -1,0 +1,26 @@
+# Development override for Codespaces
+version: '3.8'
+
+services:
+  # Development PhishNet Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://phishnet_user:phishnet_secure_password@database:5432/phishnet
+      REDIS_URL: redis://:phishnet_redis_password@redis:6379
+      SESSION_SECRET: phishnet-dev-session-secret-key-for-codespaces
+    volumes:
+      - .:/workspaces/PhishNet:cached
+      - /workspaces/PhishNet/node_modules
+    command: npm run dev
+    ports:
+      - "3001:3001"
+    
+  # Remove nginx for development
+  nginx:
+    profiles: ["production"]

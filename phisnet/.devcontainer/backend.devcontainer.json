@@ -1,0 +1,52 @@
+{
+  "name": "PhishNet Backend Development", 
+  "build": {
+    "dockerfile": "backend.Dockerfile"
+  },
+  "forwardPorts": [
+    3001,
+    5432
+  ],
+  "postCreateCommand": "npm run setup:backend",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "files.exclude": {
+          "**/client/src/**": true,
+          "**/client/public/**": true,
+          "**/.env*": true,
+          "**/node_modules/**": true
+        },
+        "search.exclude": {
+          "**/client/src/**": true,
+          "**/client/public/**": true
+        },
+        "files.watcherExclude": {
+          "**/client/src/**": true,
+          "**/client/public/**": true
+        }
+      },
+      "extensions": [
+        "ms-vscode.vscode-typescript-next",
+        "esbenp.prettier-vscode", 
+        "ms-vscode.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "ms-vscode.vscode-json",
+        "ms-vscode.vscode-postgresql"
+      ]
+    }
+  },
+  "mounts": [
+    "source=phishnet-backend-node-modules,target=/workspace/node_modules,type=volume"
+  ],
+  "remoteUser": "node",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/postgres:1": {}
+  },
+  "containerEnv": {
+    "WORKSPACE_TYPE": "backend",
+    "ALLOWED_PATHS": "server/,shared/,docs/"
+  }
+}

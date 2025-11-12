@@ -1,0 +1,368 @@
+name: 🔐 Zero Trust CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, 'feature/**', 'hotfix/**' ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '20'
+  POSTGRES_VERSION: '15'
+
+jobs:
+  # Security Scanning - Always runs first
+  security-scan:
+    name: 🛡️ Security Analysis
+    runs-on: ubuntu-latest
+    outputs:
+      security-passed: ${{ steps.security-check.outputs.passed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/init@v3
+        with:
+          languages: typescript, javascript
+
+      - name: Run Dependency Scan
+        run: |
+          npm audit --audit-level=high
+          npx @cyclonedx/cyclonedx-npm --output-format JSON --output-file sbom.json
+
+      - name: Check Secrets Exposure
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+          head: HEAD
+
+      - name: Security Gate
+        id: security-check
+        run: echo "passed=true" >> $GITHUB_OUTPUT
+
+  # Module Change Detection
+  detect-changes:
+    name: 📋 Detect Module Changes
+    runs-on: ubuntu-latest
+    outputs:
+      frontend-changed: ${{ steps.changes.outputs.frontend }}
+      backend-changed: ${{ steps.changes.outputs.backend }}
+      database-changed: ${{ steps.changes.outputs.database }}
+      shared-changed: ${{ steps.changes.outputs.shared }}
+      docs-changed: ${{ steps.changes.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            frontend:
+              - 'client/**'
+              - 'shared/types/**'
+            backend:
+              - 'server/**'
+              - 'shared/schema.ts'
+            database:
+              - 'migrations/**'
+              - 'shared/schema.ts'
+            shared:
+              - 'shared/**'
+            docs:
+              - 'docs/**'
+              - '*.md'
+
+  # Frontend Module CI
+  frontend-ci:
+    name: 🎨 Frontend Module CI
+    runs-on: ubuntu-latest
+    needs: [security-scan, detect-changes]
+    if: needs.detect-changes.outputs.frontend-changed == 'true'
+    environment: 
+      name: frontend-dev
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'client/package-lock.json'
+
+      - name: Install dependencies
+        run: |
+          cd client
+          npm ci --only=production
+          npm audit fix
+
+      - name: Type checking
+        run: |
+          cd client
+          npm run type-check
+
+      - name: Lint and format
+        run: |
+          cd client
+          npm run lint
+          npm run format:check
+
+      - name: Unit tests
+        run: |
+          cd client
+          npm run test:unit -- --coverage
+
+      - name: Build application
+        run: |
+          cd client
+          npm run build
+
+      - name: Component tests
+        run: |
+          cd client
+          npm run test:component
+
+      - name: Deploy to staging
+        id: deploy
+        run: |
+          echo "url=https://frontend-staging.phishnet.dev" >> $GITHUB_OUTPUT
+          # Actual deployment logic here
+
+  # Backend Module CI
+  backend-ci:
+    name: ⚙️ Backend Module CI
+    runs-on: ubuntu-latest
+    needs: [security-scan, detect-changes]
+    if: needs.detect-changes.outputs.backend-changed == 'true'
+    environment: 
+      name: backend-dev
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: phishnet_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'server/package-lock.json'
+
+      - name: Install dependencies
+        run: |
+          cd server
+          npm ci --only=production
+          npm audit fix
+
+      - name: Type checking
+        run: |
+          cd server
+          npm run type-check
+
+      - name: Lint and format
+        run: |
+          cd server
+          npm run lint
+          npm run format:check
+
+      - name: Database migration test
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/phishnet_test
+        run: |
+          cd server
+          npm run db:migrate
+
+      - name: Unit tests
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/phishnet_test
+        run: |
+          cd server
+          npm run test:unit -- --coverage
+
+      - name: Integration tests
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/phishnet_test
+        run: |
+          cd server
+          npm run test:integration
+
+      - name: API security tests
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/phishnet_test
+        run: |
+          cd server
+          npm run test:security
+
+  # Database Module CI
+  database-ci:
+    name: 🗄️ Database Module CI
+    runs-on: ubuntu-latest
+    needs: [security-scan, detect-changes]
+    if: needs.detect-changes.outputs.database-changed == 'true'
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: phishnet_migration_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Test migration rollback
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/phishnet_migration_test
+        run: |
+          # Test forward and backward migrations
+          npm run db:migrate
+          npm run db:rollback
+          npm run db:migrate
+
+      - name: Test multi-tenancy isolation
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/phishnet_migration_test
+        run: |
+          # Test that organizationId isolation works
+          npm run test:multi-tenancy
+
+      - name: Performance test
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/phishnet_migration_test
+        run: |
+          # Test database performance with sample data
+          npm run test:db-performance
+
+  # Integration Testing (Only if multiple modules changed)
+  integration-tests:
+    name: 🔗 Integration Tests
+    runs-on: ubuntu-latest
+    needs: [frontend-ci, backend-ci, database-ci, detect-changes]
+    if: |
+      always() && 
+      (needs.detect-changes.outputs.shared-changed == 'true' ||
+       (needs.detect-changes.outputs.frontend-changed == 'true' && needs.detect-changes.outputs.backend-changed == 'true'))
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: phishnet_integration_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install all dependencies
+        run: |
+          npm install
+          cd client && npm install
+          cd ../server && npm install
+
+      - name: Build application
+        run: |
+          cd client && npm run build
+          cd ../server && npm run build
+
+      - name: Run E2E tests
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/phishnet_integration_test
+        run: |
+          npm run test:e2e
+
+      - name: API contract tests
+        run: |
+          npm run test:contract
+
+  # Zero Trust Access Control
+  access-control-check:
+    name: 🔐 Access Control Verification
+    runs-on: ubuntu-latest
+    needs: [detect-changes]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check developer permissions
+        run: |
+          # Verify that changes only touch allowed modules
+          chmod +x .github/scripts/verify-access.sh
+          .github/scripts/verify-access.sh
+
+      - name: Verify multi-tenant isolation
+        run: |
+          # Check that no hardcoded organization IDs exist
+          grep -r "organizationId.*=.*[0-9]" server/ && exit 1 || echo "✅ No hardcoded org IDs"
+          
+      - name: Check for sensitive data exposure
+        run: |
+          # Verify no sensitive data in commits
+          git log --oneline -10 | grep -i "password\|secret\|key\|token" && exit 1 || echo "✅ No sensitive data"
+
+  # Conditional Deployment
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [frontend-ci, backend-ci, database-ci, integration-tests, access-control-check]
+    if: |
+      always() && 
+      github.ref == 'refs/heads/develop' &&
+      (needs.frontend-ci.result == 'success' || needs.frontend-ci.result == 'skipped') &&
+      (needs.backend-ci.result == 'success' || needs.backend-ci.result == 'skipped') &&
+      (needs.database-ci.result == 'success' || needs.database-ci.result == 'skipped') &&
+      needs.access-control-check.result == 'success'
+    environment: staging
+    steps:
+      - name: Deploy to staging
+        run: |
+          echo "🚀 Deploying to staging environment..."
+          # Actual deployment logic
+
+  # Production deployment (requires manual approval)
+  deploy-production:
+    name: 🏭 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Deploy to production
+        run: |
+          echo "🏭 Deploying to production environment..."
+          # Actual deployment logic
