@@ -13,7 +13,8 @@ import {
   Menu,
   AlertTriangle,
   Search,
-  Calendar
+  Calendar,
+  FileText
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -40,6 +41,7 @@ export default function Sidebar() {
     { name: "Threat Landscape", href: "/threat-landscape", icon: <AlertTriangle className="h-5 w-5" /> },
     { name: "Reports", href: "/reports", icon: <BarChart className="h-5 w-5" /> },
     { name: "Report Schedules", href: "/report-schedules", icon: <Calendar className="h-5 w-5" /> },
+    { name: "Audit Logs", href: "/audit-logs", icon: <FileText className="h-5 w-5" /> },
     { name: "Users", href: "/users", icon: <Shield className="h-5 w-5" /> },
     { name: "Settings", href: "/settings", icon: <Settings className="h-5 w-5" /> },
   ];

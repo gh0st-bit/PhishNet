@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, isAdmin, hasOrganization, hashPassword, comparePasswords } from "./auth";
+import { trackingLimiter, apiLimiter, adminLimiter } from "./middleware/rate-limit";
 import { db } from "./db";
 import { 
   campaigns, 
@@ -33,6 +34,7 @@ import { threatFeedScheduler } from './services/threat-intelligence/threat-feed-
 import { reportingScheduler } from './services/reporting-scheduler';
 import reconnaissanceRoutes from './routes/reconnaissance';
 import { registerModularRoutes } from './routes/index';
+import { broadcastCampaignEvent } from './services/realtime';
 
 const upload = multer();
 
@@ -791,7 +793,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Open tracking pixel (1x1 transparent gif)
-  app.get('/o/:campaignId/:targetId.gif', async (req, res) => {
+  app.get('/o/:campaignId/:targetId.gif', trackingLimiter, async (req, res) => {
     try {
   const campaignId = Number.parseInt(req.params.campaignId, 10);
   const targetId = Number.parseInt(req.params.targetId, 10);
@@ -863,6 +865,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }
               }
             }
+            // Broadcast real-time event
+            try {
+              broadcastCampaignEvent(campaign.organizationId, {
+                eventType: 'campaign.email_opened',
+                campaignId,
+                targetId,
+                orgId: campaign.organizationId,
+                ts: new Date().toISOString(),
+              });
+            } catch {}
           } catch (notifError) {
             console.error('Error creating open notification:', notifError);
           }
@@ -885,7 +897,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Click tracking redirect
-  app.get('/c/:campaignId/:targetId', async (req, res) => {
+  app.get('/c/:campaignId/:targetId', trackingLimiter, async (req, res) => {
     try {
   const campaignId = Number.parseInt(req.params.campaignId, 10);
   const targetId = Number.parseInt(req.params.targetId, 10);
@@ -967,6 +979,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }
               }
             }
+            // Broadcast real-time event
+            try {
+              broadcastCampaignEvent(campaign.organizationId, {
+                eventType: 'campaign.link_clicked',
+                campaignId,
+                targetId,
+                orgId: campaign.organizationId,
+                url,
+                ts: new Date().toISOString(),
+              });
+            } catch {}
           } catch (notifError) {
             console.error('Error creating click notification:', notifError);
           }
@@ -982,7 +1005,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Public Landing Page rendering with form capture injection
-  app.get('/l/:campaignId/:targetId', async (req, res) => {
+  app.get('/l/:campaignId/:targetId', trackingLimiter, async (req, res) => {
     try {
   const campaignId = Number.parseInt(req.params.campaignId, 10);
   const targetId = Number.parseInt(req.params.targetId, 10);
@@ -1008,7 +1031,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Public form submission capture (excludes password fields)
-  app.post('/l/submit', async (req, res) => {
+  app.post('/l/submit', trackingLimiter, async (req, res) => {
     try {
   const cParam = req.query.c;
   const tParam = req.query.t;
@@ -1114,6 +1137,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }
               }
             }
+            // Broadcast real-time event
+            try {
+              broadcastCampaignEvent(campaign.organizationId, {
+                eventType: 'campaign.form_submitted',
+                campaignId,
+                targetId,
+                orgId: campaign.organizationId,
+                ts: new Date().toISOString(),
+              });
+            } catch {}
           } catch (notifError) {
             console.error('Error creating form submission notification:', notifError);
           }
@@ -1124,6 +1157,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Redirect if landing page has redirectUrl
       const page2 = page || (await storage.getLandingPage(campaign.landingPageId));
+      
+      // If microlearning is enabled, return educational content
+      if (page2?.enableMicrolearning) {
+        return res.json({
+          success: true,
+          microlearning: {
+            enabled: true,
+            title: page2.learningTitle || 'You\'ve Been Phished!',
+            content: page2.learningContent || 'This was a simulated phishing attack designed to test your awareness. Let\'s learn how to identify these threats.',
+            tips: page2.learningTips || [],
+            remediationLinks: page2.remediationLinks || [],
+          }
+        });
+      }
+      
       if (page2?.redirectUrl) {
         return res.redirect(302, page2.redirectUrl);
       }
@@ -1690,7 +1738,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const opened = results.filter(r => r.campaign_results.opened).length;
       const clicked = results.filter(r => r.campaign_results.clicked).length;
       const submitted = results.filter(r => r.campaign_results.submitted).length;
-      const reported = results.filter(r => r.campaign_results.reported).length;
+      // 'reported' is not tracked in campaign_results schema yet
+      const reported = 0;
 
       const reportData: any = {
         type: 'campaign',

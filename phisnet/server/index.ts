@@ -4,6 +4,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { isAuthenticated, isAdmin } from './auth';
 import { pool } from './db';
 import { startCampaignScheduler } from './services/campaign-scheduler';
+import { initRealtime } from './services/realtime';
 import { threatFeedScheduler } from './services/threat-intelligence/threat-feed-scheduler';
 
 const app = express();
@@ -58,6 +59,8 @@ app.use((req, res, next) => {
 // eslint-disable-next-line prefer-top-level-await
 (async () => {
   const server = await registerRoutes(app);
+  // Initialize Socket.IO real-time server
+  initRealtime(server);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

@@ -5,6 +5,7 @@ import PhishingMetricsChart from "@/components/dashboard/phishing-metrics-chart"
 import ThreatLandscape from "@/components/dashboard/threat-landscape";
 import AtRiskUsers from "@/components/dashboard/at-risk-users";
 import SecurityTraining from "@/components/dashboard/security-training";
+import RealTimeCampaignWidget from "@/components/dashboard/real-time-campaign";
 import { ReportExportButton } from "@/components/reports/report-export-button";
 import { useAuth } from "@/hooks/use-auth";
 import { 
@@ -197,6 +198,11 @@ export default function DashboardPage() {
           iconBgColor="bg-yellow-900/30"
           iconColor="text-warning"
         />
+      </div>
+
+      {/* Real-time widget row */}
+      <div className="grid grid-cols-1 gap-6 mb-6">
+        <RealTimeCampaignWidget />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">

@@ -22,6 +22,7 @@ import ForgotPasswordPage from "@/pages/forgot-password-page";
 import ResetPasswordPage from "@/pages/reset-password-page";
 import ThreatLandscapePage from "@/pages/threat-landscape-page";
 import NotificationsPage from "./pages/notifications-page";
+import AuditLogsPage from "@/pages/audit-logs-page";
 import SessionTimeoutWrapper from "@/components/session-timeout-wrapper";
 import { ProtectedRoute } from "./lib/protected-route";
 import { ThemeProvider } from "next-themes";
@@ -51,6 +52,7 @@ function Router() {
       <ProtectedRoute path="/organization" component={OrganizationPage} />
       <ProtectedRoute path="/threat-landscape" component={ThreatLandscapePage} />
   <ProtectedRoute path="/notifications" component={NotificationsPage} />
+      <ProtectedRoute path="/audit-logs" component={AuditLogsPage} />
       <Route component={NotFound} />
     </Switch>
   );

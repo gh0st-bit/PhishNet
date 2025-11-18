@@ -112,6 +112,12 @@ export const landingPages = pgTable("landing_pages", {
   thumbnail: text("thumbnail"),
   captureData: boolean("capture_data").default(true),
   capturePasswords: boolean("capture_passwords").default(false),
+  // Microlearning fields
+  enableMicrolearning: boolean("enable_microlearning").default(false),
+  learningTitle: text("learning_title"),
+  learningContent: text("learning_content"),
+  learningTips: jsonb("learning_tips").default('[]'), // Array of tip strings
+  remediationLinks: jsonb("remediation_links").default('[]'), // Array of {title, url} objects
   organizationId: integer("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   createdById: integer("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -272,6 +278,50 @@ export const reportSchedules = pgTable("report_schedules", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Audit Logs (admin & security auditing)
+export const auditLogs = pgTable("audit_logs", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'set null' }),
+  action: varchar("action", { length: 100 }).notNull(),
+  resource: varchar("resource", { length: 200 }),
+  resourceId: integer("resource_id"),
+  ip: varchar("ip", { length: 64 }),
+  userAgent: text("user_agent"),
+  metadata: jsonb("metadata").default('{}'),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Risk Scores (per user, time‑series)
+export const riskScores = pgTable("risk_scores", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  score: integer("score").notNull(), // 0–100
+  factors: jsonb("factors").default('[]'), // contributing factors
+  calculatedAt: timestamp("calculated_at").defaultNow().notNull(),
+});
+
+// SCIM objects (provisioning)
+export const scimUsers = pgTable("scim_users", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  externalId: varchar("external_id", { length: 200 }).notNull(),
+  active: boolean("active").default(true).notNull(),
+  data: jsonb("data").default('{}'),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const scimGroups = pgTable("scim_groups", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  externalId: varchar("external_id", { length: 200 }).notNull(),
+  data: jsonb("data").default('{}'),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Define permission types
 export const PERMISSIONS = {
   // Dashboard permissions
@@ -396,6 +446,14 @@ export type ThreatStatistics = typeof threatStatistics.$inferSelect;
 export type InsertThreatStatistics = typeof threatStatistics.$inferInsert;
 export type ReportSchedule = typeof reportSchedules.$inferSelect;
 export type InsertReportSchedule = typeof reportSchedules.$inferInsert;
+export type AuditLog = typeof auditLogs.$inferSelect;
+export type InsertAuditLog = typeof auditLogs.$inferInsert;
+export type RiskScore = typeof riskScores.$inferSelect;
+export type InsertRiskScore = typeof riskScores.$inferInsert;
+export type ScimUser = typeof scimUsers.$inferSelect;
+export type InsertScimUser = typeof scimUsers.$inferInsert;
+export type ScimGroup = typeof scimGroups.$inferSelect;
+export type InsertScimGroup = typeof scimGroups.$inferInsert;
 
 // Validation schemas - ONLY DECLARE ONCE
 export const userValidationSchema = z.object({
@@ -486,6 +544,38 @@ export const insertReportScheduleSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+export const insertAuditLogSchema = createInsertSchema(auditLogs).pick({
+  organizationId: true,
+  userId: true,
+  action: true,
+  resource: true,
+  resourceId: true,
+  ip: true,
+  userAgent: true,
+  metadata: true,
+});
+
+export const insertRiskScoreSchema = createInsertSchema(riskScores).pick({
+  organizationId: true,
+  userId: true,
+  score: true,
+  factors: true,
+  calculatedAt: true,
+});
+
+export const insertScimUserSchema = createInsertSchema(scimUsers).pick({
+  organizationId: true,
+  externalId: true,
+  active: true,
+  data: true,
+});
+
+export const insertScimGroupSchema = createInsertSchema(scimGroups).pick({
+  organizationId: true,
+  externalId: true,
+  data: true,
+});
+
 export const insertLandingPageSchema = createInsertSchema(landingPages).pick({
   name: true,
   description: true,
@@ -495,6 +585,11 @@ export const insertLandingPageSchema = createInsertSchema(landingPages).pick({
   thumbnail: true,
   captureData: true,
   capturePasswords: true,
+  enableMicrolearning: true,
+  learningTitle: true,
+  learningContent: true,
+  learningTips: true,
+  remediationLinks: true,
 });
 
 export const updateLandingPageSchema = insertLandingPageSchema.partial();
@@ -509,12 +604,12 @@ const campaignBaseSchema = z.object({
   scheduledAt: z
     .union([z.string(), z.date()])
     .transform((val) => (typeof val === 'string' ? new Date(val) : val))
-    .refine((d) => !(d instanceof Date) || !isNaN(d.getTime()), { message: 'Invalid scheduledAt date format' })
+    .refine((d) => !(d instanceof Date) || !Number.isNaN(d.getTime()), { message: 'Invalid scheduledAt date format' })
     .optional(),
   endDate: z
     .union([z.string(), z.date()])
     .transform((val) => (typeof val === 'string' ? new Date(val) : val))
-    .refine((d) => !(d instanceof Date) || !isNaN(d.getTime()), { message: 'Invalid endDate date format' })
+    .refine((d) => !(d instanceof Date) || !Number.isNaN(d.getTime()), { message: 'Invalid endDate date format' })
     .optional(),
 });
 

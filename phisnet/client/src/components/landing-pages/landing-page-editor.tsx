@@ -23,6 +23,14 @@ const landingPageSchema = z.object({
   thumbnail: z.string().optional(),
   captureData: z.boolean().default(true),
   capturePasswords: z.boolean().default(false),
+  enableMicrolearning: z.boolean().default(false),
+  learningTitle: z.string().optional(),
+  learningContent: z.string().optional(),
+  learningTips: z.array(z.string()).default([]),
+  remediationLinks: z.array(z.object({
+    title: z.string(),
+    url: z.string().url(),
+  })).default([]),
 });
 
 type LandingPageFormValues = z.infer<typeof landingPageSchema>;
@@ -52,8 +60,13 @@ export default function LandingPageEditor({ onClose, page }: LandingPageEditorPr
       redirectUrl: page?.redirectUrl || "",
       pageType: page?.pageType || "login",
       thumbnail: page?.thumbnail || "",
-  captureData: page?.captureData ?? true,
-  capturePasswords: page?.capturePasswords ?? false,
+      captureData: page?.captureData ?? true,
+      capturePasswords: page?.capturePasswords ?? false,
+      enableMicrolearning: page?.enableMicrolearning ?? false,
+      learningTitle: page?.learningTitle || "",
+      learningContent: page?.learningContent || "",
+      learningTips: page?.learningTips || [],
+      remediationLinks: page?.remediationLinks || [],
     },
   });
 
