@@ -6,6 +6,27 @@ import { z } from "zod";
 export const organizations = pgTable("organizations", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  // Data retention policy in days (per organization)
+  dataRetentionDays: integer("data_retention_days").default(365).notNull(),
+  // Per-organization encryption key for secrets management
+  encryptionKey: text("encryption_key"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// SSO Configuration table
+export const ssoConfig = pgTable("sso_config", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull().unique(),
+  enabled: boolean("enabled").default(false).notNull(),
+  provider: text("provider").notNull(), // 'saml' or 'oidc'
+  entityId: text("entity_id"), // SAML Entity ID
+  ssoUrl: text("sso_url"), // SAML SSO URL or OIDC authorization endpoint
+  certificate: text("certificate"), // SAML x509 certificate
+  issuer: text("issuer"), // OIDC issuer
+  clientId: text("client_id"), // OIDC client ID
+  clientSecret: text("client_secret"), // OIDC client secret
+  callbackUrl: text("callback_url"), // OIDC callback URL
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -454,6 +475,8 @@ export type ScimUser = typeof scimUsers.$inferSelect;
 export type InsertScimUser = typeof scimUsers.$inferInsert;
 export type ScimGroup = typeof scimGroups.$inferSelect;
 export type InsertScimGroup = typeof scimGroups.$inferInsert;
+export type SsoConfig = typeof ssoConfig.$inferSelect;
+export type InsertSsoConfig = typeof ssoConfig.$inferInsert;
 
 // Validation schemas - ONLY DECLARE ONCE
 export const userValidationSchema = z.object({
@@ -482,6 +505,7 @@ export const insertUserSchema = createInsertSchema(users).pick({
 
 export const insertOrganizationSchema = createInsertSchema(organizations).pick({
   name: true,
+  dataRetentionDays: true,
 });
 
 export const insertGroupSchema = createInsertSchema(groups).pick({
@@ -553,6 +577,12 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).pick({
   ip: true,
   userAgent: true,
   metadata: true,
+});
+
+export const insertSsoConfigSchema = createInsertSchema(ssoConfig).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
 });
 
 export const insertRiskScoreSchema = createInsertSchema(riskScores).pick({

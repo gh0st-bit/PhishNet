@@ -14,7 +14,6 @@ import {
   Bell, 
   Moon, 
   Sun, 
-  Mail, 
   Shield, 
   RefreshCw, 
   AlertTriangle,
@@ -35,10 +34,10 @@ export default function SettingsPage() {
   
   // Get tab from query string
   const getTabFromQuery = () => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
+    if (typeof globalThis !== 'undefined' && (globalThis as any).location) {
+      const params = new URLSearchParams(globalThis.location.search);
       const tab = params.get('tab');
-      if (tab === 'notifications' || tab === 'appearance' || tab === 'account') {
+      if (tab === 'notifications' || tab === 'appearance' || tab === 'account' || tab === 'governance') {
         return tab;
       }
     }
@@ -63,7 +62,7 @@ export default function SettingsPage() {
     // Load saved session timeout or default to 30 minutes
     const savedTimeout = localStorage.getItem('sessionTimeoutMinutes');
     if (savedTimeout) {
-      setSessionTimeout(parseInt(savedTimeout));
+      setSessionTimeout(Number.parseInt(savedTimeout));
     }
   }, []);
   
@@ -181,33 +180,7 @@ export default function SettingsPage() {
   };
   
   // Update your settings page with proper save functionality
-  const handleSaveSettings = async (section: string, data: any) => {
-    try {
-      const response = await fetch(`/api/user/settings/${section}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to save settings');
-      }
-
-      toast({
-        title: "Settings saved",
-        description: `Your ${section} settings have been updated successfully.`,
-      });
-    } catch (error) {
-      toast({
-        title: "Error saving settings",
-        description: error instanceof Error ? error.message : "An unexpected error occurred",
-        variant: "destructive",
-      });
-    }
-  };
+  // (legacy) handleSaveSettings removed; per-section save handlers inline
   
   return (
     <div className="container max-w-4xl py-6 mx-auto">
@@ -249,6 +222,12 @@ export default function SettingsPage() {
             <Sun className="h-4 w-4 mr-2" />
             Appearance
           </TabsTrigger>
+          {user?.isAdmin && (
+            <TabsTrigger value="governance">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Governance
+            </TabsTrigger>
+          )}
         </TabsList>
         
         {/* Account Security Tab */}
@@ -342,7 +321,7 @@ export default function SettingsPage() {
                       id="sessionTimeout"
                       type="number"
                       value={sessionTimeout}
-                      onChange={(e) => handleSessionTimeoutChange(parseInt(e.target.value))}
+                      onChange={(e) => handleSessionTimeoutChange(Number.parseInt(e.target.value))}
                       min={10}
                       max={120}
                       className="max-w-[100px]"
@@ -413,7 +392,436 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Governance Tab (Admin only) */}
+        {user?.isAdmin && (
+          <TabsContent value="governance">
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Data Retention Policy</CardTitle>
+                  <CardDescription>
+                    Control how long to retain audit logs, notifications, and submitted data.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <RetentionPolicyForm />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Single Sign-On (SSO)</CardTitle>
+                  <CardDescription>
+                    Configure SAML or OIDC for enterprise authentication.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <SsoConfigForm />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Secrets Management</CardTitle>
+                  <CardDescription>
+                    View encryption key status and manage secrets security.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <SecretsManagementPanel />
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        )}
       </Tabs>
+    </div>
+  );
+}
+
+function RetentionPolicyForm() {
+  const { toast } = useToast();
+  const [days, setDays] = useState<number>(365);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [saving, setSaving] = useState<boolean>(false);
+  const [running, setRunning] = useState<boolean>(false);
+  const [lastStatus, setLastStatus] = useState<{ lastRunAt: string | null } | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const [policyRes, statusRes] = await Promise.all([
+          fetch('/api/data-retention/policy', { credentials: 'include' }),
+          fetch('/api/data-retention/status', { credentials: 'include' }),
+        ]);
+        if (policyRes.ok) {
+          const p = await policyRes.json();
+          if (mounted && typeof p.dataRetentionDays === 'number') setDays(p.dataRetentionDays);
+        }
+        if (statusRes.ok) {
+          const s = await statusRes.json();
+          if (mounted) setLastStatus({ lastRunAt: s?.scheduler?.lastRunAt || null });
+        }
+      } catch (e: any) {
+        console.error('Failed to load retention policy/status', e);
+        toast({
+          title: 'Could not load data retention info',
+          description: e?.message || 'Please try again later.',
+          variant: 'destructive',
+        });
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const save = async () => {
+    try {
+      setSaving(true);
+      const res = await fetch('/api/data-retention/policy', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ days }),
+      });
+      if (!res.ok) throw new Error((await res.json()).message || 'Failed to update policy');
+      toast({ title: 'Retention policy updated', description: `Now ${days} day(s)` });
+    } catch (e: any) {
+      toast({ title: 'Update failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const runNow = async () => {
+    try {
+      setRunning(true);
+      const res = await fetch('/api/data-retention/run-now', { method: 'POST', credentials: 'include' });
+      const json = await res.json();
+      if (!res.ok || !json?.success) throw new Error(json?.message || 'Failed to run cleanup');
+      setLastStatus({ lastRunAt: new Date().toISOString() });
+      const total = (json.summary?.perOrganization || []).reduce((acc: number, o: any) => acc + (o.deletedAuditLogs || 0) + (o.deletedNotifications || 0) + (o.clearedSubmittedData || 0), 0);
+      toast({ title: 'Cleanup complete', description: `Processed ${total} item(s)` });
+    } catch (e: any) {
+      toast({ title: 'Cleanup failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-3">
+        <div className="flex-1">
+          <Label htmlFor="retentionDays">Retention Days</Label>
+          <Input
+            id="retentionDays"
+            type="number"
+            min={0}
+            max={3650}
+            value={days}
+            onChange={(e) => setDays(Math.max(0, Math.min(3650, Number(e.target.value || 0))))}
+            disabled={loading}
+            className="max-w-[200px]"
+          />
+          <p className="text-xs text-muted-foreground mt-1">0 = keep only current-day data; typical is 180–730.</p>
+        </div>
+        <Button onClick={save} disabled={loading || saving} variant="default">
+          {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+          Save
+        </Button>
+        <Button onClick={runNow} disabled={loading || running} variant="outline">
+          {running ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+          Run Cleanup Now
+        </Button>
+      </div>
+      <div className="text-sm text-muted-foreground flex items-center gap-2">
+        <InfoIcon className="h-4 w-4" />
+        Last run: {lastStatus?.lastRunAt ? new Date(lastStatus.lastRunAt).toLocaleString() : 'never'}
+      </div>
+    </div>
+  );
+}
+
+function SsoConfigForm() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [config, setConfig] = useState({
+    enabled: false,
+    provider: 'saml' as 'saml' | 'oidc',
+    entityId: '',
+    ssoUrl: '',
+    certificate: '',
+    issuer: '',
+    clientId: '',
+    clientSecret: '',
+  });
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/sso/config', { credentials: 'include' });
+        const data = await res.json();
+        if (mounted && data) {
+          setConfig((prev) => ({ ...prev, ...data }));
+        }
+      } catch (e: unknown) {
+        toast({ title: 'Failed to load SSO config', variant: 'destructive' });
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const save = async () => {
+    try {
+      setSaving(true);
+      const res = await fetch('/api/sso/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(config),
+      });
+      if (!res.ok) throw new Error((await res.json()).message || 'Failed to update SSO config');
+      toast({ title: 'SSO configuration saved', description: 'Changes will take effect on next login' });
+    } catch (e: any) {
+      toast({ title: 'Save failed', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Loading SSO config...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="space-y-0.5">
+          <Label>Enable SSO</Label>
+          <p className="text-xs text-muted-foreground">Allow users to log in via SAML or OIDC</p>
+        </div>
+        <Switch
+          checked={config.enabled}
+          onCheckedChange={(enabled) => setConfig((prev) => ({ ...prev, enabled }))}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Provider Type</Label>
+        <select
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          value={config.provider}
+          onChange={(e) => setConfig((prev) => ({ ...prev, provider: e.target.value as 'saml' | 'oidc' }))}
+        >
+          <option value="saml">SAML 2.0</option>
+          <option value="oidc">OpenID Connect (OIDC)</option>
+        </select>
+      </div>
+
+      {config.provider === 'saml' && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="entityId">Entity ID (SP)</Label>
+            <Input
+              id="entityId"
+              value={config.entityId}
+              onChange={(e) => setConfig((prev) => ({ ...prev, entityId: e.target.value }))}
+              placeholder="https://yourapp.com/saml/metadata"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ssoUrl">SSO URL (IdP)</Label>
+            <Input
+              id="ssoUrl"
+              value={config.ssoUrl}
+              onChange={(e) => setConfig((prev) => ({ ...prev, ssoUrl: e.target.value }))}
+              placeholder="https://idp.example.com/sso/saml"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="certificate">IdP x509 Certificate</Label>
+            <textarea
+              id="certificate"
+              className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={config.certificate}
+              onChange={(e) => setConfig((prev) => ({ ...prev, certificate: e.target.value }))}
+              placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+            />
+            <p className="text-xs text-muted-foreground">Paste the full x509 certificate from your IdP</p>
+          </div>
+        </>
+      )}
+
+      {config.provider === 'oidc' && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="issuer">Issuer URL</Label>
+            <Input
+              id="issuer"
+              value={config.issuer}
+              onChange={(e) => setConfig((prev) => ({ ...prev, issuer: e.target.value }))}
+              placeholder="https://accounts.example.com"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="clientId">Client ID</Label>
+            <Input
+              id="clientId"
+              value={config.clientId}
+              onChange={(e) => setConfig((prev) => ({ ...prev, clientId: e.target.value }))}
+              placeholder="your-client-id"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="clientSecret">Client Secret</Label>
+            <Input
+              id="clientSecret"
+              type="password"
+              value={config.clientSecret}
+              onChange={(e) => setConfig((prev) => ({ ...prev, clientSecret: e.target.value }))}
+              placeholder="••••••••"
+            />
+          </div>
+        </>
+      )}
+
+      <Button onClick={save} disabled={saving}>
+        {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+        Save SSO Configuration
+      </Button>
+    </div>
+  );
+}
+
+function SecretsManagementPanel() {
+  const { toast } = useToast();
+  const [encryptionStatus, setEncryptionStatus] = useState<{
+    hasKey: boolean;
+    lastRotation?: string;
+  }>({ hasKey: false });
+  const [loading, setLoading] = useState(true);
+  const [rotating, setRotating] = useState(false);
+
+  useEffect(() => {
+    loadEncryptionStatus();
+  }, []);
+
+  const loadEncryptionStatus = async () => {
+    try {
+      const res = await fetch('/api/secrets/status', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setEncryptionStatus(data);
+      }
+    } catch (e: any) {
+      console.error('Failed to load encryption status:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const rotateKey = async () => {
+    if (!confirm('Rotating encryption keys will re-encrypt all sensitive data. This operation may take some time. Continue?')) {
+      return;
+    }
+
+    try {
+      setRotating(true);
+      const res = await fetch('/api/secrets/rotate', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Failed to rotate encryption key');
+      }
+
+      toast({
+        title: 'Key Rotation Complete',
+        description: 'All sensitive data has been re-encrypted with the new key.',
+      });
+
+      await loadEncryptionStatus();
+    } catch (e: any) {
+      toast({
+        title: 'Key Rotation Failed',
+        description: e.message || 'Unknown error occurred',
+        variant: 'destructive',
+      });
+    } finally {
+      setRotating(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-6">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <Alert>
+        <Shield className="h-4 w-4" />
+        <AlertTitle>Encryption Status</AlertTitle>
+        <AlertDescription>
+          {encryptionStatus.hasKey
+            ? 'Organization encryption key is active. SMTP passwords and SSO secrets are encrypted at rest.'
+            : 'No encryption key found. Sensitive data may not be encrypted.'}
+        </AlertDescription>
+      </Alert>
+
+      {encryptionStatus.lastRotation && (
+        <div className="text-sm text-muted-foreground">
+          Last key rotation: {new Date(encryptionStatus.lastRotation).toLocaleString()}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label>Key Management</Label>
+        <div className="flex items-center space-x-2">
+          <Button
+            onClick={rotateKey}
+            disabled={rotating || !encryptionStatus.hasKey}
+            variant="outline"
+          >
+            {rotating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+            Rotate Encryption Key
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Key rotation re-encrypts all sensitive data with a new key. This improves security but may take time.
+        </p>
+      </div>
+
+      <Alert variant="default">
+        <InfoIcon className="h-4 w-4" />
+        <AlertTitle>Security Best Practices</AlertTitle>
+        <AlertDescription className="space-y-2">
+          <ul className="list-disc list-inside space-y-1 text-sm">
+            <li>Rotate encryption keys every 90 days</li>
+            <li>Never share MASTER_ENCRYPTION_KEY</li>
+            <li>Store master key in secure vault service</li>
+            <li>Use different keys for dev/staging/production</li>
+          </ul>
+        </AlertDescription>
+      </Alert>
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import rateLimit from 'express-rate-limit';
-import type { Request } from 'express';
 
 /**
  * Rate limiter for authentication endpoints (login, register, password reset)
@@ -12,10 +11,7 @@ export const authLimiter = rateLimit({
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   skipSuccessfulRequests: false, // Count successful requests
-  keyGenerator: (req: Request) => {
-    // Use IP address as the key
-    return req.ip || req.socket.remoteAddress || 'unknown';
-  },
+  // Use default key generator with IPv6-safe handling
 });
 
 /**
@@ -29,10 +25,7 @@ export const trackingLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true, // Only count failed requests
-  keyGenerator: (req: Request) => {
-    // Use IP for rate limiting
-    return req.ip || req.socket.remoteAddress || 'unknown';
-  },
+  // Use default key generator with IPv6-safe handling
 });
 
 /**
@@ -46,14 +39,7 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true, // Only count failed requests
-  keyGenerator: (req: Request) => {
-    // Prefer user ID if authenticated, otherwise use IP
-    const user = req.user as any;
-    if (user?.id) {
-      return `user:${user.id}`;
-    }
-    return `ip:${req.ip || req.socket.remoteAddress || 'unknown'}`;
-  },
+  // Use default key generator; consider user-scoped limiter if needed
 });
 
 /**
@@ -67,8 +53,5 @@ export const adminLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
-  keyGenerator: (req: Request) => {
-    const user = req.user as any;
-    return user?.id ? `admin:${user.id}` : `ip:${req.ip || 'unknown'}`;
-  },
+  // Use default key generator; consider user-scoped limiter if needed
 });

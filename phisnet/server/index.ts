@@ -6,6 +6,7 @@ import { pool } from './db';
 import { startCampaignScheduler } from './services/campaign-scheduler';
 import { initRealtime } from './services/realtime';
 import { threatFeedScheduler } from './services/threat-intelligence/threat-feed-scheduler';
+import { dataRetentionScheduler } from './services/data-retention-scheduler';
 
 const app = express();
 
@@ -58,6 +59,23 @@ app.use((req, res, next) => {
 
 // eslint-disable-next-line prefer-top-level-await
 (async () => {
+  // Validate critical environment variables
+  const requiredEnvVars = ['DATABASE_URL', 'SESSION_SECRET'];
+  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+  
+  if (missingVars.length > 0) {
+    console.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}`);
+    process.exit(1);
+  }
+  
+  // Warn if MASTER_ENCRYPTION_KEY is using insecure default
+  if (!process.env.MASTER_ENCRYPTION_KEY || 
+      process.env.MASTER_ENCRYPTION_KEY.includes('CHANGE') ||
+      process.env.MASTER_ENCRYPTION_KEY.includes('insecure')) {
+    console.warn('WARNING: MASTER_ENCRYPTION_KEY is not set or using insecure default. ' +
+                 'Generate a secure key with: openssl rand -base64 32');
+  }
+  
   const server = await registerRoutes(app);
   // Initialize Socket.IO real-time server
   initRealtime(server);
@@ -97,6 +115,20 @@ app.use((req, res, next) => {
       }
     } catch (err) {
       console.error('Failed to start threat intelligence scheduler:', err);
+    }
+
+    // Start data retention scheduler (daily by default)
+    try {
+      const retentionEnabled = (process.env.DATA_RETENTION_ENABLED || 'true').toLowerCase() === 'true';
+      if (retentionEnabled) {
+        const intervalHours = Number.parseInt(process.env.DATA_RETENTION_INTERVAL_HOURS || '24', 10);
+        dataRetentionScheduler.start(intervalHours);
+        log(`Data retention scheduler started (every ${intervalHours} hours)`);
+      } else {
+        log('Data retention scheduler disabled via DATA_RETENTION_ENABLED env var');
+      }
+    } catch (err) {
+      console.error('Failed to start data retention scheduler:', err);
     }
   });
 })();

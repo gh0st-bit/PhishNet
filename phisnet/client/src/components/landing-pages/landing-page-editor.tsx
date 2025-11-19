@@ -341,6 +341,124 @@ export default function LandingPageEditor({ onClose, page }: LandingPageEditorPr
                 )}
               />
 
+              <div className="border-t pt-4 mt-4">
+                <h3 className="font-medium mb-3 flex items-center gap-2">
+                  <ShieldOff className="h-4 w-4" />
+                  Just-in-Time Microlearning
+                </h3>
+                
+                <FormField
+                  control={form.control}
+                  name="enableMicrolearning"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-col mb-4">
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={field.value}
+                            onChange={(e) => field.onChange(e.target.checked)}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm font-medium">Enable educational content after form submission</span>
+                        </div>
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground ml-6">
+                        Show learning content to users who fall for the simulation
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {form.watch("enableMicrolearning") && (
+                  <div className="space-y-4 ml-6 pl-4 border-l-2">
+                    <FormField
+                      control={form.control}
+                      name="learningTitle"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Learning Title</FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g., You've Been Phished!" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="learningContent"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Main Educational Message</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Explain what went wrong and why this was a phishing attempt..."
+                              {...field}
+                              className="h-24"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="learningTips"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Key Learning Points (one per line)</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Check sender email address&#10;Look for spelling mistakes&#10;Verify links before clicking"
+                              value={Array.isArray(field.value) ? field.value.join('\n') : ''}
+                              onChange={(e) => {
+                                const lines = e.target.value.split('\n').filter(line => line.trim());
+                                field.onChange(lines);
+                              }}
+                              className="h-24 font-mono text-sm"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="remediationLinks"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Additional Resources (format: Title | URL, one per line)</FormLabel>
+                          <FormControl>
+                            <Textarea 
+                              placeholder="Phishing Awareness Guide | https://example.com/guide&#10;Report Phishing | https://example.com/report"
+                              value={Array.isArray(field.value) ? field.value.map(link => `${link.title} | ${link.url}`).join('\n') : ''}
+                              onChange={(e) => {
+                                const lines = e.target.value.split('\n').filter(line => line.trim());
+                                const links = lines.map(line => {
+                                  const [title, url] = line.split('|').map(s => s.trim());
+                                  return { title: title || '', url: url || '' };
+                                }).filter(link => link.title && link.url);
+                                field.onChange(links);
+                              }}
+                              className="h-24 font-mono text-sm"
+                            />
+                          </FormControl>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Each line should be: Title | https://url
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
+              </div>
+
               <FormField
                 control={form.control}
                 name="description"

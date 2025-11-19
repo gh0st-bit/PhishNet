@@ -4,8 +4,11 @@
  */
 
 import { db } from '../db';
-import { reportSchedules, campaigns, campaignResults, users } from '@shared/schema';
+import { reportSchedules, campaigns, campaignResults, users, smtpProfiles, organizations } from '@shared/schema';
 import { eq, and, lte, sql } from 'drizzle-orm';
+import nodemailer from 'nodemailer';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface ReportData {
   organizationName: string;
@@ -115,10 +118,11 @@ class ReportingScheduler {
       // Fetch report data
       const reportData = await this.fetchReportData(schedule.organizationId);
 
-      // In production, this would generate the PDF and send it
-      // For now, just log the action
-      console.log(`📧 Would generate ${schedule.type} report with ${reportData.stats.totalCampaigns} campaigns`);
-      console.log(`📧 Would send to: ${schedule.recipients}`);
+      // Generate PDF
+      const pdfBuffer = await this.generatePDF(schedule.type, reportData);
+
+      // Send email with PDF attachment
+      await this.sendReportEmail(schedule, reportData, pdfBuffer);
 
       // Update schedule's last run and calculate next run
       const nextRun = this.calculateNextRun(schedule.cadence, schedule.timeOfDay);
@@ -131,7 +135,7 @@ class ReportingScheduler {
         })
         .where(eq(reportSchedules.id, schedule.id));
 
-      console.log(`✅ Report processed for schedule ${schedule.id}. Next run: ${nextRun.toISOString()}`);
+      console.log(`✅ Report sent successfully for schedule ${schedule.id}. Next run: ${nextRun.toISOString()}`);
     } catch (error) {
       console.error(`❌ Failed to generate/send report for schedule ${schedule.id}:`, error);
       throw error;
@@ -216,16 +220,163 @@ class ReportingScheduler {
   }
 
   /**
-   * Send report via email
-   * (Placeholder - will integrate with actual email service)
+   * Generate PDF report
    */
-  private async sendReportEmail(schedule: any, reportData: ReportData): Promise<void> {
-    console.log(`📧 Sending report to: ${schedule.recipients}`);
-    console.log(`📧 Subject: ${schedule.type} Security Report - ${reportData.organizationName}`);
-    console.log(`📧 Recipients: ${schedule.recipients.split(',').join(', ')}`);
+  private async generatePDF(reportType: string, data: ReportData): Promise<Buffer> {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
     
-    // In production, this would use the email-service.ts to send via SMTP
-    // with PDF attachment generated on the server side
+    // Header
+    doc.setFontSize(20);
+    doc.setTextColor(59, 130, 246); // Blue
+    doc.text('PhishNet Security Report', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(12);
+    doc.setTextColor(100);
+    doc.text(`${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report`, pageWidth / 2, 28, { align: 'center' });
+    
+    // Organization and date
+    doc.setFontSize(10);
+    doc.setTextColor(80);
+    doc.text(`Organization: ${data.organizationName}`, 14, 40);
+    doc.text(`Generated: ${data.reportDate}`, 14, 46);
+    doc.text(`Period: ${data.dateRange.from} - ${data.dateRange.to}`, 14, 52);
+    
+    // Key Metrics
+    doc.setFontSize(14);
+    doc.setTextColor(0);
+    doc.text('Key Metrics', 14, 65);
+    
+    autoTable(doc, {
+      startY: 70,
+      head: [['Metric', 'Value']],
+      body: [
+        ['Total Campaigns', data.stats.totalCampaigns.toString()],
+        ['Active Campaigns', data.stats.activeCampaigns.toString()],
+        ['Completed Campaigns', data.stats.completedCampaigns.toString()],
+        ['Emails Sent', data.stats.emailsSent.toString()],
+        ['Open Rate', `${data.stats.openRate.toFixed(1)}%`],
+        ['Click Rate', `${data.stats.clickRate.toFixed(1)}%`],
+        ['Submission Rate', `${data.stats.submissionRate.toFixed(1)}%`],
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [59, 130, 246] },
+    });
+    
+    // Risk Assessment
+    const finalY = (doc as any).lastAutoTable.finalY || 140;
+    doc.setFontSize(14);
+    doc.text('Risk Assessment', 14, finalY + 15);
+    
+    doc.setFontSize(10);
+    let riskLevel = 'Low';
+    if (data.stats.submissionRate > 15) riskLevel = 'Critical';
+    else if (data.stats.submissionRate > 10) riskLevel = 'High';
+    else if (data.stats.submissionRate > 5) riskLevel = 'Medium';
+    
+    doc.text(`Overall Risk Level: ${riskLevel}`, 14, finalY + 22);
+    doc.text(`Analysis: ${data.stats.submissionRate.toFixed(1)}% of targets submitted credentials`, 14, finalY + 28);
+    
+    // Recommendations
+    doc.text('Recommendations:', 14, finalY + 38);
+    doc.setFontSize(9);
+    doc.text('• Continue regular phishing simulations', 16, finalY + 44);
+    doc.text('• Target high-risk users for additional training', 16, finalY + 50);
+    doc.text('• Review security policies quarterly', 16, finalY + 56);
+    
+    // Footer
+    const pageCount = doc.getNumberOfPages();
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.text(
+        `Page ${i} of ${pageCount} | PhishNet © ${new Date().getFullYear()}`,
+        pageWidth / 2,
+        doc.internal.pageSize.getHeight() - 10,
+        { align: 'center' }
+      );
+    }
+    
+    return Buffer.from(doc.output('arraybuffer'));
+  }
+
+  /**
+   * Send report via email with PDF attachment
+   */
+  private async sendReportEmail(schedule: any, reportData: ReportData, pdfBuffer: Buffer): Promise<void> {
+    // Get organization's SMTP profile
+    const [org] = await db.select()
+      .from(organizations)
+      .where(eq(organizations.id, schedule.organizationId))
+      .limit(1);
+    
+    if (!org) {
+      throw new Error(`Organization ${schedule.organizationId} not found`);
+    }
+    
+    // Get first available SMTP profile for this organization
+    const [smtpProfile] = await db.select()
+      .from(smtpProfiles)
+      .where(eq(smtpProfiles.organizationId, schedule.organizationId))
+      .limit(1);
+    
+    if (!smtpProfile) {
+      throw new Error(`No SMTP profile configured for organization ${schedule.organizationId}`);
+    }
+    
+    // Create email transporter
+    const transporter = nodemailer.createTransport({
+      host: smtpProfile.host,
+      port: smtpProfile.port,
+      secure: smtpProfile.port === 465,
+      auth: {
+        user: smtpProfile.username,
+        pass: smtpProfile.password,
+      },
+    });
+    
+    // Parse recipients
+    const recipients = schedule.recipients.split(',').map((r: string) => r.trim());
+    
+    // Send email
+    await transporter.sendMail({
+      from: `${smtpProfile.fromName} <${smtpProfile.fromEmail}>`,
+      to: recipients.join(', '),
+      subject: `${schedule.type.charAt(0).toUpperCase() + schedule.type.slice(1)} Security Report - ${reportData.organizationName}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #3b82f6;">PhishNet Security Report</h2>
+          <p>Hello,</p>
+          <p>Your scheduled <strong>${schedule.type}</strong> security report is ready.</p>
+          
+          <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <h3 style="margin-top: 0;">Key Highlights</h3>
+            <ul style="margin: 10px 0;">
+              <li><strong>Total Campaigns:</strong> ${reportData.stats.totalCampaigns}</li>
+              <li><strong>Open Rate:</strong> ${reportData.stats.openRate.toFixed(1)}%</li>
+              <li><strong>Click Rate:</strong> ${reportData.stats.clickRate.toFixed(1)}%</li>
+              <li><strong>Submission Rate:</strong> ${reportData.stats.submissionRate.toFixed(1)}%</li>
+            </ul>
+          </div>
+          
+          <p>The full report is attached as a PDF file.</p>
+          
+          <p style="color: #6b7280; font-size: 12px;">
+            This is an automated report from PhishNet. Report period: ${reportData.dateRange.from} - ${reportData.dateRange.to}
+          </p>
+        </div>
+      `,
+      attachments: [
+        {
+          filename: `phishnet-report-${reportData.reportDate.replace(/\//g, '-')}.pdf`,
+          content: pdfBuffer,
+          contentType: 'application/pdf',
+        },
+      ],
+    });
+    
+    console.log(`✅ Email sent successfully to ${recipients.length} recipient(s)`);
   }
 
   /**
