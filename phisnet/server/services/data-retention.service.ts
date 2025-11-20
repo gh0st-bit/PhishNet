@@ -25,15 +25,19 @@ export class DataRetentionService {
       const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 
       // Count candidates first
-      const [{ count: auditCount }] = await db.execute<{ count: string }>(
+      const auditResult = await db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::int AS count FROM ${auditLogs} WHERE ${auditLogs.organizationId} = ${org.id} AND ${auditLogs.createdAt} <= ${cutoff}`
       );
-      const [{ count: notifCount }] = await db.execute<{ count: string }>(
+      const notifResult = await db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::int AS count FROM ${notificationsSchema} WHERE ${notificationsSchema.organizationId} = ${org.id} AND ${notificationsSchema.createdAt} <= ${cutoff}`
       );
-      const [{ count: submittedCount }] = await db.execute<{ count: string }>(
+      const submittedResult = await db.execute<{ count: string }>(
         sql`SELECT COUNT(*)::int AS count FROM ${campaignResults} WHERE ${campaignResults.organizationId} = ${org.id} AND ${campaignResults.submittedData} IS NOT NULL AND ${campaignResults.submittedAt} IS NOT NULL AND ${campaignResults.submittedAt} <= ${cutoff}`
       );
+      
+      const auditCount = auditResult.rows?.[0]?.count || '0';
+      const notifCount = notifResult.rows?.[0]?.count || '0';
+      const submittedCount = submittedResult.rows?.[0]?.count || '0';
 
       let deletedAuditLogs = Number(auditCount) || 0;
       let deletedNotifications = Number(notifCount) || 0;

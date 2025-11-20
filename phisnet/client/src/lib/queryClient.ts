@@ -27,7 +27,8 @@ async function throwIfResNotOk(res: Response) {
 }
 
 // Touch the session to keep it alive
-export async function refreshSession(skipForUserEndpoint: boolean = false): Promise<void> {
+// Refresh session cookie unless on auth endpoints or explicitly skipped.
+export async function refreshSession(skipForUserEndpoint: boolean = false, skipAuthRedirect: boolean = false): Promise<void> {
   try {
     // Skip session refresh if we're fetching the user endpoint to avoid infinite loops
     if (skipForUserEndpoint) {
@@ -61,14 +62,13 @@ export async function refreshSession(skipForUserEndpoint: boolean = false): Prom
     });
 
     if (!response.ok) {
-      console.error("Session ping failed:", response.status);
-      if (response.status === 401) {
-        // Session already expired, trigger logout
+      // 401 before authentication (e.g. on login/register) should NOT force redirect
+      if (!skipAuthRedirect && response.status === 401) {
         const sessionExpiredEvent = new Event('session-expired');
         document.dispatchEvent(sessionExpiredEvent);
         window.location.href = '/auth';
-        return;
       }
+      return;
     } else {
       // Update the last successful ping time for better tracking
       sessionStorage.setItem('lastSuccessfulPing', now.toString());
@@ -86,19 +86,22 @@ export async function apiRequest(
   // Skip session refresh for the user endpoint to avoid infinite loops
   const isUserEndpoint = url === '/api/user';
   
-  // Refresh the session before making the actual request
-  await refreshSession(isUserEndpoint);
+  // Determine if this is an auth endpoint that should skip redirect-on-401 logic
+  const authEndpoints = ['/api/login', '/api/register', '/api/forgot-password', '/api/reset-password'];
+  const isAuthEndpoint = authEndpoints.includes(url);
+  // Refresh the session before making the actual request (skip auth redirect for auth endpoints)
+  await refreshSession(isUserEndpoint, isAuthEndpoint);
   
   // Use the API base URL from environment variables
   const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
   const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
   
-  const res = await fetch(fullUrl, {
-    method,
-    headers: data ? { "Content-Type": "application/json" } : {},
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
-  });
+    const res = await fetch(fullUrl, {
+      method,
+      headers: data ? { "Content-Type": "application/json" } : {},
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: "include",
+    });
 
   await throwIfResNotOk(res);
   return res;
@@ -115,7 +118,7 @@ export const getQueryFn: <T>(options: {
     const isUserEndpoint = url === '/api/user';
     
     // Refresh the session before making the actual request
-    await refreshSession(isUserEndpoint);
+    await refreshSession(isUserEndpoint, false);
     
     // Use the API base URL from environment variables
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';

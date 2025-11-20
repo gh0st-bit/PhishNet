@@ -83,14 +83,14 @@ export default function AuditLogsPage() {
       if (!res.ok) throw new Error("Export failed");
 
       const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
+      const url = globalThis.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = `audit-logs-${Date.now()}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      window.URL.revokeObjectURL(url);
+      globalThis.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Export failed:", error);
     }

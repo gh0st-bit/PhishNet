@@ -28,6 +28,7 @@ type AuthContextType = {
   registerMutation: UseMutationResult<any, Error, RegistrationData>;
   forgotPasswordMutation: UseMutationResult<void, Error, { email: string }>;
   resetPasswordMutation: UseMutationResult<void, Error, { password: string, token: string }>;
+  logout: () => Promise<void>;
 };
 
 type LoginData = Pick<InsertUser, "email" | "password">;
@@ -48,38 +49,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
-      console.log('Attempting login for:', credentials.email);
       const res = await apiRequest("POST", "/api/login", credentials);
       const data = await res.json();
-      console.log('Login response:', data);
       return data;
     },
     onSuccess: (user: SelectUser) => {
+      // Update cache so /api/user query resolves immediately
       queryClient.setQueryData(["/api/user"], user);
-      
-      // Use our new toast system for success
       customToast.success({
         title: "Login successful",
         description: `Welcome back, ${user.firstName} ${user.lastName}!`,
       });
-      
-      // Force an immediate page navigation instead of relying on state changes
-      window.location.href = "/";
+      // Force a full reload to ensure session cookie is applied before protected route check
+      // (avoids edge case where client-side navigation happens before browser commits cookie)
+      window.location.replace("/");
     },
     onError: (error: Error) => {
-      // Extract the remaining attempts from the error message if it exists
       let errorMessage = error.message;
       const attemptsMatch = error.message.match(/(\d+) attempts remaining/);
       const remainingAttempts = attemptsMatch ? attemptsMatch[1] : null;
-      
       if (remainingAttempts) {
         errorMessage = `Invalid email or password. ${remainingAttempts} attempts remaining.`;
       }
-      
-      // Use our new toast system for errors
       customToast.error({
         title: "Login failed",
-        description: errorMessage
+        description: errorMessage,
       });
     },
   });
@@ -179,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         registerMutation,
         forgotPasswordMutation,
         resetPasswordMutation,
+        logout: () => logoutMutation.mutateAsync(),
       }}
     >
       {children}

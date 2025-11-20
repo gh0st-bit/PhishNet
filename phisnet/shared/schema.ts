@@ -51,8 +51,24 @@ export const users = pgTable("users", {
   isAdmin: boolean("is_admin").default(false).notNull(),
   organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   organizationName: text("organization_name").notNull().default("None"),
+  // Email verification fields
+  emailVerified: boolean("email_verified").default(false).notNull(),
+  emailVerificationToken: text("email_verification_token"),
+  emailVerificationExpiry: timestamp("email_verification_expiry"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// User enrollment/invitation tokens (KnowBe4-like flow)
+export const userInvites = pgTable("user_invites", {
+  id: serial("id").primaryKey(),
+  email: text("email").notNull(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  invitedByUserId: integer("invited_by_user_id").references(() => users.id, { onDelete: 'set null' }),
+  token: varchar("token", { length: 128 }).notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // Password reset tokens table
@@ -477,6 +493,8 @@ export type ScimGroup = typeof scimGroups.$inferSelect;
 export type InsertScimGroup = typeof scimGroups.$inferInsert;
 export type SsoConfig = typeof ssoConfig.$inferSelect;
 export type InsertSsoConfig = typeof ssoConfig.$inferInsert;
+export type UserInvite = typeof userInvites.$inferSelect;
+export type InsertUserInvite = typeof userInvites.$inferInsert;
 
 // Validation schemas - ONLY DECLARE ONCE
 export const userValidationSchema = z.object({
@@ -714,6 +732,14 @@ export const resetPasswordSchema = z.object({
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
+// Enrollment acceptance schema
+export const acceptInviteSchema = z.object({
+  token: z.string().min(1, "Token is required"),
+  firstName: z.string().min(1, "First name is required"),
+  lastName: z.string().min(1, "Last name is required"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
 // Reconnaissance tables
 export const reconnaissanceDomains = pgTable("reconnaissance_domains", {
   id: serial("id").primaryKey(),
@@ -807,6 +833,177 @@ export const reconnaissanceJobs = pgTable("reconnaissance_jobs", {
   startedAt: timestamp("started_at").defaultNow(),
   completedAt: timestamp("completed_at"),
   createdBy: integer("created_by").references(() => users.id).notNull(),
+});
+
+// ========================================
+// EMPLOYEE PORTAL TABLES
+// ========================================
+
+// Training modules (videos, courses, microlearning content)
+export const trainingModules = pgTable("training_modules", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 100 }).notNull(), // 'phishing', 'passwords', 'social_engineering', 'data_protection', etc.
+  difficulty: varchar("difficulty", { length: 50 }).default('beginner').notNull(), // 'beginner', 'intermediate', 'advanced'
+  durationMinutes: integer("duration_minutes").notNull(),
+  videoUrl: text("video_url"), // YouTube URL or direct video file URL
+  thumbnailUrl: text("thumbnail_url"),
+  transcript: text("transcript"), // Video transcript for accessibility and search
+  tags: jsonb("tags").default([]), // Array of tags for search/filtering
+  isRequired: boolean("is_required").default(false).notNull(),
+  passingScore: integer("passing_score").default(80), // Minimum score to pass associated quiz
+  orderIndex: integer("order_index").default(0), // For sequential courses
+  createdBy: integer("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Training progress tracking for each user
+export const trainingProgress = pgTable("training_progress", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  moduleId: integer("module_id").references(() => trainingModules.id, { onDelete: 'cascade' }).notNull(),
+  status: varchar("status", { length: 50 }).default('not_started').notNull(), // 'not_started', 'in_progress', 'completed'
+  progressPercentage: integer("progress_percentage").default(0).notNull(),
+    videoTimestamp: integer("video_timestamp").default(0), // Video playback position in seconds
+  completedAt: timestamp("completed_at"),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  dueDate: timestamp("due_date"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Quizzes/assessments
+export const quizzes = pgTable("quizzes", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  moduleId: integer("module_id").references(() => trainingModules.id, { onDelete: 'cascade' }), // Optional: link to training module
+  title: text("title").notNull(),
+  description: text("description"),
+  passingScore: integer("passing_score").default(80).notNull(),
+  timeLimit: integer("time_limit"), // Time limit in minutes (null = no limit)
+  allowRetakes: boolean("allow_retakes").default(true).notNull(),
+  maxAttempts: integer("max_attempts").default(3), // null = unlimited
+  randomizeQuestions: boolean("randomize_questions").default(false).notNull(),
+  showCorrectAnswers: boolean("show_correct_answers").default(true).notNull(),
+  createdBy: integer("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Quiz questions (supports multiple question types)
+export const quizQuestions = pgTable("quiz_questions", {
+  id: serial("id").primaryKey(),
+  quizId: integer("quiz_id").references(() => quizzes.id, { onDelete: 'cascade' }).notNull(),
+  questionType: varchar("question_type", { length: 50 }).notNull(), // 'multiple_choice', 'true_false', 'fill_blank', 'matching', 'scenario'
+  questionText: text("question_text").notNull(),
+  questionImage: text("question_image"), // Optional image URL
+  options: jsonb("options").default([]), // Array of answer options for multiple choice
+  correctAnswer: jsonb("correct_answer").notNull(), // Stores correct answer(s) - format varies by question type
+  explanation: text("explanation"), // Explanation shown after answering
+  points: integer("points").default(1).notNull(),
+  orderIndex: integer("order_index").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Quiz attempts (track each time a user takes a quiz)
+export const quizAttempts = pgTable("quiz_attempts", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  quizId: integer("quiz_id").references(() => quizzes.id, { onDelete: 'cascade' }).notNull(),
+  attemptNumber: integer("attempt_number").notNull(),
+  score: integer("score"), // Final score (percentage 0-100)
+  totalQuestions: integer("total_questions").notNull(),
+  correctAnswers: integer("correct_answers"),
+  answers: jsonb("answers").default({}), // Stores user's answers: { questionId: userAnswer }
+  passed: boolean("passed").default(false).notNull(),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  timeSpent: integer("time_spent"), // Time spent in seconds
+});
+
+// Certificates earned by users
+export const certificates = pgTable("certificates", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  moduleId: integer("module_id").references(() => trainingModules.id, { onDelete: 'cascade' }),
+  quizId: integer("quiz_id").references(() => quizzes.id, { onDelete: 'cascade' }),
+  certificateType: varchar("certificate_type", { length: 100 }).notNull(), // 'training_completion', 'quiz_mastery', 'course_completion'
+  title: text("title").notNull(),
+  description: text("description"),
+  verificationCode: varchar("verification_code", { length: 50 }).notNull().unique(), // Unique code for verification
+  issuedAt: timestamp("issued_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"), // null = never expires
+  pdfUrl: text("pdf_url"), // URL to generated PDF certificate
+});
+
+// Gamification: User points
+export const userPoints = pgTable("user_points", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
+  totalPoints: integer("total_points").default(0).notNull(),
+  currentStreak: integer("current_streak").default(0).notNull(), // Consecutive days of activity
+  longestStreak: integer("longest_streak").default(0).notNull(),
+  lastActivityDate: timestamp("last_activity_date"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Gamification: Badges/achievements
+export const badges = pgTable("badges", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  iconUrl: text("icon_url"),
+  category: varchar("category", { length: 100 }).notNull(), // 'milestone', 'streak', 'mastery', 'special'
+  criteria: jsonb("criteria").notNull(), // JSON object defining how to earn this badge
+  pointsAwarded: integer("points_awarded").default(0).notNull(),
+  rarity: varchar("rarity", { length: 50 }).default('common').notNull(), // 'common', 'rare', 'epic', 'legendary'
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// User badges (many-to-many: users can earn multiple badges)
+export const userBadges = pgTable("user_badges", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  badgeId: integer("badge_id").references(() => badges.id, { onDelete: 'cascade' }).notNull(),
+  earnedAt: timestamp("earned_at").defaultNow().notNull(),
+});
+
+// Articles/resources for employee learning
+export const articles = pgTable("articles", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(), // Markdown or HTML content
+  excerpt: text("excerpt"),
+  category: varchar("category", { length: 100 }).notNull(),
+  tags: jsonb("tags").default([]),
+  thumbnailUrl: text("thumbnail_url"),
+  author: integer("author").references(() => users.id),
+  readTimeMinutes: integer("read_time_minutes"),
+  publishedAt: timestamp("published_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Flashcard decks for quick learning
+export const flashcardDecks = pgTable("flashcard_decks", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 100 }).notNull(),
+  createdBy: integer("created_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Individual flashcards
+export const flashcards = pgTable("flashcards", {
+  id: serial("id").primaryKey(),
+  deckId: integer("deck_id").references(() => flashcardDecks.id, { onDelete: 'cascade' }).notNull(),
+  frontContent: text("front_content").notNull(), // Question/term
+  backContent: text("back_content").notNull(), // Answer/definition
+  orderIndex: integer("order_index").default(0).notNull(),
 });
 
 // Default roles configuration

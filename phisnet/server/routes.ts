@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, isAdmin, hasOrganization, hashPassword, comparePasswords } from "./auth";
-import { trackingLimiter, apiLimiter, adminLimiter } from "./middleware/rate-limit";
+import { trackingLimiter } from "./middleware/rate-limit";
 import { db } from "./db";
 import { 
   campaigns, 

@@ -109,7 +109,7 @@ export class SecretsService {
         .where(eq(organizations.id, organizationId))
         .limit(1);
 
-      if (!org || !org.encryptionKey) {
+      if (!org?.encryptionKey) {
         throw new Error('Organization encryption key not found');
       }
 

@@ -23,6 +23,22 @@ import ResetPasswordPage from "@/pages/reset-password-page";
 import ThreatLandscapePage from "@/pages/threat-landscape-page";
 import NotificationsPage from "./pages/notifications-page";
 import AuditLogsPage from "@/pages/audit-logs-page";
+import EmployeeDashboardPage from "@/pages/employee-dashboard-page";
+import EmployeeTrainingPage from "@/pages/employee-training-page";
+import EmployeeQuizzesPage from "@/pages/employee-quizzes-page";
+import EmployeeBadgesPage from "@/pages/employee-badges-page";
+import EmployeeLeaderboardPage from "@/pages/employee-leaderboard-page";
+import EmployeeProfilePage from "@/pages/employee-profile-page";
+import AdminTrainingPage from "@/pages/admin-training-page";
+import AdminQuizPage from "@/pages/admin-quiz-page";
+import AdminBadgePage from "@/pages/admin-badge-page";
+import AdminArticlesPage from "@/pages/admin-articles-page";
+import AdminBlogsPage from "@/pages/admin-blogs-page";
+import AdminVideosPage from "@/pages/admin-videos-page";
+import AdminFlashcardsPage from "@/pages/admin-flashcards-page";
+import AdminMcqsPage from "@/pages/admin-mcqs-page";
+import EnrollmentPage from "@/pages/enrollment-page";
+import AcceptInvitePage from "@/pages/accept-invite-page";
 import SessionTimeoutWrapper from "@/components/session-timeout-wrapper";
 import { ProtectedRoute } from "./lib/protected-route";
 import { ThemeProvider } from "next-themes";
@@ -37,6 +53,7 @@ function Router() {
       <Route path="/auth" component={AuthPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password/:token" component={ResetPasswordPage} />
+      <Route path="/accept-invite/:token" component={AcceptInvitePage} />
       <ProtectedRoute path="/" component={DashboardPage} />
       <ProtectedRoute path="/campaigns" component={CampaignsPage} />
       <ProtectedRoute path="/reconnaissance" component={ReconnaissancePage} />
@@ -47,12 +64,27 @@ function Router() {
       <ProtectedRoute path="/reports" component={ReportsPage} />
       <ProtectedRoute path="/report-schedules" component={ReportSchedulesPage} />
       <ProtectedRoute path="/users" component={UsersPage} />
+      <ProtectedRoute path="/enrollment" component={EnrollmentPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/profile" component={ProfilePage} />
       <ProtectedRoute path="/organization" component={OrganizationPage} />
       <ProtectedRoute path="/threat-landscape" component={ThreatLandscapePage} />
   <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <ProtectedRoute path="/audit-logs" component={AuditLogsPage} />
+      <ProtectedRoute path="/employee" component={EmployeeDashboardPage} />
+      <ProtectedRoute path="/employee/training" component={EmployeeTrainingPage} />
+      <ProtectedRoute path="/employee/quizzes" component={EmployeeQuizzesPage} />
+      <ProtectedRoute path="/employee/badges" component={EmployeeBadgesPage} />
+      <ProtectedRoute path="/employee/leaderboard" component={EmployeeLeaderboardPage} />
+      <ProtectedRoute path="/employee/profile" component={EmployeeProfilePage} />
+      <ProtectedRoute path="/admin/training" component={AdminTrainingPage} />
+      <ProtectedRoute path="/admin/quizzes" component={AdminQuizPage} />
+      <ProtectedRoute path="/admin/badges" component={AdminBadgePage} />
+      <ProtectedRoute path="/admin/content/articles" component={AdminArticlesPage} />
+      <ProtectedRoute path="/admin/content/blogs" component={AdminBlogsPage} />
+      <ProtectedRoute path="/admin/content/videos" component={AdminVideosPage} />
+      <ProtectedRoute path="/admin/content/flashcards" component={AdminFlashcardsPage} />
+      <ProtectedRoute path="/admin/content/mcqs" component={AdminMcqsPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -98,6 +130,7 @@ function AppContent() {
             <Route path="/auth" component={AuthPage} />
             <Route path="/forgot-password" component={ForgotPasswordPage} />
             <Route path="/reset-password/:token" component={ResetPasswordPage} />
+            <Route path="/accept-invite/:token" component={AcceptInvitePage} />
             <Route path="/" component={AuthPage} />
           </Switch>
         )}

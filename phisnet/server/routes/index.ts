@@ -16,6 +16,9 @@ import { registerAuditRoutes } from './audit';
 import { registerDataRetentionRoutes } from './data-retention';
 import { registerSsoRoutes } from './sso';
 import { registerSecretsRoutes } from './secrets';
+import { registerEmployeePortalRoutes } from './employee-portal';
+import { registerAdminPortalRoutes } from './admin-portal';
+import { registerEnrollmentRoutes } from './enrollment';
 
 /**
  * Register all modular routes
@@ -69,6 +72,15 @@ export function registerModularRoutes(app: Express) {
 
   // Secrets management routes (admin only)
   registerSecretsRoutes(app);
+
+  // Employee Portal routes (employee-facing features)
+  registerEmployeePortalRoutes(app);
+
+  // Admin Portal routes (admin-only content management)
+  registerAdminPortalRoutes(app);
+
+  // Enrollment / Invites routes
+  registerEnrollmentRoutes(app);
   
   // Public tracking routes (must be last - no auth required)
   registerTrackingRoutes(app);
@@ -93,3 +105,5 @@ export { registerAuditRoutes } from './audit';
 export { registerDataRetentionRoutes } from './data-retention';
 export { registerSsoRoutes } from './sso';
 export { registerSecretsRoutes } from './secrets';
+export { registerEmployeePortalRoutes } from './employee-portal';
+export { registerAdminPortalRoutes } from './admin-portal';

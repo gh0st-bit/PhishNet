@@ -131,7 +131,7 @@ export class SsoService {
       .where(eq(ssoConfig.organizationId, organizationId))
       .limit(1);
 
-    if (!config || config.provider !== 'saml') {
+    if (!config?.provider || config.provider !== 'saml') {
       throw new Error('SAML not configured for this organization');
     }
 

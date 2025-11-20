@@ -1,7 +1,28 @@
 import rateLimit from 'express-rate-limit';
 
 /**
- * Rate limiter for authentication endpoints (login, register, password reset)
+ * Rate limiter for login endpoint specifically
+ * Prevents brute force attacks with 10 failed attempts limit
+ */
+export const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit each IP to 10 failed login requests per windowMs
+  message: 'Too many login attempts. Please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skipSuccessfulRequests: true, // Only count failed login attempts
+  handler: (req, res) => {
+    const retryAfter = Math.ceil((((req as any).rateLimit?.resetTime || Date.now() + 900000) - Date.now()) / 1000 / 60);
+    res.status(429).json({
+      message: `Too many login attempts. Please try again after ${retryAfter} minute${retryAfter !== 1 ? 's' : ''}.`,
+      remaining: 0,
+      retryAfter
+    });
+  },
+});
+
+/**
+ * Rate limiter for authentication endpoints (register, password reset)
  * Prevents brute force attacks and credential stuffing
  */
 export const authLimiter = rateLimit({
@@ -10,7 +31,7 @@ export const authLimiter = rateLimit({
   message: 'Too many authentication attempts. Please try again later.',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  skipSuccessfulRequests: false, // Count successful requests
+  skipSuccessfulRequests: true, // Only count failed requests
   // Use default key generator with IPv6-safe handling
 });
 

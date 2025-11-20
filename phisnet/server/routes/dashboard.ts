@@ -124,7 +124,6 @@ export function registerDashboardRoutes(app: Express) {
         critical,
         high,
         threats: threatData,
-        recentThreats: threatData,
         ...threatAnalysis
       });
     } catch (error) {

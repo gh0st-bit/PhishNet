@@ -13,8 +13,7 @@ import {
   smtpProfiles, // Add missing imports
   landingPages,
   passwordResetTokens,
-  threatIntelligence,
-  threatStatistics
+  userInvites
 } from "@shared/schema";
 import { eq, and, count, sql, gte } from "drizzle-orm";
 
@@ -40,10 +39,8 @@ import type {
   InsertCampaignResult,
   PasswordResetToken,
   InsertPasswordResetToken,
-  ThreatIntelligence,
-  InsertThreatIntelligence,
-  ThreatStatistics,
-  InsertThreatStatistics
+  UserInvite,
+  InsertUserInvite
 } from "@shared/schema";
 
 // Create PostgreSQL session store
@@ -124,6 +121,13 @@ export interface IStorage {
   getPasswordResetToken(token: string): Promise<PasswordResetToken | undefined>;
   deletePasswordResetToken(token: string): Promise<boolean>;
   
+  // Enrollment invite methods
+  createUserInvite(invite: InsertUserInvite): Promise<UserInvite>;
+  getUserInviteByToken(token: string): Promise<UserInvite | undefined>;
+  findUserInviteByToken(token: string): Promise<UserInvite | undefined>;
+  listUserInvites(organizationId: number): Promise<UserInvite[]>;
+  markUserInviteAccepted(id: number): Promise<UserInvite | undefined>;
+  
   // Dashboard stats
   getDashboardStats(organizationId: number): Promise<any>;
   getPhishingMetrics(organizationId: number): Promise<any[]>;
@@ -160,10 +164,16 @@ export class DatabaseStorage implements IStorage {
   
   // User methods
   async getUser(id: number): Promise<User | undefined> {
-    // Use raw SQL and select only widely available columns to avoid schema drift issues (e.g., missing is_active)
     const result = await pool.query(
       `SELECT id, email, password, first_name, last_name, is_admin, organization_id, organization_name,
-              created_at, updated_at
+              created_at, updated_at,
+              COALESCE(is_active, true) AS is_active,
+              COALESCE(email_verified, false) AS email_verified,
+              COALESCE(failed_login_attempts, 0) AS failed_login_attempts,
+              last_failed_login,
+              COALESCE(account_locked, false) AS account_locked,
+              account_locked_until,
+              last_login
          FROM users
         WHERE id = $1
         LIMIT 1`,
@@ -181,12 +191,12 @@ export class DatabaseStorage implements IStorage {
       profilePicture: null,
       position: null,
       bio: null,
-      lastLogin: null,
-      failedLoginAttempts: 0,
-      lastFailedLogin: null,
-      accountLocked: false,
-      accountLockedUntil: null,
-      isActive: true,
+      lastLogin: r.last_login ?? null,
+      failedLoginAttempts: r.failed_login_attempts ?? 0,
+      lastFailedLogin: r.last_failed_login ?? null,
+      accountLocked: r.account_locked ?? false,
+      accountLockedUntil: r.account_locked_until ?? null,
+      isActive: r.is_active ?? true,
       isAdmin: r.is_admin ?? false,
       organizationId: r.organization_id,
       organizationName: r.organization_name ?? "None",
@@ -196,10 +206,16 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getUserByEmail(email: string): Promise<User | undefined> {
-    // Use raw SQL and select only widely available columns to avoid schema drift issues (e.g., missing is_active)
     const result = await pool.query(
       `SELECT id, email, password, first_name, last_name, is_admin, organization_id, organization_name,
-              created_at, updated_at
+              created_at, updated_at,
+              COALESCE(is_active, true) AS is_active,
+              COALESCE(email_verified, false) AS email_verified,
+              COALESCE(failed_login_attempts, 0) AS failed_login_attempts,
+              last_failed_login,
+              COALESCE(account_locked, false) AS account_locked,
+              account_locked_until,
+              last_login
          FROM users
         WHERE email = $1
         LIMIT 1`,
@@ -217,12 +233,12 @@ export class DatabaseStorage implements IStorage {
       profilePicture: null,
       position: null,
       bio: null,
-      lastLogin: null,
-      failedLoginAttempts: 0,
-      lastFailedLogin: null,
-      accountLocked: false,
-      accountLockedUntil: null,
-      isActive: true,
+      lastLogin: r.last_login ?? null,
+      failedLoginAttempts: r.failed_login_attempts ?? 0,
+      lastFailedLogin: r.last_failed_login ?? null,
+      accountLocked: r.account_locked ?? false,
+      accountLockedUntil: r.account_locked_until ?? null,
+      isActive: r.is_active ?? true,
       isAdmin: r.is_admin ?? false,
       organizationId: r.organization_id,
       organizationName: r.organization_name ?? "None",
@@ -731,6 +747,45 @@ export class DatabaseStorage implements IStorage {
   async deletePasswordResetToken(token: string): Promise<boolean> {
     await db.delete(passwordResetTokens).where(eq(passwordResetTokens.token, token));
     return true;
+  }
+  
+  // Enrollment invite methods
+  async createUserInvite(invite: InsertUserInvite): Promise<UserInvite> {
+    const [row] = await db.insert(userInvites).values(invite).returning();
+    return row;
+  }
+
+  async getUserInviteByToken(token: string): Promise<UserInvite | undefined> {
+    const [row] = await db.select().from(userInvites).where(eq(userInvites.token, token));
+    return row;
+  }
+
+  async findUserInviteByToken(token: string): Promise<UserInvite | undefined> {
+    // Since tokens are now hashed, we need to check all unexpired, unaccepted invites
+    const bcrypt = await import('bcryptjs');
+    const candidates = await db.select()
+      .from(userInvites)
+      .where(
+        sql`${userInvites.acceptedAt} IS NULL AND ${userInvites.expiresAt} > NOW()`
+      );
+    
+    for (const invite of candidates) {
+      const isMatch = await bcrypt.compare(token, invite.token);
+      if (isMatch) return invite;
+    }
+    return undefined;
+  }
+
+  async listUserInvites(organizationId: number): Promise<UserInvite[]> {
+    return await db.select().from(userInvites).where(eq(userInvites.organizationId, organizationId));
+  }
+
+  async markUserInviteAccepted(id: number): Promise<UserInvite | undefined> {
+    const [row] = await db.update(userInvites)
+      .set({ acceptedAt: new Date() })
+      .where(eq(userInvites.id, id))
+      .returning();
+    return row;
   }
   
   // Dashboard stats

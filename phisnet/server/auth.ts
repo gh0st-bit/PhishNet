@@ -1,20 +1,19 @@
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { Express, Request, Response, NextFunction } from "express";
-import express from "express"; // Add this missing import to fix the error
+import express from "express";
 import session from "express-session";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
+import { scrypt, randomBytes, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
 import { storage } from "./storage";
 import { User as SelectUser, userValidationSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/schema";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { AuditService } from "./services/audit.service";
-import { authLimiter } from "./middleware/rate-limit";
+import { authLimiter, loginLimiter } from "./middleware/rate-limit";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
-import { generatePasswordResetToken, verifyPasswordResetToken, sendPasswordResetEmail } from "./email";
+import path from "node:path";
+import fs from "node:fs";
+import { generatePasswordResetToken, verifyPasswordResetToken, sendPasswordResetEmail, generateEmailVerificationToken, verifyEmailVerificationToken, sendEmailVerificationEmail } from "./email";
 
 // Maximum login attempts before account lockout
 const MAX_LOGIN_ATTEMPTS = 10;
@@ -151,24 +150,29 @@ function sanitizeInput(input: string): string {
   if (!input) return '';
   
   return input
-    .replace(/'/g, "''")
-    .replace(/;/g, "")
-    .replace(/--/g, "")
-    .replace(/\/\*/g, "")
-    .replace(/\*\//g, "")
+    .replaceAll("'", "''")
+    .replaceAll(";", "")
+    .replaceAll("--", "")
+    .replaceAll("/*", "")
+    .replaceAll("*/", "")
     .trim();
 }
 
 export function setupAuth(app: Express) {
   // Configure session with DATABASE-ONLY storage
+  // Allow overriding secure cookie behavior for local testing of production build
+  // If running a production build over plain HTTP (localhost), the cookie would be dropped when secure=true
+  const forceInsecureCookie = process.env.ALLOW_INSECURE_COOKIES === 'true';
+  const secureCookie = !forceInsecureCookie && process.env.NODE_ENV === 'production';
+
   const sessionSettings: session.SessionOptions = {
     secret: process.env.SESSION_SECRET || 'phishnet-secret-key',
     resave: false,
     saveUninitialized: false,
-    store: storage.sessionStore, // This will be the database session store
+    store: storage.sessionStore,
     cookie: {
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 30 * 60 * 1000, // 30 minutes to match TTL
+      secure: secureCookie, // only true when production & not explicitly overridden
+      maxAge: 30 * 60 * 1000,
       httpOnly: true,
       sameSite: 'lax'
     }
@@ -195,6 +199,11 @@ export function setupAuth(app: Express) {
             return done(null, false, { message: "Invalid email or password" });
           }
 
+          // Enforce enrollment/activation for non-admin accounts
+          if (!user.isAdmin && user.isActive === false) {
+            return done(null, false, { message: "Account inactive. Please accept your invitation or contact your admin." });
+          }
+
           // Check if account is locked
           const lockStatus = await checkAccountLockStatus(user);
           if (lockStatus.locked) {
@@ -219,6 +228,11 @@ export function setupAuth(app: Express) {
             });
           }
 
+          // Enforce enrollment: only active employees can login (admins bypass)
+          if (!user.isAdmin && (user as any).isActive === false) {
+            return done(null, false, { message: "Account inactive. Please accept your invitation or contact your admin." });
+          }
+
           await resetFailedLoginAttempts(user.id);
           return done(null, user);
         } catch (error) {
@@ -239,8 +253,8 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Registration endpoint
-  app.post("/api/register", authLimiter, async (req, res, next) => {
+  // Registration endpoint (no rate limit - allow unlimited registration attempts)
+  app.post("/api/register", async (req, res, next) => {
     try {
       try {
         userValidationSchema.parse(req.body);
@@ -295,20 +309,41 @@ export function setupAuth(app: Express) {
       
       const isAdmin = isFirstUser && sanitizedOrgName !== "None" && sanitizedOrgName.length > 0;
       
+      // Generate email verification token
+      const verificationToken = generateEmailVerificationToken({
+        id: 0, // Temporary, will be replaced after user creation
+        email: sanitizedEmail,
+      } as any);
+      
       const user = await storage.createUser({
         ...req.body,
         email: sanitizedEmail,
         organizationName: sanitizedOrgName || "None",
         password: await hashPassword(req.body.password),
         organizationId: orgId,
-        isAdmin: isAdmin
+        isAdmin: isAdmin,
+        emailVerified: false,
+        emailVerificationToken: verificationToken,
+        emailVerificationExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
       });
 
-      const { password, ...userWithoutPassword } = user;
+      // Send verification email
+      const baseUrl = process.env.BASE_URL || `http://localhost:5000`;
+      const verificationUrl = `${baseUrl}/api/verify-email?token=${verificationToken}`;
+      
+      try {
+        await sendEmailVerificationEmail(user, verificationUrl);
+        console.log('Verification email sent to:', user.email);
+      } catch (emailError) {
+        console.error('Failed to send verification email:', emailError);
+        // Continue with registration even if email fails
+      }
+
+      const { password, emailVerificationToken: _, emailVerificationExpiry: __, ...userWithoutPassword } = user;
 
       res.status(201).json({ 
         ...userWithoutPassword,
-        message: "User registered successfully. Please log in."
+        message: "User registered successfully. Please check your email to verify your account."
       });
     } catch (error) {
       console.error("Registration error:", error);
@@ -316,8 +351,8 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Login endpoint
-  app.post("/api/login", authLimiter, (req, res, next) => {
+  // Login endpoint (with rate limiter: 10 failed attempts per 15 minutes)
+  app.post("/api/login", loginLimiter, (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
         return next(err);
@@ -367,7 +402,7 @@ export function setupAuth(app: Express) {
       if (err) return next(err);
       
       // Audit log the logout
-      if (user && user.id && user.organizationId) {
+      if (user?.id && user?.organizationId) {
         AuditService.log({
           context: {
             userId: user.id,
@@ -621,6 +656,108 @@ export function setupAuth(app: Express) {
       expiresAt: new Date(Date.now() + 30 * 60 * 1000) // 30 minutes from now
     });
   });
+
+  // Email verification endpoint
+  app.get("/api/verify-email", async (req, res) => {
+    try {
+      const { token } = req.query;
+      
+      if (!token || typeof token !== 'string') {
+        return res.status(400).send(`
+          <html>
+            <head><title>Email Verification Failed</title></head>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+              <h1 style="color: #d32f2f;">Verification Failed</h1>
+              <p>Invalid or missing verification token.</p>
+              <a href="/auth" style="color: #FF8000;">Go to Login</a>
+            </body>
+          </html>
+        `);
+      }
+
+      // Verify the token
+      const decoded = verifyEmailVerificationToken(token);
+      if (!decoded) {
+        return res.status(400).send(`
+          <html>
+            <head><title>Email Verification Failed</title></head>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+              <h1 style="color: #d32f2f;">Verification Failed</h1>
+              <p>The verification link is invalid or has expired.</p>
+              <a href="/auth" style="color: #FF8000;">Go to Login</a>
+            </body>
+          </html>
+        `);
+      }
+
+      // Get the user
+      const user = await storage.getUserByEmail(decoded.email);
+      if (!user) {
+        return res.status(404).send(`
+          <html>
+            <head><title>User Not Found</title></head>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+              <h1 style="color: #d32f2f;">User Not Found</h1>
+              <p>No account found with this email address.</p>
+              <a href="/auth" style="color: #FF8000;">Go to Login</a>
+            </body>
+          </html>
+        `);
+      }
+
+      // Check if already verified
+      if ((user as any).emailVerified) {
+        return res.status(200).send(`
+          <html>
+            <head><title>Email Already Verified</title></head>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+              <h1 style="color: #4caf50;">Already Verified!</h1>
+              <p>Your email address has already been verified.</p>
+              <a href="/auth" style="color: #FF8000;">Go to Login</a>
+            </body>
+          </html>
+        `);
+      }
+
+      // Update user as verified
+      await storage.updateUser(user.id, {
+        emailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationExpiry: null,
+        updatedAt: new Date()
+      } as any);
+
+      console.log('Email verified for user:', user.email);
+
+      // Send success response
+      res.status(200).send(`
+        <html>
+          <head><title>Email Verified</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1 style="color: #4caf50;">Email Verified Successfully!</h1>
+            <p>Your email address has been verified. You can now log in to your account.</p>
+            <div style="margin-top: 30px;">
+              <a href="/auth" style="background-color: #FF8000; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">
+                Go to Login
+              </a>
+            </div>
+          </body>
+        </html>
+      `);
+    } catch (error) {
+      console.error('Email verification error:', error);
+      res.status(500).send(`
+        <html>
+          <head><title>Verification Error</title></head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1 style="color: #d32f2f;">Verification Error</h1>
+            <p>An error occurred during verification. Please try again later.</p>
+            <a href="/auth" style="color: #FF8000;">Go to Login</a>
+          </body>
+        </html>
+      `);
+    }
+  });
 }
 
 export function isAuthenticated(req: Request, res: Response, next: NextFunction) {
@@ -631,14 +768,14 @@ export function isAuthenticated(req: Request, res: Response, next: NextFunction)
 }
 
 export function hasOrganization(req: Request, res: Response, next: NextFunction) {
-  if (!req.user || !req.user.organizationId) {
+  if (!req.user?.organizationId) {
     return res.status(403).json({ message: "Organization required" });
   }
   next();
 }
 
 export function isAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!req.user || !req.user.isAdmin) {
+  if (!req.user?.isAdmin) {
     return res.status(403).json({ message: "Admin access required" });
   }
   next();
