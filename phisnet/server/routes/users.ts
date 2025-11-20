@@ -3,6 +3,7 @@ import { isAuthenticated, hasOrganization, isAdmin, hashPassword, comparePasswor
 import { storage } from '../storage';
 import { db } from '../db';
 import { users, rolesSchema, userRolesSchema, DEFAULT_ROLES } from '@shared/schema';
+import { AuditService } from '../services/audit.service';
 import { eq } from 'drizzle-orm';
 import multer from 'multer';
 
@@ -235,6 +236,20 @@ export function registerUserRoutes(app: Express) {
         });
       }
       
+      // Audit log user creation
+      AuditService.log({
+        context: {
+          userId: req.user.id,
+          organizationId: req.user.organizationId,
+          ip: req.ip || req.socket.remoteAddress,
+          userAgent: req.get("user-agent"),
+        },
+        action: "user.create",
+        resource: "user",
+        resourceId: newUser.id,
+        metadata: { email: newUser.email, roleId },
+      }).catch((err) => console.error("[Audit] Failed to log user creation:", err));
+      
       res.status(201).json(newUser);
     } catch (error) {
       console.error("Error creating user:", error);
@@ -279,6 +294,20 @@ export function registerUserRoutes(app: Express) {
         }
       }
       
+      // Audit log user update
+      AuditService.log({
+        context: {
+          userId: req.user.id,
+          organizationId: req.user.organizationId,
+          ip: req.ip || req.socket.remoteAddress,
+          userAgent: req.get("user-agent"),
+        },
+        action: "user.update",
+        resource: "user",
+        resourceId: userId,
+        metadata: { email: updatedUser?.email, changes: updateData, roleId },
+      }).catch((err) => console.error("[Audit] Failed to log user update:", err));
+      
       res.json(updatedUser);
     } catch (error) {
       console.error("Error updating user:", error);
@@ -306,6 +335,20 @@ export function registerUserRoutes(app: Express) {
       if (userId === req.user.id) {
         return res.status(400).json({ message: "Cannot delete your own account" });
       }
+      
+      // Audit log user deletion
+      AuditService.log({
+        context: {
+          userId: req.user.id,
+          organizationId: req.user.organizationId,
+          ip: req.ip || req.socket.remoteAddress,
+          userAgent: req.get("user-agent"),
+        },
+        action: "user.delete",
+        resource: "user",
+        resourceId: userId,
+        metadata: { email: existingUser.email },
+      }).catch((err) => console.error("[Audit] Failed to log user deletion:", err));
       
       await storage.deleteUser(userId);
       res.json({ message: "User deleted successfully" });

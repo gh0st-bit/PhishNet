@@ -5,14 +5,21 @@ async function throwIfResNotOk(res: Response) {
     let errorMessage: string;
     
     try {
+      // Clone the response so we can read it multiple times if needed
+      const clonedRes = res.clone();
       // Try to parse the response as JSON
-      const errorJson = await res.json();
+      const errorJson = await clonedRes.json();
       // If it has a message property, use that
       errorMessage = errorJson.message || res.statusText;
     } catch (e) {
-      // If parsing fails, use the text response
-      const text = await res.text();
-      errorMessage = text || res.statusText;
+      // If parsing fails, use the text response from the original
+      try {
+        const text = await res.text();
+        errorMessage = text || res.statusText;
+      } catch (textError) {
+        // If both fail, just use statusText
+        errorMessage = res.statusText;
+      }
     }
     
     throw new Error(errorMessage);

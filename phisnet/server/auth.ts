@@ -9,6 +9,8 @@ import { storage } from "./storage";
 import { User as SelectUser, userValidationSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/schema";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { AuditService } from "./services/audit.service";
+import { authLimiter } from "./middleware/rate-limit";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -238,7 +240,7 @@ export function setupAuth(app: Express) {
   });
 
   // Registration endpoint
-  app.post("/api/register", async (req, res, next) => {
+  app.post("/api/register", authLimiter, async (req, res, next) => {
     try {
       try {
         userValidationSchema.parse(req.body);
@@ -315,7 +317,7 @@ export function setupAuth(app: Express) {
   });
 
   // Login endpoint
-  app.post("/api/login", (req, res, next) => {
+  app.post("/api/login", authLimiter, (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
         return next(err);
@@ -338,6 +340,19 @@ export function setupAuth(app: Express) {
             return next(saveErr);
           }
           
+          // Audit log the login
+          AuditService.log({
+            context: {
+              userId: user.id,
+              organizationId: user.organizationId,
+              ip: req.ip || req.socket.remoteAddress,
+              userAgent: req.get("user-agent"),
+            },
+            action: "user.login",
+            resource: "auth",
+            metadata: { email: user.email },
+          }).catch((err) => console.error("[Audit] Failed to log login:", err));
+          
           const { password, ...userWithoutPassword } = user;
           return res.status(200).json(userWithoutPassword);
         });
@@ -346,8 +361,26 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/logout", (req, res, next) => {
+    const user = req.user as any;
+    
     req.logout((err) => {
       if (err) return next(err);
+      
+      // Audit log the logout
+      if (user && user.id && user.organizationId) {
+        AuditService.log({
+          context: {
+            userId: user.id,
+            organizationId: user.organizationId,
+            ip: req.ip || req.socket.remoteAddress,
+            userAgent: req.get("user-agent"),
+          },
+          action: "user.logout",
+          resource: "auth",
+          metadata: { email: user.email },
+        }).catch((err) => console.error("[Audit] Failed to log logout:", err));
+      }
+      
       res.sendStatus(200);
     });
   });
@@ -435,7 +468,7 @@ export function setupAuth(app: Express) {
   });
   
   // Forgot password endpoint - initiates password reset flow
-  app.post("/api/forgot-password", async (req, res) => {
+  app.post("/api/forgot-password", authLimiter, async (req, res) => {
     try {
       // Validate request data
       try {
@@ -489,7 +522,7 @@ export function setupAuth(app: Express) {
   });
   
   // Reset password endpoint - completes password reset with new password
-  app.post("/api/reset-password", async (req, res) => {
+  app.post("/api/reset-password", authLimiter, async (req, res) => {
     try {
       // Validate request data
       try {

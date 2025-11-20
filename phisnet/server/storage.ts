@@ -269,6 +269,11 @@ export class DatabaseStorage implements IStorage {
   
   async createOrganization(org: InsertOrganization): Promise<Organization> {
     const [newOrg] = await db.insert(organizations).values(org).returning();
+    
+    // Initialize encryption key for new organization
+    const SecretsService = (await import('./services/secrets.service')).default;
+    await SecretsService.ensureOrgKey(newOrg.id);
+    
     return newOrg;
   }
   
@@ -387,12 +392,16 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createSmtpProfile(organizationId: number, profile: InsertSmtpProfile): Promise<SmtpProfile> {
+    // Encrypt password before storing
+    const SecretsService = (await import('./services/secrets.service')).default;
+    const encryptedPassword = await SecretsService.encrypt(organizationId, profile.password);
+    
     const [newProfile] = await db.insert(smtpProfiles).values({
       name: profile.name,
       host: profile.host,
       port: profile.port,
       username: profile.username,
-      password: profile.password,
+      password: encryptedPassword,
       fromEmail: profile.fromEmail,
       fromName: profile.fromName,
       organizationId,
@@ -401,9 +410,21 @@ export class DatabaseStorage implements IStorage {
   }
   
   async updateSmtpProfile(id: number, data: Partial<SmtpProfile>): Promise<SmtpProfile | undefined> {
+    // Encrypt password if being updated
+    const SecretsService = (await import('./services/secrets.service')).default;
+    const updateData = { ...data };
+    
+    if (updateData.password) {
+      // Get profile to find organizationId
+      const [existingProfile] = await db.select().from(smtpProfiles).where(eq(smtpProfiles.id, id));
+      if (existingProfile) {
+        updateData.password = await SecretsService.encrypt(existingProfile.organizationId, updateData.password);
+      }
+    }
+    
     const [updatedProfile] = await db.update(smtpProfiles)
       .set({
-        ...data,
+        ...updateData,
         updatedAt: new Date(),
       })
       .where(eq(smtpProfiles.id, id))
@@ -417,7 +438,14 @@ export class DatabaseStorage implements IStorage {
   }
   
   async listSmtpProfiles(organizationId: number): Promise<SmtpProfile[]> {
-    return await db.select().from(smtpProfiles).where(eq(smtpProfiles.organizationId, organizationId));
+    const profiles = await db.select().from(smtpProfiles).where(eq(smtpProfiles.organizationId, organizationId));
+    
+    // Decrypt passwords before returning
+    const SecretsService = (await import('./services/secrets.service')).default;
+    return Promise.all(profiles.map(async (profile) => ({
+      ...profile,
+      password: await SecretsService.decrypt(organizationId, profile.password),
+    })));
   }
   
   // Email Template methods

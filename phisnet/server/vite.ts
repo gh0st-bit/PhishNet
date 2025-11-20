@@ -1,12 +1,11 @@
 import express, { type Express } from "express";
-import fs from "fs";
-import path from "path";
-import { createServer as createViteServer, createLogger } from "vite";
-import { type Server } from "http";
+import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+// Use dynamic import to be compatible across Vite major versions
+import { type Server } from "node:http";
 import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
-
-const viteLogger = createLogger();
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -26,16 +25,28 @@ export async function setupVite(app: Express, server: Server) {
     allowedHosts: true as const,
   };
 
+  const resolvedConfig =
+    typeof viteConfig === "function" ? await viteConfig() : viteConfig;
+
+  let viteModule: any = await import("vite");
+  let createViteServer =
+    viteModule?.createServer || viteModule?.default?.createServer;
+
+  // Fallback: if a local file named 'vite' shadows the package, import directly from node_modules
+  if (typeof createViteServer !== "function") {
+    const viteNodePath = path.resolve(import.meta.dirname, "..", "node_modules", "vite", "dist", "node", "index.js");
+    const viteNodeUrl = pathToFileURL(viteNodePath).href;
+    viteModule = await import(viteNodeUrl);
+    createViteServer = viteModule?.createServer || viteModule?.default?.createServer;
+  }
+
+  if (typeof createViteServer !== "function") {
+    throw new Error("Vite createServer API not found. Check installed Vite version.");
+  }
+
   const vite = await createViteServer({
-    ...viteConfig,
+    ...resolvedConfig,
     configFile: false,
-    customLogger: {
-      ...viteLogger,
-      error: (msg, options) => {
-        viteLogger.error(msg, options);
-        process.exit(1);
-      },
-    },
     server: serverOptions,
     appType: "custom",
   });

@@ -19,15 +19,16 @@ import {
 import { 
   Download, 
   FileDown, 
-  Calendar, 
-  Filter,
   Activity,
   Mail,
   TrendingUp,
   Users,
   FileSpreadsheet,
   FileText,
-  FileJson
+  FileJson,
+  Edit,
+  Trash2,
+  Plus
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useToast } from "@/hooks/use-toast";
@@ -36,8 +37,6 @@ import { useLocation } from "wouter";
 import {
   LineChart,
   Line,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -48,6 +47,396 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+function ScheduledReportsManager() {
+  const { toast } = useToast();
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<any>(null);
+  const [formData, setFormData] = useState({
+    type: 'executive',
+    cadence: 'weekly',
+    timeOfDay: '09:00',
+    recipients: '',
+    enabled: true
+  });
+
+  // Fetch schedules
+  const { data: schedules, refetch } = useQuery({
+    queryKey: ['/api/report-schedules'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/report-schedules');
+      return res.json();
+    }
+  });
+
+  // Create schedule mutation
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest('POST', '/api/report-schedules', data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Schedule created successfully" });
+      setIsCreateDialogOpen(false);
+      setFormData({ type: 'executive', cadence: 'weekly', timeOfDay: '09:00', recipients: '', enabled: true });
+      refetch();
+    },
+    onError: () => {
+      toast({ title: "Failed to create schedule", variant: "destructive" });
+    }
+  });
+
+  // Update schedule mutation
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await apiRequest('PUT', `/api/report-schedules/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Schedule updated successfully" });
+      setIsEditDialogOpen(false);
+      setEditingSchedule(null);
+      refetch();
+    },
+    onError: () => {
+      toast({ title: "Failed to update schedule", variant: "destructive" });
+    }
+  });
+
+  // Delete schedule mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest('DELETE', `/api/report-schedules/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Schedule deleted successfully" });
+      refetch();
+    },
+    onError: () => {
+      toast({ title: "Failed to delete schedule", variant: "destructive" });
+    }
+  });
+
+  const handleCreate = () => {
+    createMutation.mutate(formData);
+  };
+
+  const handleEdit = (schedule: any) => {
+    setEditingSchedule(schedule);
+    setFormData({
+      type: schedule.type,
+      cadence: schedule.cadence,
+      timeOfDay: schedule.timeOfDay,
+      recipients: schedule.recipients,
+      enabled: schedule.enabled
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleUpdate = () => {
+    if (editingSchedule) {
+      updateMutation.mutate({ id: editingSchedule.id, data: formData });
+    }
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm('Are you sure you want to delete this schedule?')) {
+      deleteMutation.mutate(id);
+    }
+  };
+
+  const toggleEnabled = (schedule: any) => {
+    updateMutation.mutate({
+      id: schedule.id,
+      data: { ...schedule, enabled: !schedule.enabled }
+    });
+  };
+
+  const reportTypeLabels: Record<string, string> = {
+    executive: 'Executive Summary',
+    detailed: 'Detailed Analysis',
+    compliance: 'Compliance Report'
+  };
+
+  const cadenceLabels: Record<string, string> = {
+    daily: 'Daily',
+    weekly: 'Weekly',
+    monthly: 'Monthly'
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Scheduled Reports</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Automate report generation and delivery via email
+              </p>
+            </div>
+            <Button onClick={() => setIsCreateDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Schedule
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {schedules && schedules.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Report Type</TableHead>
+                  <TableHead>Frequency</TableHead>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Recipients</TableHead>
+                  <TableHead>Last Run</TableHead>
+                  <TableHead>Next Run</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {schedules.map((schedule: any) => (
+                  <TableRow key={schedule.id}>
+                    <TableCell className="font-medium">
+                      {reportTypeLabels[schedule.type] || schedule.type}
+                    </TableCell>
+                    <TableCell>{cadenceLabels[schedule.cadence] || schedule.cadence}</TableCell>
+                    <TableCell>{schedule.timeOfDay}</TableCell>
+                    <TableCell>
+                      <div className="max-w-xs truncate" title={schedule.recipients}>
+                        {schedule.recipients}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {schedule.lastRunAt 
+                        ? format(new Date(schedule.lastRunAt), 'MMM d, yyyy HH:mm')
+                        : 'Never'}
+                    </TableCell>
+                    <TableCell>
+                      {schedule.nextRunAt 
+                        ? format(new Date(schedule.nextRunAt), 'MMM d, yyyy HH:mm')
+                        : 'Not scheduled'}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={schedule.enabled}
+                          onCheckedChange={() => toggleEnabled(schedule)}
+                        />
+                        <Badge variant={schedule.enabled ? 'default' : 'secondary'}>
+                          {schedule.enabled ? 'Active' : 'Disabled'}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleEdit(schedule)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDelete(schedule.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              {schedules ? 'No scheduled reports yet. Create one to get started.' : 'Loading schedules...'}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Create Dialog */}
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Scheduled Report</DialogTitle>
+            <DialogDescription>
+              Configure a new automated report delivery schedule
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="type">Report Type</Label>
+              <Select
+                value={formData.type}
+                onValueChange={(value) => setFormData({ ...formData, type: value })}
+              >
+                <SelectTrigger id="type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="executive">Executive Summary</SelectItem>
+                  <SelectItem value="detailed">Detailed Analysis</SelectItem>
+                  <SelectItem value="compliance">Compliance Report</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="cadence">Frequency</Label>
+              <Select
+                value={formData.cadence}
+                onValueChange={(value) => setFormData({ ...formData, cadence: value })}
+              >
+                <SelectTrigger id="cadence">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="timeOfDay">Time of Day (HH:mm)</Label>
+              <Input
+                id="timeOfDay"
+                type="time"
+                value={formData.timeOfDay}
+                onChange={(e) => setFormData({ ...formData, timeOfDay: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="recipients">Recipients (comma-separated emails)</Label>
+              <Input
+                id="recipients"
+                type="text"
+                placeholder="email1@example.com, email2@example.com"
+                value={formData.recipients}
+                onChange={(e) => setFormData({ ...formData, recipients: e.target.value })}
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="enabled"
+                checked={formData.enabled}
+                onCheckedChange={(checked) => setFormData({ ...formData, enabled: checked })}
+              />
+              <Label htmlFor="enabled">Enable immediately</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreate} disabled={createMutation.isPending}>
+              {createMutation.isPending ? 'Creating...' : 'Create Schedule'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Scheduled Report</DialogTitle>
+            <DialogDescription>
+              Update the automated report delivery schedule
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-type">Report Type</Label>
+              <Select
+                value={formData.type}
+                onValueChange={(value) => setFormData({ ...formData, type: value })}
+              >
+                <SelectTrigger id="edit-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="executive">Executive Summary</SelectItem>
+                  <SelectItem value="detailed">Detailed Analysis</SelectItem>
+                  <SelectItem value="compliance">Compliance Report</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-cadence">Frequency</Label>
+              <Select
+                value={formData.cadence}
+                onValueChange={(value) => setFormData({ ...formData, cadence: value })}
+              >
+                <SelectTrigger id="edit-cadence">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-timeOfDay">Time of Day (HH:mm)</Label>
+              <Input
+                id="edit-timeOfDay"
+                type="time"
+                value={formData.timeOfDay}
+                onChange={(e) => setFormData({ ...formData, timeOfDay: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-recipients">Recipients (comma-separated emails)</Label>
+              <Input
+                id="edit-recipients"
+                type="text"
+                placeholder="email1@example.com, email2@example.com"
+                value={formData.recipients}
+                onChange={(e) => setFormData({ ...formData, recipients: e.target.value })}
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="edit-enabled"
+                checked={formData.enabled}
+                onCheckedChange={(checked) => setFormData({ ...formData, enabled: checked })}
+              />
+              <Label htmlFor="edit-enabled">Enabled</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdate} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? 'Updating...' : 'Update Schedule'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 export default function ReportsPage() {
   const { theme } = useTheme();
@@ -200,6 +589,9 @@ export default function ReportsPage() {
           </TabsTrigger>
           <TabsTrigger value="trends" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
             Trends
+          </TabsTrigger>
+          <TabsTrigger value="scheduled" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+            Scheduled Reports
           </TabsTrigger>
         </TabsList>
 
@@ -562,6 +954,10 @@ export default function ReportsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="scheduled" className="space-y-6">
+          <ScheduledReportsManager />
         </TabsContent>
       </Tabs>
     </AppLayout>

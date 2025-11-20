@@ -11,6 +11,11 @@ import { registerEmailTemplateRoutes } from './email-templates';
 import { registerLandingPageRoutes } from './landing-pages';
 import { registerReportRoutes } from './reports';
 import { registerTrackingRoutes } from './tracking';
+import { registerRealtimeRoutes } from './realtime';
+import { registerAuditRoutes } from './audit';
+import { registerDataRetentionRoutes } from './data-retention';
+import { registerSsoRoutes } from './sso';
+import { registerSecretsRoutes } from './secrets';
 
 /**
  * Register all modular routes
@@ -50,6 +55,21 @@ export function registerModularRoutes(app: Express) {
   // Reports routes
   registerReportRoutes(app);
   
+  // Realtime routes
+  registerRealtimeRoutes(app);
+  
+  // Audit routes (admin only)
+  registerAuditRoutes(app);
+
+  // Data retention routes (admin only)
+  registerDataRetentionRoutes(app);
+
+  // SSO routes
+  registerSsoRoutes(app);
+
+  // Secrets management routes (admin only)
+  registerSecretsRoutes(app);
+  
   // Public tracking routes (must be last - no auth required)
   registerTrackingRoutes(app);
   
@@ -69,3 +89,7 @@ export { registerEmailTemplateRoutes } from './email-templates';
 export { registerLandingPageRoutes } from './landing-pages';
 export { registerReportRoutes } from './reports';
 export { registerTrackingRoutes } from './tracking';
+export { registerAuditRoutes } from './audit';
+export { registerDataRetentionRoutes } from './data-retention';
+export { registerSsoRoutes } from './sso';
+export { registerSecretsRoutes } from './secrets';

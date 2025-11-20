@@ -49,6 +49,9 @@ export default function AuthPage() {
   const [, navigate] = useLocation();
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [ssoOrgId, setSsoOrgId] = useState<number | null>(null);
+  const [checkingSso, setCheckingSso] = useState(false);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -98,6 +101,34 @@ export default function AuthPage() {
         });
       }
     });
+  }
+
+  async function checkSsoForEmail(email: string) {
+    if (!email?.includes('@')) return;
+    
+    setCheckingSso(true);
+    try {
+      const res = await fetch(`/api/sso/check/${encodeURIComponent(email)}`);
+      const data = await res.json();
+      if (data.enabled && data.organizationId) {
+        setSsoEnabled(true);
+        setSsoOrgId(data.organizationId);
+      } else {
+        setSsoEnabled(false);
+        setSsoOrgId(null);
+      }
+    } catch (e: unknown) {
+      setSsoEnabled(false);
+      setSsoOrgId(null);
+    } finally {
+      setCheckingSso(false);
+    }
+  }
+
+  function handleSsoLogin() {
+    if (ssoOrgId) {
+      globalThis.location.href = `/api/auth/saml/${ssoOrgId}`;
+    }
   }
   
   // We'll no longer display the error directly in the form
@@ -173,7 +204,14 @@ export default function AuthPage() {
                           <FormItem>
                             <FormLabel>Email</FormLabel>
                             <FormControl>
-                              <Input placeholder="email@company.com" {...field} />
+                              <Input 
+                                placeholder="email@company.com" 
+                                {...field}
+                                onBlur={(e) => {
+                                  field.onBlur();
+                                  checkSsoForEmail(e.target.value);
+                                }}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -243,6 +281,31 @@ export default function AuthPage() {
                       </div>
 
                       {/* Error message now shown with custom toast */}
+                      
+                      {ssoEnabled && (
+                        <div className="space-y-3">
+                          <div className="relative">
+                            <div className="absolute inset-0 flex items-center">
+                              <span className="w-full border-t" />
+                            </div>
+                            <div className="relative flex justify-center text-xs uppercase">
+                              <span className="bg-background px-2 text-muted-foreground">
+                                Or continue with
+                              </span>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full"
+                            onClick={handleSsoLogin}
+                            disabled={checkingSso}
+                          >
+                            <Shield className="mr-2 h-4 w-4" />
+                            Sign in with SSO
+                          </Button>
+                        </div>
+                      )}
                       
                       <Button 
                         type="submit" 

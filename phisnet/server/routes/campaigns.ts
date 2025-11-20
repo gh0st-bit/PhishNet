@@ -3,6 +3,7 @@ import { isAuthenticated, hasOrganization } from '../auth';
 import { storage } from '../storage';
 import { insertCampaignSchema } from '@shared/schema';
 import { sendCampaignEmails } from '../services/email-service';
+import { AuditService } from '../services/audit.service';
 import { z } from 'zod';
 
 function assertUser(user: Express.User | undefined): asserts user is Express.User {
@@ -118,6 +119,20 @@ export function registerCampaignRoutes(app: Express) {
         }
       );
       
+      // Audit log campaign creation
+      AuditService.log({
+        context: {
+          userId: req.user.id,
+          organizationId: req.user.organizationId,
+          ip: req.ip || req.socket.remoteAddress,
+          userAgent: req.get("user-agent"),
+        },
+        action: "campaign.create",
+        resource: "campaign",
+        resourceId: campaign.id,
+        metadata: { name: campaign.name },
+      }).catch((err) => console.error("[Audit] Failed to log campaign creation:", err));
+      
       // If no schedule provided, send immediately in background
       if (!validatedData.scheduledAt) {
         const orgIdImmediate = req.user.organizationId;
@@ -157,6 +172,21 @@ export function registerCampaignRoutes(app: Express) {
 
       await storage.updateCampaign(campaignId, { status: 'Active' });
       const result = await sendCampaignEmails(campaignId, req.user.organizationId);
+      
+      // Audit log campaign launch
+      AuditService.log({
+        context: {
+          userId: req.user.id,
+          organizationId: req.user.organizationId,
+          ip: req.ip || req.socket.remoteAddress,
+          userAgent: req.get("user-agent"),
+        },
+        action: "campaign.launch",
+        resource: "campaign",
+        resourceId: campaignId,
+        metadata: { name: campaign.name },
+      }).catch((err) => console.error("[Audit] Failed to log campaign launch:", err));
+      
       return res.json({ message: 'Campaign launched', result });
     } catch (error) {
       console.error('Error launching campaign:', error);
@@ -254,6 +284,20 @@ export function registerCampaignRoutes(app: Express) {
         endDate: validatedData.endDate ? new Date(validatedData.endDate) : null,
       });
       
+      // Audit log campaign update
+      AuditService.log({
+        context: {
+          userId: req.user.id,
+          organizationId: req.user.organizationId,
+          ip: req.ip || req.socket.remoteAddress,
+          userAgent: req.get("user-agent"),
+        },
+        action: "campaign.update",
+        resource: "campaign",
+        resourceId: campaignId,
+        metadata: { name: validatedData.name },
+      }).catch((err) => console.error("[Audit] Failed to log campaign update:", err));
+      
       res.json(updatedCampaign);
     } catch (error) {
       console.error("Error updating campaign:", error);
@@ -277,6 +321,20 @@ export function registerCampaignRoutes(app: Express) {
       if (!campaign || campaign.organizationId !== req.user.organizationId) {
         return res.status(404).json({ message: "Campaign not found" });
       }
+      
+      // Audit log campaign deletion
+      AuditService.log({
+        context: {
+          userId: req.user.id,
+          organizationId: req.user.organizationId,
+          ip: req.ip || req.socket.remoteAddress,
+          userAgent: req.get("user-agent"),
+        },
+        action: "campaign.delete",
+        resource: "campaign",
+        resourceId: campaignId,
+        metadata: { name: campaign.name },
+      }).catch((err) => console.error("[Audit] Failed to log campaign deletion:", err));
       
       await storage.deleteCampaign(campaignId);
       res.json({ success: true });
