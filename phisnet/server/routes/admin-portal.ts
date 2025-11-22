@@ -7,13 +7,35 @@ import {
   badges,
   trainingProgress,
   users,
+  articles,
+  flashcardDecks,
+  flashcards,
   type InsertTrainingModule,
   type InsertQuiz,
   type InsertQuizQuestion,
-  type InsertBadge
+  type InsertBadge,
+  type InsertArticle,
+  type InsertFlashcardDeck,
+  type InsertFlashcard,
+  insertTrainingModuleSchema,
+  updateTrainingModuleSchema,
+  insertQuizSchema,
+  updateQuizSchema,
+  insertQuizQuestionSchema,
+  updateQuizQuestionSchema,
+  insertBadgeSchema,
+  updateBadgeSchema,
+  insertArticleSchema,
+  updateArticleSchema,
+  insertFlashcardDeckSchema,
+  updateFlashcardDeckSchema,
+  insertFlashcardSchema,
+  updateFlashcardSchema
 } from "../../shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, like, or } from "drizzle-orm";
 import { isAdmin } from "../auth";
+import { parsePaginationParams, buildPaginationMetadata } from "../utils/pagination";
+import { validateBody } from "../middleware/validation";
 
 const router = Router();
 
@@ -80,7 +102,7 @@ router.get("/training-modules", async (req: Request, res: Response) => {
  * POST /api/admin/training-modules
  * Create a new training module
  */
-router.post("/training-modules", async (req: Request, res: Response) => {
+router.post("/training-modules", validateBody(insertTrainingModuleSchema), async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -100,6 +122,7 @@ router.post("/training-modules", async (req: Request, res: Response) => {
       isRequired: req.body.isRequired ?? false,
       orderIndex: req.body.orderIndex ?? 0,
       tags: req.body.tags || [],
+      createdBy: req.user.id,
     };
 
     const [newModule] = await db
@@ -118,7 +141,7 @@ router.post("/training-modules", async (req: Request, res: Response) => {
  * PUT /api/admin/training-modules/:id
  * Update a training module
  */
-router.put("/training-modules/:id", async (req: Request, res: Response) => {
+router.put("/training-modules/:id", validateBody(updateTrainingModuleSchema), async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -297,16 +320,39 @@ router.get("/quizzes", async (req: Request, res: Response) => {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-
     const orgId = req.user.organizationId;
+    const { page, pageSize, offset } = parsePaginationParams(req.query.page, req.query.pageSize);
 
-    const allQuizzes = await db
-      .select()
+    // Total quizzes count for org
+    const [countRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(quizzes)
+      .where(eq(quizzes.organizationId, orgId));
+    const total = countRow?.total ?? 0;
+
+    const rows = await db
+      .select({
+        id: quizzes.id,
+        title: quizzes.title,
+        description: quizzes.description,
+        passingScore: quizzes.passingScore,
+        timeLimit: quizzes.timeLimit,
+        allowRetakes: quizzes.allowRetakes,
+        maxAttempts: quizzes.maxAttempts,
+        randomizeQuestions: quizzes.randomizeQuestions,
+        showCorrectAnswers: quizzes.showCorrectAnswers,
+        createdAt: quizzes.createdAt,
+      })
       .from(quizzes)
       .where(eq(quizzes.organizationId, orgId))
-      .orderBy(desc(quizzes.createdAt));
+      .orderBy(desc(quizzes.createdAt))
+      .limit(pageSize)
+      .offset(offset);
 
-    res.json({ quizzes: allQuizzes });
+    res.json({
+      quizzes: rows,
+      ...buildPaginationMetadata(total, page, pageSize),
+    });
   } catch (error: any) {
     console.error("Error fetching quizzes:", error);
     res.status(500).json({ message: "Failed to fetch quizzes" });
@@ -358,7 +404,7 @@ router.get("/quizzes/:id", async (req: Request, res: Response) => {
  * POST /api/admin/quizzes
  * Create a new quiz
  */
-router.post("/quizzes", async (req: Request, res: Response) => {
+router.post("/quizzes", validateBody(insertQuizSchema), async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -374,6 +420,7 @@ router.post("/quizzes", async (req: Request, res: Response) => {
       allowRetakes: req.body.allowRetakes ?? true,
       maxAttempts: req.body.maxAttempts,
       showCorrectAnswers: req.body.showCorrectAnswers ?? true,
+      createdBy: req.user.id,
     };
 
     const [newQuiz] = await db
@@ -392,7 +439,7 @@ router.post("/quizzes", async (req: Request, res: Response) => {
  * PUT /api/admin/quizzes/:id
  * Update a quiz
  */
-router.put("/quizzes/:id", async (req: Request, res: Response) => {
+router.put("/quizzes/:id", validateBody(updateQuizSchema), async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -491,7 +538,7 @@ router.delete("/quizzes/:id", async (req: Request, res: Response) => {
  * POST /api/admin/quizzes/:id/questions
  * Add a question to a quiz
  */
-router.post("/quizzes/:id/questions", async (req: Request, res: Response) => {
+router.post("/quizzes/:id/questions", validateBody(insertQuizQuestionSchema), async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -520,7 +567,7 @@ router.post("/quizzes/:id/questions", async (req: Request, res: Response) => {
       quizId,
       questionType: req.body.questionType,
       questionText: req.body.questionText,
-      questionOptions: req.body.questionOptions || [],
+      options: req.body.options || req.body.questionOptions || [],
       correctAnswer: req.body.correctAnswer,
       explanation: req.body.explanation,
       points: req.body.points ?? 10,
@@ -543,7 +590,7 @@ router.post("/quizzes/:id/questions", async (req: Request, res: Response) => {
  * PUT /api/admin/quiz-questions/:id
  * Update a quiz question
  */
-router.put("/quiz-questions/:id", async (req: Request, res: Response) => {
+router.put("/quiz-questions/:id", validateBody(updateQuizQuestionSchema), async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -575,12 +622,11 @@ router.put("/quiz-questions/:id", async (req: Request, res: Response) => {
     const updateData: Partial<InsertQuizQuestion> = {
       questionType: req.body.questionType,
       questionText: req.body.questionText,
-      questionOptions: req.body.questionOptions,
+      options: req.body.options || req.body.questionOptions,
       correctAnswer: req.body.correctAnswer,
       explanation: req.body.explanation,
       points: req.body.points,
       orderIndex: req.body.orderIndex,
-      updatedAt: new Date(),
     };
 
     const [updatedQuestion] = await db
@@ -650,7 +696,13 @@ router.delete("/quiz-questions/:id", async (req: Request, res: Response) => {
  */
 router.get("/badges", async (req: Request, res: Response) => {
   try {
-    const allBadges = await db
+    const { page, pageSize, offset } = parsePaginationParams(req.query.page, req.query.pageSize);
+
+    // Total count
+    const [countRow] = await db.select({ total: sql<number>`count(*)` }).from(badges);
+    const total = countRow?.total ?? 0;
+
+    const rows = await db
       .select({
         id: badges.id,
         name: badges.name,
@@ -658,18 +710,22 @@ router.get("/badges", async (req: Request, res: Response) => {
         criteria: badges.criteria,
         rarity: badges.rarity,
         iconUrl: badges.iconUrl,
+        pointsAwarded: badges.pointsAwarded,
+        category: badges.category,
         createdAt: badges.createdAt,
-        // Count of users who have earned this badge
         earnedCount: sql<number>`(
-          SELECT COUNT(*) 
-          FROM user_badges 
-          WHERE badge_id = ${badges.id}
+          SELECT COUNT(*) FROM user_badges WHERE badge_id = ${badges.id}
         )`
       })
       .from(badges)
-      .orderBy(desc(badges.createdAt));
+      .orderBy(desc(badges.createdAt))
+      .limit(pageSize)
+      .offset(offset);
 
-    res.json({ badges: allBadges });
+    res.json({
+      badges: rows,
+      ...buildPaginationMetadata(total, page, pageSize),
+    });
   } catch (error: any) {
     console.error("Error fetching badges:", error);
     res.status(500).json({ message: "Failed to fetch badges" });
@@ -680,14 +736,16 @@ router.get("/badges", async (req: Request, res: Response) => {
  * POST /api/admin/badges
  * Create a new badge
  */
-router.post("/badges", async (req: Request, res: Response) => {
+router.post("/badges", validateBody(insertBadgeSchema), async (req: Request, res: Response) => {
   try {
     const badgeData: InsertBadge = {
       name: req.body.name,
       description: req.body.description,
       criteria: req.body.criteria,
+      category: req.body.category || 'special',
       rarity: req.body.rarity ?? "common",
       iconUrl: req.body.iconUrl,
+      pointsAwarded: req.body.pointsAwarded ?? 0,
     };
 
     const [newBadge] = await db
@@ -706,7 +764,7 @@ router.post("/badges", async (req: Request, res: Response) => {
  * PUT /api/admin/badges/:id
  * Update a badge
  */
-router.put("/badges/:id", async (req: Request, res: Response) => {
+router.put("/badges/:id", validateBody(updateBadgeSchema), async (req: Request, res: Response) => {
   try {
     const badgeId = Number.parseInt(req.params.id);
 
@@ -797,6 +855,605 @@ router.get("/users", async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error fetching users:", error);
     res.status(500).json({ message: "Failed to fetch users" });
+  }
+});
+
+// ========================================
+// ARTICLES MANAGEMENT
+// ========================================
+
+/**
+ * GET /api/admin/articles
+ * Get all articles for the organization
+ */
+router.get("/articles", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+    const { category, search } = req.query;
+    const { page, pageSize, offset } = parsePaginationParams(req.query.page, req.query.pageSize);
+
+    // Build WHERE conditions
+    let whereConditions = [eq(articles.organizationId, orgId)];
+    if (category && typeof category === 'string') {
+      whereConditions.push(eq(articles.category, category));
+    }
+    if (search && typeof search === 'string') {
+      whereConditions.push(
+        or(
+          like(articles.title, `%${search}%`),
+          like(articles.content, `%${search}%`)
+        )!
+      );
+    }
+
+    // Count query
+    const [countRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(articles)
+      .where(and(...whereConditions));
+    const total = countRow?.total ?? 0;
+
+    // Data query
+    const rows = await db
+      .select({
+        id: articles.id,
+        title: articles.title,
+        excerpt: articles.excerpt,
+        content: articles.content,
+        category: articles.category,
+        tags: articles.tags,
+        thumbnailUrl: articles.thumbnailUrl,
+        author: articles.author,
+        readTimeMinutes: articles.readTimeMinutes,
+        publishedAt: articles.publishedAt,
+        updatedAt: articles.updatedAt,
+        authorName: sql<string>`CONCAT(${users.firstName}, ' ', ${users.lastName})`,
+      })
+      .from(articles)
+      .leftJoin(users, eq(articles.author, users.id))
+      .where(and(...whereConditions))
+      .orderBy(desc(articles.publishedAt))
+      .limit(pageSize)
+      .offset(offset);
+
+    res.json({
+      articles: rows,
+      ...buildPaginationMetadata(total, page, pageSize),
+    });
+  } catch (error: any) {
+    console.error("Error fetching articles:", error);
+    res.status(500).json({ message: "Failed to fetch articles" });
+  }
+});
+
+/**
+ * GET /api/admin/articles/:id
+ * Get a single article by ID
+ */
+router.get("/articles/:id", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const articleId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+
+    const [article] = await db
+      .select()
+      .from(articles)
+      .where(
+        and(
+          eq(articles.id, articleId),
+          eq(articles.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!article) {
+      return res.status(404).json({ message: "Article not found" });
+    }
+
+    res.json({ article });
+  } catch (error: any) {
+    console.error("Error fetching article:", error);
+    res.status(500).json({ message: "Failed to fetch article" });
+  }
+});
+
+/**
+ * POST /api/admin/articles
+ * Create a new article
+ */
+router.post("/articles", validateBody(insertArticleSchema), async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+    const articleData: InsertArticle = {
+      organizationId: orgId,
+      title: req.body.title,
+      content: req.body.content,
+      excerpt: req.body.excerpt,
+      category: req.body.category,
+      tags: req.body.tags || [],
+      thumbnailUrl: req.body.thumbnailUrl,
+      author: req.user.id,
+      readTimeMinutes: req.body.readTimeMinutes,
+    };
+
+    const [newArticle] = await db
+      .insert(articles)
+      .values(articleData)
+      .returning();
+
+    res.status(201).json({ article: newArticle });
+  } catch (error: any) {
+    console.error("Error creating article:", error);
+    res.status(500).json({ message: "Failed to create article" });
+  }
+});
+
+/**
+ * PUT /api/admin/articles/:id
+ * Update an article
+ */
+router.put("/articles/:id", validateBody(updateArticleSchema), async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const articleId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+
+    // Verify ownership
+    const [existing] = await db
+      .select()
+      .from(articles)
+      .where(
+        and(
+          eq(articles.id, articleId),
+          eq(articles.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ message: "Article not found" });
+    }
+
+    const updateData: Partial<InsertArticle> = {
+      title: req.body.title,
+      content: req.body.content,
+      excerpt: req.body.excerpt,
+      category: req.body.category,
+      tags: req.body.tags,
+      thumbnailUrl: req.body.thumbnailUrl,
+      readTimeMinutes: req.body.readTimeMinutes,
+      updatedAt: new Date(),
+    };
+
+    const [updatedArticle] = await db
+      .update(articles)
+      .set(updateData)
+      .where(eq(articles.id, articleId))
+      .returning();
+
+    res.json({ article: updatedArticle });
+  } catch (error: any) {
+    console.error("Error updating article:", error);
+    res.status(500).json({ message: "Failed to update article" });
+  }
+});
+
+/**
+ * DELETE /api/admin/articles/:id
+ * Delete an article
+ */
+router.delete("/articles/:id", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const articleId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+
+    // Verify ownership
+    const [existing] = await db
+      .select()
+      .from(articles)
+      .where(
+        and(
+          eq(articles.id, articleId),
+          eq(articles.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ message: "Article not found" });
+    }
+
+    await db.delete(articles).where(eq(articles.id, articleId));
+
+    res.json({ message: "Article deleted successfully" });
+  } catch (error: any) {
+    console.error("Error deleting article:", error);
+    res.status(500).json({ message: "Failed to delete article" });
+  }
+});
+
+// ========================================
+// FLASHCARD DECKS MANAGEMENT
+// ========================================
+
+/**
+ * GET /api/admin/flashcard-decks
+ * Get all flashcard decks for the organization
+ */
+router.get("/flashcard-decks", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+    const { category } = req.query;
+    const { page, pageSize, offset } = parsePaginationParams(req.query.page, req.query.pageSize);
+
+    // Build WHERE conditions
+    let whereConditions = [eq(flashcardDecks.organizationId, orgId)];
+    if (category && typeof category === 'string') {
+      whereConditions.push(eq(flashcardDecks.category, category));
+    }
+
+    // Count query
+    const [countRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(flashcardDecks)
+      .where(and(...whereConditions));
+    const total = countRow?.total ?? 0;
+
+    // Data query
+    const rows = await db
+      .select({
+        id: flashcardDecks.id,
+        title: flashcardDecks.title,
+        description: flashcardDecks.description,
+        category: flashcardDecks.category,
+        createdBy: flashcardDecks.createdBy,
+        createdAt: flashcardDecks.createdAt,
+        creatorName: sql<string>`CONCAT(${users.firstName}, ' ', ${users.lastName})`,
+        cardCount: sql<number>`(
+          SELECT COUNT(*) 
+          FROM flashcards 
+          WHERE deck_id = ${flashcardDecks.id}
+        )`,
+      })
+      .from(flashcardDecks)
+      .leftJoin(users, eq(flashcardDecks.createdBy, users.id))
+      .where(and(...whereConditions))
+      .orderBy(desc(flashcardDecks.createdAt))
+      .limit(pageSize)
+      .offset(offset);
+
+    res.json({
+      decks: rows,
+      ...buildPaginationMetadata(total, page, pageSize),
+    });
+  } catch (error: any) {
+    console.error("Error fetching flashcard decks:", error);
+    res.status(500).json({ message: "Failed to fetch flashcard decks" });
+  }
+});
+
+/**
+ * GET /api/admin/flashcard-decks/:id
+ * Get a single flashcard deck with all its cards
+ */
+router.get("/flashcard-decks/:id", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const deckId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+
+    const [deck] = await db
+      .select()
+      .from(flashcardDecks)
+      .where(
+        and(
+          eq(flashcardDecks.id, deckId),
+          eq(flashcardDecks.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!deck) {
+      return res.status(404).json({ message: "Flashcard deck not found" });
+    }
+
+    const cards = await db
+      .select()
+      .from(flashcards)
+      .where(eq(flashcards.deckId, deckId))
+      .orderBy(flashcards.orderIndex);
+
+    res.json({ deck, cards });
+  } catch (error: any) {
+    console.error("Error fetching flashcard deck:", error);
+    res.status(500).json({ message: "Failed to fetch flashcard deck" });
+  }
+});
+
+/**
+ * POST /api/admin/flashcard-decks
+ * Create a new flashcard deck
+ */
+router.post("/flashcard-decks", validateBody(insertFlashcardDeckSchema), async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+    const deckData: InsertFlashcardDeck = {
+      organizationId: orgId,
+      title: req.body.title,
+      description: req.body.description,
+      category: req.body.category,
+      createdBy: req.user.id,
+    };
+
+    const [newDeck] = await db
+      .insert(flashcardDecks)
+      .values(deckData)
+      .returning();
+
+    res.status(201).json({ deck: newDeck });
+  } catch (error: any) {
+    console.error("Error creating flashcard deck:", error);
+    res.status(500).json({ message: "Failed to create flashcard deck" });
+  }
+});
+
+/**
+ * PUT /api/admin/flashcard-decks/:id
+ * Update a flashcard deck
+ */
+router.put("/flashcard-decks/:id", validateBody(updateFlashcardDeckSchema), async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const deckId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+
+    const [existing] = await db
+      .select()
+      .from(flashcardDecks)
+      .where(
+        and(
+          eq(flashcardDecks.id, deckId),
+          eq(flashcardDecks.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ message: "Flashcard deck not found" });
+    }
+
+    const updateData: Partial<InsertFlashcardDeck> = {
+      title: req.body.title,
+      description: req.body.description,
+      category: req.body.category,
+    };
+
+    const [updatedDeck] = await db
+      .update(flashcardDecks)
+      .set(updateData)
+      .where(eq(flashcardDecks.id, deckId))
+      .returning();
+
+    res.json({ deck: updatedDeck });
+  } catch (error: any) {
+    console.error("Error updating flashcard deck:", error);
+    res.status(500).json({ message: "Failed to update flashcard deck" });
+  }
+});
+
+/**
+ * DELETE /api/admin/flashcard-decks/:id
+ * Delete a flashcard deck (cascades to cards)
+ */
+router.delete("/flashcard-decks/:id", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const deckId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+
+    const [existing] = await db
+      .select()
+      .from(flashcardDecks)
+      .where(
+        and(
+          eq(flashcardDecks.id, deckId),
+          eq(flashcardDecks.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ message: "Flashcard deck not found" });
+    }
+
+    await db.delete(flashcardDecks).where(eq(flashcardDecks.id, deckId));
+
+    res.json({ message: "Flashcard deck deleted successfully" });
+  } catch (error: any) {
+    console.error("Error deleting flashcard deck:", error);
+    res.status(500).json({ message: "Failed to delete flashcard deck" });
+  }
+});
+
+// ========================================
+// FLASHCARDS MANAGEMENT
+// ========================================
+
+/**
+ * POST /api/admin/flashcard-decks/:deckId/cards
+ * Add a flashcard to a deck
+ */
+router.post("/flashcard-decks/:deckId/cards", validateBody(insertFlashcardSchema), async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const deckId = Number.parseInt(req.params.deckId);
+    const orgId = req.user.organizationId;
+
+    // Verify deck ownership
+    const [deck] = await db
+      .select()
+      .from(flashcardDecks)
+      .where(
+        and(
+          eq(flashcardDecks.id, deckId),
+          eq(flashcardDecks.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!deck) {
+      return res.status(404).json({ message: "Flashcard deck not found" });
+    }
+
+    const cardData: InsertFlashcard = {
+      deckId,
+      frontContent: req.body.frontContent,
+      backContent: req.body.backContent,
+      orderIndex: req.body.orderIndex ?? 0,
+    };
+
+    const [newCard] = await db
+      .insert(flashcards)
+      .values(cardData)
+      .returning();
+
+    res.status(201).json({ card: newCard });
+  } catch (error: any) {
+    console.error("Error adding flashcard:", error);
+    res.status(500).json({ message: "Failed to add flashcard" });
+  }
+});
+
+/**
+ * PUT /api/admin/flashcards/:id
+ * Update a flashcard
+ */
+router.put("/flashcards/:id", validateBody(updateFlashcardSchema), async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const cardId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+
+    // Verify card exists and belongs to org's deck
+    const [existing] = await db
+      .select({
+        card: flashcards,
+        deck: flashcardDecks,
+      })
+      .from(flashcards)
+      .innerJoin(flashcardDecks, eq(flashcards.deckId, flashcardDecks.id))
+      .where(
+        and(
+          eq(flashcards.id, cardId),
+          eq(flashcardDecks.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ message: "Flashcard not found" });
+    }
+
+    const updateData: Partial<InsertFlashcard> = {
+      frontContent: req.body.frontContent,
+      backContent: req.body.backContent,
+      orderIndex: req.body.orderIndex,
+    };
+
+    const [updatedCard] = await db
+      .update(flashcards)
+      .set(updateData)
+      .where(eq(flashcards.id, cardId))
+      .returning();
+
+    res.json({ card: updatedCard });
+  } catch (error: any) {
+    console.error("Error updating flashcard:", error);
+    res.status(500).json({ message: "Failed to update flashcard" });
+  }
+});
+
+/**
+ * DELETE /api/admin/flashcards/:id
+ * Delete a flashcard
+ */
+router.delete("/flashcards/:id", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const cardId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+
+    // Verify card exists and belongs to org's deck
+    const [existing] = await db
+      .select({
+        card: flashcards,
+        deck: flashcardDecks,
+      })
+      .from(flashcards)
+      .innerJoin(flashcardDecks, eq(flashcards.deckId, flashcardDecks.id))
+      .where(
+        and(
+          eq(flashcards.id, cardId),
+          eq(flashcardDecks.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ message: "Flashcard not found" });
+    }
+
+    await db.delete(flashcards).where(eq(flashcards.id, cardId));
+
+    res.json({ message: "Flashcard deleted successfully" });
+  } catch (error: any) {
+    console.error("Error deleting flashcard:", error);
+    res.status(500).json({ message: "Failed to delete flashcard" });
   }
 });
 

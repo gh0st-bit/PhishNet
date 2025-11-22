@@ -495,6 +495,20 @@ export type SsoConfig = typeof ssoConfig.$inferSelect;
 export type InsertSsoConfig = typeof ssoConfig.$inferInsert;
 export type UserInvite = typeof userInvites.$inferSelect;
 export type InsertUserInvite = typeof userInvites.$inferInsert;
+export type TrainingModule = typeof trainingModules.$inferSelect;
+export type InsertTrainingModule = typeof trainingModules.$inferInsert;
+export type Quiz = typeof quizzes.$inferSelect;
+export type InsertQuiz = typeof quizzes.$inferInsert;
+export type QuizQuestion = typeof quizQuestions.$inferSelect;
+export type InsertQuizQuestion = typeof quizQuestions.$inferInsert;
+export type Badge = typeof badges.$inferSelect;
+export type InsertBadge = typeof badges.$inferInsert;
+export type Article = typeof articles.$inferSelect;
+export type InsertArticle = typeof articles.$inferInsert;
+export type FlashcardDeck = typeof flashcardDecks.$inferSelect;
+export type InsertFlashcardDeck = typeof flashcardDecks.$inferInsert;
+export type Flashcard = typeof flashcards.$inferSelect;
+export type InsertFlashcard = typeof flashcards.$inferInsert;
 
 // Validation schemas - ONLY DECLARE ONCE
 export const userValidationSchema = z.object({
@@ -739,6 +753,8 @@ export const acceptInviteSchema = z.object({
   lastName: z.string().min(1, "Last name is required"),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
+
+// Employee portal validation schemas moved below table definitions
 
 // Reconnaissance tables
 export const reconnaissanceDomains = pgTable("reconnaissance_domains", {
@@ -1005,6 +1021,82 @@ export const flashcards = pgTable("flashcards", {
   backContent: text("back_content").notNull(), // Answer/definition
   orderIndex: integer("order_index").default(0).notNull(),
 });
+
+// ========================================
+// EMPLOYEE PORTAL VALIDATION SCHEMAS (after table declarations)
+// ========================================
+
+export const insertTrainingModuleSchema = createInsertSchema(trainingModules, {
+  title: z.string().min(1, "Title is required"),
+  category: z.string().min(1, "Category is required"),
+  difficulty: z.enum(["beginner", "intermediate", "advanced"], {
+    errorMap: () => ({ message: "Difficulty must be beginner, intermediate, or advanced" })
+  }),
+  durationMinutes: z.number().int().positive("Duration must be a positive number"),
+  passingScore: z.number().int().min(0).max(100).optional(),
+  orderIndex: z.number().int().min(0).optional(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
+export const updateTrainingModuleSchema = insertTrainingModuleSchema.partial();
+
+export const insertQuizSchema = createInsertSchema(quizzes, {
+  title: z.string().min(1, "Title is required"),
+  passingScore: z.number().int().min(0).max(100, "Passing score must be between 0 and 100"),
+  timeLimit: z.number().int().positive("Time limit must be a positive number").optional().nullable(),
+  maxAttempts: z.number().int().positive("Max attempts must be a positive number").optional().nullable(),
+}).omit({ id: true, createdAt: true, updatedAt: true });
+
+export const updateQuizSchema = insertQuizSchema.partial();
+
+export const insertQuizQuestionSchema = createInsertSchema(quizQuestions, {
+  questionText: z.string().min(1, "Question text is required"),
+  questionType: z.enum(["multiple_choice", "true_false", "fill_blank", "matching", "scenario"], {
+    errorMap: () => ({ message: "Invalid question type" })
+  }),
+  options: z.array(z.string()).min(1, "At least one option is required").optional(),
+  correctAnswer: z.any(),
+  points: z.number().int().positive("Points must be a positive number").optional(),
+  orderIndex: z.number().int().min(0).optional(),
+}).omit({ id: true, createdAt: true });
+
+export const updateQuizQuestionSchema = insertQuizQuestionSchema.partial();
+
+export const insertBadgeSchema = createInsertSchema(badges, {
+  name: z.string().min(1, "Name is required"),
+  category: z.string().min(1, "Category is required"),
+  criteria: z.any(),
+  pointsAwarded: z.number().int().min(0).optional(),
+  rarity: z.enum(["common", "rare", "epic", "legendary"], {
+    errorMap: () => ({ message: "Rarity must be common, rare, epic, or legendary" })
+  }).optional(),
+}).omit({ id: true, createdAt: true });
+
+export const updateBadgeSchema = insertBadgeSchema.partial();
+
+export const insertArticleSchema = createInsertSchema(articles, {
+  title: z.string().min(1, "Title is required"),
+  content: z.string().min(1, "Content is required"),
+  category: z.string().min(1, "Category is required"),
+  tags: z.array(z.string()).optional(),
+  readTimeMinutes: z.number().int().positive().optional().nullable(),
+}).omit({ id: true, publishedAt: true, updatedAt: true });
+
+export const updateArticleSchema = insertArticleSchema.partial();
+
+export const insertFlashcardDeckSchema = createInsertSchema(flashcardDecks, {
+  title: z.string().min(1, "Title is required"),
+  category: z.string().min(1, "Category is required"),
+}).omit({ id: true, createdAt: true });
+
+export const updateFlashcardDeckSchema = insertFlashcardDeckSchema.partial();
+
+export const insertFlashcardSchema = createInsertSchema(flashcards, {
+  frontContent: z.string().min(1, "Front content is required"),
+  backContent: z.string().min(1, "Back content is required"),
+  orderIndex: z.number().int().min(0).optional(),
+}).omit({ id: true });
+
+export const updateFlashcardSchema = insertFlashcardSchema.partial();
 
 // Default roles configuration
 export const DEFAULT_ROLES = [

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { quizFormSchema, quizQuestionFormSchema } from "../validation/adminSchemas";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
@@ -18,7 +19,7 @@ interface QuizQuestion {
   questionType: string;
   options: string[];
   correctAnswer: string | string[];
-  pointValue: number;
+  points: number;
   explanation: string | null;
   orderIndex: number;
 }
@@ -27,13 +28,21 @@ interface Quiz {
   id: number;
   title: string;
   description: string;
-  category: string;
-  difficulty: string;
   passingScore: number;
   timeLimit: number | null;
+  allowRetakes: boolean;
   maxAttempts: number | null;
-  isActive: boolean;
+  showCorrectAnswers: boolean;
+  randomizeQuestions?: boolean;
   questions?: QuizQuestion[];
+}
+
+interface PaginatedQuizzesResponse {
+  quizzes: Quiz[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
 }
 
 export default function AdminQuizPage() {
@@ -47,29 +56,35 @@ export default function AdminQuizPage() {
   const [quizFormData, setQuizFormData] = useState({
     title: "",
     description: "",
-    category: "phishing",
-    difficulty: "beginner",
-    passingScore: 70,
+    passingScore: 80,
     timeLimit: 0,
-    maxAttempts: 0,
-    isActive: true,
+    allowRetakes: true,
+    maxAttempts: 3,
+    showCorrectAnswers: true,
+    randomizeQuestions: false,
   });
+  const [quizFormErrors, setQuizFormErrors] = useState<string[]>([]);
 
   const [questionFormData, setQuestionFormData] = useState({
     questionText: "",
     questionType: "multiple_choice",
     options: ["", "", "", ""],
     correctAnswer: "",
-    pointValue: 10,
+    points: 10,
     explanation: "",
     orderIndex: 0,
   });
+  const [questionFormErrors, setQuestionFormErrors] = useState<string[]>([]);
 
-  // Fetch all quizzes
-  const { data: quizzes, isLoading, error } = useQuery<{ quizzes: Quiz[] }>({
-    queryKey: ["/api/admin/quizzes"],
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const pageSize = 12; // UI page size
+
+  // Fetch paginated quizzes
+  const { data: quizzesResp, isLoading, error } = useQuery<PaginatedQuizzesResponse>({
+    queryKey: ["/api/admin/quizzes", page, pageSize],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/admin/quizzes");
+      const res = await apiRequest("GET", `/api/admin/quizzes?page=${page}&pageSize=${pageSize}`);
       if (!res.ok) throw new Error("Failed to fetch quizzes");
       return res.json();
     },
@@ -90,15 +105,19 @@ export default function AdminQuizPage() {
   const createQuizMutation = useMutation({
     mutationFn: async (data: typeof quizFormData) => {
       const res = await apiRequest("POST", "/api/admin/quizzes", {
-        ...data,
+        title: data.title,
+        description: data.description,
+        passingScore: data.passingScore,
         timeLimit: data.timeLimit || null,
+        allowRetakes: data.allowRetakes,
         maxAttempts: data.maxAttempts || null,
+        showCorrectAnswers: data.showCorrectAnswers,
       });
       if (!res.ok) throw new Error("Failed to create quiz");
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/quizzes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/quizzes", page, pageSize] });
       setIsQuizDialogOpen(false);
       resetQuizForm();
     },
@@ -107,15 +126,19 @@ export default function AdminQuizPage() {
   const updateQuizMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: typeof quizFormData }) => {
       const res = await apiRequest("PUT", `/api/admin/quizzes/${id}`, {
-        ...data,
+        title: data.title,
+        description: data.description,
+        passingScore: data.passingScore,
         timeLimit: data.timeLimit || null,
+        allowRetakes: data.allowRetakes,
         maxAttempts: data.maxAttempts || null,
+        showCorrectAnswers: data.showCorrectAnswers,
       });
       if (!res.ok) throw new Error("Failed to update quiz");
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/quizzes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/quizzes", page, pageSize] });
       setIsQuizDialogOpen(false);
       setEditingQuiz(null);
       resetQuizForm();
@@ -129,7 +152,7 @@ export default function AdminQuizPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/quizzes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/quizzes", page, pageSize] });
       setSelectedQuiz(null);
     },
   });
@@ -138,13 +161,17 @@ export default function AdminQuizPage() {
   const createQuestionMutation = useMutation({
     mutationFn: async (data: typeof questionFormData) => {
       const res = await apiRequest("POST", `/api/admin/quizzes/${selectedQuiz!.id}/questions`, {
-        ...data,
+        questionText: data.questionText,
+        questionType: data.questionType,
         options: data.questionType === "true_false" 
           ? ["True", "False"] 
           : data.options.filter(Boolean),
         correctAnswer: data.questionType === "multiple_select"
           ? data.correctAnswer.split(",").map(a => a.trim())
           : data.correctAnswer,
+        explanation: data.explanation || undefined,
+        points: data.points,
+        orderIndex: data.orderIndex,
       });
       if (!res.ok) throw new Error("Failed to create question");
       return res.json();
@@ -159,13 +186,17 @@ export default function AdminQuizPage() {
   const updateQuestionMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: typeof questionFormData }) => {
       const res = await apiRequest("PUT", `/api/admin/quiz-questions/${id}`, {
-        ...data,
+        questionText: data.questionText,
+        questionType: data.questionType,
         options: data.questionType === "true_false"
           ? ["True", "False"]
           : data.options.filter(Boolean),
         correctAnswer: data.questionType === "multiple_select"
           ? data.correctAnswer.split(",").map(a => a.trim())
           : data.correctAnswer,
+        explanation: data.explanation || undefined,
+        points: data.points,
+        orderIndex: data.orderIndex,
       });
       if (!res.ok) throw new Error("Failed to update question");
       return res.json();
@@ -193,12 +224,12 @@ export default function AdminQuizPage() {
     setQuizFormData({
       title: "",
       description: "",
-      category: "phishing",
-      difficulty: "beginner",
-      passingScore: 70,
+      passingScore: 80,
       timeLimit: 0,
-      maxAttempts: 0,
-      isActive: true,
+      allowRetakes: true,
+      maxAttempts: 3,
+      showCorrectAnswers: true,
+      randomizeQuestions: false,
     });
   };
 
@@ -208,7 +239,7 @@ export default function AdminQuizPage() {
       questionType: "multiple_choice",
       options: ["", "", "", ""],
       correctAnswer: "",
-      pointValue: 10,
+      points: 10,
       explanation: "",
       orderIndex: quizDetail?.questions?.length || 0,
     });
@@ -219,12 +250,12 @@ export default function AdminQuizPage() {
     setQuizFormData({
       title: quiz.title,
       description: quiz.description,
-      category: quiz.category,
-      difficulty: quiz.difficulty,
       passingScore: quiz.passingScore,
       timeLimit: quiz.timeLimit || 0,
+      allowRetakes: quiz.allowRetakes,
       maxAttempts: quiz.maxAttempts || 0,
-      isActive: quiz.isActive,
+      showCorrectAnswers: quiz.showCorrectAnswers,
+      randomizeQuestions: quiz.randomizeQuestions ?? false,
     });
     setIsQuizDialogOpen(true);
   };
@@ -238,7 +269,7 @@ export default function AdminQuizPage() {
       correctAnswer: Array.isArray(question.correctAnswer)
         ? question.correctAnswer.join(", ")
         : String(question.correctAnswer),
-      pointValue: question.pointValue,
+      points: question.points,
       explanation: question.explanation || "",
       orderIndex: question.orderIndex,
     });
@@ -287,12 +318,28 @@ export default function AdminQuizPage() {
               </DialogHeader>
               <form onSubmit={(e) => {
                 e.preventDefault();
+                setQuestionFormErrors([]);
+                const parsed = quizQuestionFormSchema.safeParse({
+                  ...questionFormData,
+                  options: (questionFormData.questionType === "true_false" ? ["True","False"] : questionFormData.options).filter(Boolean)
+                });
+                if (!parsed.success) {
+                  setQuestionFormErrors(parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`));
+                  return;
+                }
                 if (editingQuestion) {
                   updateQuestionMutation.mutate({ id: editingQuestion.id, data: questionFormData });
                 } else {
                   createQuestionMutation.mutate(questionFormData);
                 }
               }} className="space-y-4">
+                {questionFormErrors.length > 0 && (
+                  <Alert variant="destructive">
+                    <AlertDescription className="space-y-1">
+                      {questionFormErrors.map(err => <div key={err}>{err}</div>)}
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <div className="space-y-2">
                   <Label>Question Text *</Label>
                   <Textarea
@@ -329,12 +376,12 @@ export default function AdminQuizPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Point Value *</Label>
+                    <Label>Points *</Label>
                     <Input
                       type="number"
                       min="1"
-                      value={questionFormData.pointValue}
-                      onChange={(e) => setQuestionFormData({ ...questionFormData, pointValue: Number.parseInt(e.target.value) })}
+                      value={questionFormData.points}
+                      onChange={(e) => setQuestionFormData({ ...questionFormData, points: Number.parseInt(e.target.value) })}
                       required
                     />
                   </div>
@@ -445,7 +492,7 @@ export default function AdminQuizPage() {
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">Q{idx + 1}</Badge>
                       <Badge variant="secondary">{question.questionType.replace("_", " ")}</Badge>
-                      <Badge>{question.pointValue} pts</Badge>
+                      <Badge>{question.points} pts</Badge>
                     </div>
                     <p className="font-medium">{question.questionText}</p>
                     {question.options && question.options.length > 0 && (
@@ -515,12 +562,30 @@ export default function AdminQuizPage() {
             </DialogHeader>
             <form onSubmit={(e) => {
               e.preventDefault();
+              // Clear previous errors
+              setQuizFormErrors([]);
+              const parsed = quizFormSchema.safeParse({
+                ...quizFormData,
+                maxAttempts: quizFormData.maxAttempts === 0 ? undefined : quizFormData.maxAttempts,
+                timeLimit: quizFormData.timeLimit === 0 ? undefined : quizFormData.timeLimit
+              });
+              if (!parsed.success) {
+                setQuizFormErrors(parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`));
+                return;
+              }
               if (editingQuiz) {
                 updateQuizMutation.mutate({ id: editingQuiz.id, data: quizFormData });
               } else {
                 createQuizMutation.mutate(quizFormData);
               }
             }} className="space-y-4">
+              {quizFormErrors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertDescription className="space-y-1">
+                    {quizFormErrors.map(err => <div key={err}>{err}</div>)}
+                  </AlertDescription>
+                </Alert>
+              )}
               <div className="space-y-2">
                 <Label>Title *</Label>
                 <Input
@@ -540,45 +605,6 @@ export default function AdminQuizPage() {
                   rows={2}
                   required
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Category *</Label>
-                  <Select
-                    value={quizFormData.category}
-                    onValueChange={(value) => setQuizFormData({ ...quizFormData, category: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="phishing">Phishing</SelectItem>
-                      <SelectItem value="passwords">Passwords</SelectItem>
-                      <SelectItem value="social_engineering">Social Engineering</SelectItem>
-                      <SelectItem value="data_protection">Data Protection</SelectItem>
-                      <SelectItem value="compliance">Compliance</SelectItem>
-                      <SelectItem value="general">General Security</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Difficulty *</Label>
-                  <Select
-                    value={quizFormData.difficulty}
-                    onValueChange={(value) => setQuizFormData({ ...quizFormData, difficulty: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="beginner">Beginner</SelectItem>
-                      <SelectItem value="intermediate">Intermediate</SelectItem>
-                      <SelectItem value="advanced">Advanced</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
@@ -617,16 +643,42 @@ export default function AdminQuizPage() {
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="allowRetakes"
+                    checked={quizFormData.allowRetakes}
+                    onChange={(e) => setQuizFormData({ ...quizFormData, allowRetakes: e.target.checked })}
+                    className="rounded"
+                  />
+                  <Label htmlFor="allowRetakes" className="font-normal cursor-pointer">
+                    Allow retakes
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="showCorrectAnswers"
+                    checked={quizFormData.showCorrectAnswers}
+                    onChange={(e) => setQuizFormData({ ...quizFormData, showCorrectAnswers: e.target.checked })}
+                    className="rounded"
+                  />
+                  <Label htmlFor="showCorrectAnswers" className="font-normal cursor-pointer">
+                    Show correct answers after attempt
+                  </Label>
+                </div>
+              </div>
               <div className="flex items-center space-x-2">
                 <input
                   type="checkbox"
-                  id="isActive"
-                  checked={quizFormData.isActive}
-                  onChange={(e) => setQuizFormData({ ...quizFormData, isActive: e.target.checked })}
+                  id="randomizeQuestions"
+                  checked={quizFormData.randomizeQuestions}
+                  onChange={(e) => setQuizFormData({ ...quizFormData, randomizeQuestions: e.target.checked })}
                   className="rounded"
                 />
-                <Label htmlFor="isActive" className="font-normal cursor-pointer">
-                  Make quiz active (available to users)
+                <Label htmlFor="randomizeQuestions" className="font-normal cursor-pointer">
+                  Randomize question order (future)
                 </Label>
               </div>
 
@@ -658,50 +710,80 @@ export default function AdminQuizPage() {
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {(quizzes?.quizzes || []).map((quiz) => (
-            <Card key={quiz.id} className="p-5 flex flex-col gap-4 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedQuiz(quiz)}>
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1">
-                  <h3 className="font-semibold text-lg line-clamp-2">{quiz.title}</h3>
-                  <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{quiz.description}</p>
+        <>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {(quizzesResp?.quizzes || []).map((quiz) => (
+              <Card key={quiz.id} className="p-5 flex flex-col gap-4 hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setSelectedQuiz(quiz)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-lg line-clamp-2">{quiz.title}</h3>
+                    <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{quiz.description}</p>
+                  </div>
+                  <Badge variant="outline">{quiz.passingScore}% pass</Badge>
                 </div>
-                {quiz.isActive ? (
-                  <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30">Active</Badge>
-                ) : (
-                  <Badge variant="secondary">Draft</Badge>
-                )}
-              </div>
 
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="outline">{quiz.difficulty}</Badge>
-                <Badge variant="outline">{quiz.category}</Badge>
-                <Badge variant="outline">{quiz.passingScore}% pass</Badge>
-              </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge variant="secondary">{quiz.allowRetakes ? 'Retakes Allowed' : 'Single Attempt'}</Badge>
+                  {quiz.maxAttempts && quiz.maxAttempts > 0 && <Badge variant="outline">Max {quiz.maxAttempts}</Badge>}
+                  {quiz.timeLimit && quiz.timeLimit > 0 && <Badge variant="outline">{quiz.timeLimit} min</Badge>}
+                  <Badge variant="outline">{quiz.showCorrectAnswers ? 'Answers Shown' : 'Hidden Answers'}</Badge>
+                </div>
 
-              <div className="flex gap-2 pt-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }} role="toolbar" tabIndex={0}>
-                <Button size="sm" variant="outline" className="flex-1" onClick={() => handleEditQuiz(quiz)}>
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit
-                </Button>
+                <div className="flex gap-2 pt-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); }} role="toolbar" tabIndex={0}>
+                  <Button size="sm" variant="outline" className="flex-1" onClick={() => handleEditQuiz(quiz)}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    onClick={() => handleDeleteQuiz(quiz.id, quiz.title)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </Card>
+            ))}
+
+            {!(quizzesResp?.quizzes || []).length && (
+              <div className="col-span-full text-center py-12">
+                <p className="text-muted-foreground">No quizzes yet. Create your first one!</p>
+              </div>
+            )}
+          </div>
+
+          {/* Pagination controls */}
+          {quizzesResp && quizzesResp.total > quizzesResp.pageSize && (
+            <div className="mt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="text-sm text-muted-foreground">
+                Showing {((page - 1) * pageSize) + 1}
+                -{Math.min(page * pageSize, quizzesResp.total)} of {quizzesResp.total}
+              </div>
+              <div className="flex items-center gap-2">
                 <Button
-                  size="sm"
                   variant="outline"
-                  className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                  onClick={() => handleDeleteQuiz(quiz.id, quiz.title)}
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  Prev
+                </Button>
+                <span className="text-xs font-medium">
+                  Page {page} / {quizzesResp.totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= quizzesResp.totalPages}
+                  onClick={() => setPage((p) => Math.min(quizzesResp.totalPages, p + 1))}
+                >
+                  Next
                 </Button>
               </div>
-            </Card>
-          ))}
-
-          {!(quizzes?.quizzes || []).length && (
-            <div className="col-span-full text-center py-12">
-              <p className="text-muted-foreground">No quizzes yet. Create your first one!</p>
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );
