@@ -1,28 +1,51 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
+/**
+ * Type representing an individual user with risk metadata.
+ */
+
 interface RiskUser {
   id: number;
   name: string;
   department: string;
   riskLevel: "High Risk" | "Medium Risk" | "Low Risk";
-  avatar?: string;
+  avatar?: string; // Optional custom avatar image
 }
 
+/**
+ * Props for the AtRiskUsers component.
+ */
 interface AtRiskUsersProps {
   users?: RiskUser[];
 }
 
+/**
+ * AtRiskUsers Component
+ * ---------------------
+ * Renders a list of users along with their risk levels.
+ * Displays user initials when no avatar image is provided.
+ */
 export default function AtRiskUsers({ users }: AtRiskUsersProps) {
+
+ /**
+   * Returns a TailwindCSS color class based on the user's risk level.
+   */
+
   const getRiskLevelColor = (level: string) => {
     switch(level) {
-      case "High Risk": return "text-destructive";
-      case "Medium Risk": return "text-warning";
-      case "Low Risk": return "text-success";
+      case "High Risk": return "text-destructive";    // Red color for high risk
+      case "Medium Risk": return "text-warning";      // Yellow color for medium risk
+      case "Low Risk": return "text-success";         // Green color for low risk
       default: return "text-muted-foreground";
     }
   };
 
+   /**
+   * Extracts and returns initials from a user's full name.
+   * - Uses first two words (e.g., "John Doe" → "JD")
+   * - Falls back to first two letters if only one name is provided
+   */
   const getInitials = (name: string) => {
     const parts = name.split(' ');
     if (parts.length >= 2) {

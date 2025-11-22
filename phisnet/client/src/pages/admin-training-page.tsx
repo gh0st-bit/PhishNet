@@ -1,17 +1,18 @@
-import { useState } from "react";
+import { useState } from "react"; // importing useState
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { apiRequest } from "@/lib/queryClient"; // custom API request function
+import { Card } from "@/components/ui/card"; // importing Card component
+import { Button } from "@/components/ui/button"; // importing Button component
+import { Input } from "@/components/ui/input";  // importing Input component
+import { Label } from "@/components/ui/label"; // importing Label component
+import { Textarea } from "@/components/ui/textarea"; // importing Textarea component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert"; // importing Alert component
 import { Loader2, Plus, Edit, Trash2, Users, CheckCircle, AlertCircle } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge"; // importing Badge component
 
+// TrainingModule type definition
 interface TrainingModule {
   id: number;
   title: string;
@@ -29,6 +30,7 @@ interface TrainingModule {
   createdAt: string;
 }
 
+// Form data structure
 interface ModuleFormData {
   title: string;
   description: string;
@@ -43,6 +45,7 @@ interface ModuleFormData {
   tags: string;
 }
 
+// AdminTrainingPage Component
 export default function AdminTrainingPage() {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -118,6 +121,7 @@ export default function AdminTrainingPage() {
     },
   });
 
+  // Reset form to initial state
   const resetForm = () => {
     setFormData({
       title: "",
@@ -134,6 +138,7 @@ export default function AdminTrainingPage() {
     });
   };
 
+  // Handle edit button click
   const handleEdit = (module: TrainingModule) => {
     setEditingModule(module);
     setFormData({

@@ -1,4 +1,4 @@
-import { Strategy as SamlStrategy, Profile } from "passport-saml";
+import { Strategy as SamlStrategy, Profile } from "@node-saml/passport-saml";
 import { db } from "../db";
 import { ssoConfig, users, organizations } from "../../shared/schema";
 import { eq } from "drizzle-orm";
@@ -91,6 +91,15 @@ export class SsoService {
             .returning();
 
           return done(null, newUser);
+        } catch (error) {
+          return done(error as Error);
+        }
+      },
+      async (profile: Profile | null | undefined, done: any) => {
+        // Logout verify callback - just pass through
+        // In most cases, we just need to acknowledge the logout
+        try {
+          return done(null, profile);
         } catch (error) {
           return done(error as Error);
         }
