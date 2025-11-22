@@ -1,5 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+
+// Table Components
 import {
   Table,
   TableBody,
@@ -8,6 +10,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+// UI Components and Utilities
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
@@ -15,11 +19,13 @@ import { Loader2 } from "lucide-react";
 import type { Campaign } from "@shared/types/api";
 import { getBadgeVariant, safeToString } from "@/lib/utils";
 
+// Component Props
 interface RecentCampaignsProps {
   campaigns?: Campaign[];
   isLoading?: boolean;
 }
 
+// RecentCampaigns Component
 export default function RecentCampaigns({ campaigns, isLoading }: RecentCampaignsProps) {
   const [, navigate] = useLocation();
 
