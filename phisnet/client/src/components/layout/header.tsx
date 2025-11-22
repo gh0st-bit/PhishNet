@@ -43,26 +43,26 @@ export default function Header({ user }: HeaderProps) {
 
   return (
     <header className="bg-card shadow-sm z-10">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <h1 className="text-xl font-semibold text-foreground">{getPageTitle()}</h1>
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-8">
+        <div className="flex justify-between h-14 sm:h-16">
+          <div className="flex items-center pl-14 md:pl-0">
+            <h1 className="text-base sm:text-lg lg:text-xl font-semibold text-foreground truncate">{getPageTitle()}</h1>
           </div>
-          <div className="flex items-center">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             <div className="relative">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="flex items-center space-x-2 text-muted-foreground hover:text-foreground">
-                    <Avatar className="h-8 w-8">
+                  <Button variant="ghost" className="flex items-center space-x-1 sm:space-x-2 text-muted-foreground hover:text-foreground h-10 sm:h-10 touch-manipulation">
+                    <Avatar className="h-7 w-7 sm:h-8 sm:w-8">
                       <AvatarImage src={user.profilePicture || undefined} alt={`${user.firstName} ${user.lastName}`} />
-                      <AvatarFallback className="bg-primary text-primary-foreground">
+                      <AvatarFallback className="bg-primary text-primary-foreground text-xs sm:text-sm">
                         {userInitials}
                       </AvatarFallback>
                     </Avatar>
-                    <span className="hidden md:inline-block">
+                    <span className="hidden sm:inline-block text-sm">
                       {user.firstName} {user.lastName}
                     </span>
-                    <ChevronDown className="h-4 w-4" />
+                    <ChevronDown className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -93,17 +93,17 @@ export default function Header({ user }: HeaderProps) {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            <div className="ml-4 relative flex items-center space-x-4">
+            <div className="flex items-center space-x-2 sm:space-x-3">
               <NotificationBell />
-              <Separator orientation="vertical" className="h-6" />
+              <Separator orientation="vertical" className="h-5 sm:h-6" />
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button variant="ghost" size="icon">
-                      <HelpCircle className="h-5 w-5 text-muted-foreground" />
+                    <Button variant="ghost" size="icon" className="h-9 w-9 sm:h-10 sm:w-10 touch-manipulation">
+                      <HelpCircle className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
+                  <TooltipContent className="max-w-xs text-xs sm:text-sm">
                     <p>PhishNet: Advanced phishing simulation platform for security awareness training and threat assessment.</p>
                   </TooltipContent>
                 </Tooltip>

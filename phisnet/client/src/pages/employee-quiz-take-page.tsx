@@ -12,6 +12,9 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, Clock, CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft, Trophy } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { showBadgeUnlockedToast, showLevelUpToast, showXpGainedToast } from "@/lib/achievement-toast";
+import { CelebrationModal } from "@/components/dashboard/celebration-modal";
 
 interface QuizQuestion {
   id: number;
@@ -56,12 +59,25 @@ interface SubmitResult {
     isCorrect: boolean;
     explanation?: string;
   }>;
+  gamification?: {
+    xpGained: number;
+    leveledUp: boolean;
+    oldLevel?: number;
+    newLevel?: number;
+    newBadges?: Array<{
+      id: number;
+      name: string;
+      description?: string;
+      rarity?: string;
+    }>;
+  };
 }
 
 export default function EmployeeQuizTakePage() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const quizId = Number.parseInt(id || "0");
 
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -71,6 +87,11 @@ export default function EmployeeQuizTakePage() {
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [celebrationModal, setCelebrationModal] = useState<{
+    open: boolean;
+    type: 'level-up' | 'badge' | 'milestone';
+    data: any;
+  }>({ open: false, type: 'level-up', data: {} });
 
   // Fetch quiz data
   const { data, isLoading, error } = useQuery<QuizData>({
@@ -120,6 +141,51 @@ export default function EmployeeQuizTakePage() {
       setSubmitted(true);
       setSubmitResult(result);
       queryClient.invalidateQueries({ queryKey: ["/api/employee/quizzes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employee/level"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employee/badges"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employee/dashboard/analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employee/dashboard/insights"] });
+
+      // Show achievement toasts
+      if (result.gamification) {
+        const { xpGained, leveledUp, oldLevel, newLevel, newBadges } = result.gamification;
+        
+        // Show XP gained toast
+        const reason = result.score === 100 ? 'perfect_score' : 'quiz_completion';
+        showXpGainedToast(toast, xpGained, reason);
+
+        // Show level up modal if leveled up (takes precedence over toasts for major events)
+        if (leveledUp && oldLevel && newLevel) {
+          setTimeout(() => {
+            setCelebrationModal({
+              open: true,
+              type: 'level-up',
+              data: { oldLevel, newLevel },
+            });
+          }, 800);
+        }
+
+        // Show first badge in modal if any were unlocked (after level-up modal)
+        if (newBadges && newBadges.length > 0) {
+          const delay = leveledUp ? 3000 : 1500; // Wait if level-up modal shown first
+          setTimeout(() => {
+            setCelebrationModal({
+              open: true,
+              type: 'badge',
+              data: { badge: newBadges[0] },
+            });
+          }, delay);
+
+          // Show remaining badges as toasts
+          if (newBadges.length > 1) {
+            newBadges.slice(1).forEach((badge, index) => {
+              setTimeout(() => {
+                showBadgeUnlockedToast(toast, badge);
+              }, delay + 2000 + (index * 1500));
+            });
+          }
+        }
+      }
     },
   });
 
@@ -432,6 +498,14 @@ export default function EmployeeQuizTakePage() {
           </Alert>
         )}
       </div>
+
+      {/* Celebration Modal */}
+      <CelebrationModal
+        open={celebrationModal.open}
+        onClose={() => setCelebrationModal({ ...celebrationModal, open: false })}
+        type={celebrationModal.type}
+        data={celebrationModal.data}
+      />
     </AppLayout>
   );
 }

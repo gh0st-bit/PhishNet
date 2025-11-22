@@ -203,24 +203,32 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile menu button */}
-      <div className="absolute top-4 left-4 z-40 md:hidden">
-        <Button variant="ghost" size="icon" onClick={toggleMobile}>
+      {/* Mobile menu button - improved touch target */}
+      <div className="fixed top-3 left-3 z-40 md:hidden">
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={toggleMobile}
+          className="h-11 w-11 touch-manipulation"
+          aria-label="Toggle navigation menu"
+        >
           <Menu className="h-6 w-6" />
         </Button>
       </div>
 
-      {/* Sidebar */}
+      {/* Sidebar - responsive width and smooth animations */}
       <aside className={cn(
-        "bg-card w-64 border-r border-border z-30 flex flex-col",
-        "transition-transform duration-200 ease-in-out transform",
+        "bg-card border-r border-border z-30 flex flex-col",
+        "w-[280px] sm:w-72 md:w-64",
+        "transition-transform duration-300 ease-out transform",
         "fixed inset-y-0 left-0 md:relative md:translate-x-0",
+        "shadow-2xl md:shadow-none",
         mobileOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="flex items-center justify-center h-16 border-b border-border shrink-0">
+        <div className="flex items-center justify-center h-16 sm:h-18 border-b border-border shrink-0">
           <div className="flex items-center space-x-2">
-            <Logo className="h-8 w-8" />
-            <span className="text-xl font-bold text-foreground">PhishNet</span>
+            <Logo className="h-8 w-8 sm:h-9 sm:w-9" />
+            <span className="text-xl sm:text-2xl font-bold text-foreground">PhishNet</span>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto mt-5 px-4 pb-4">
@@ -242,10 +250,11 @@ export default function Sidebar() {
                       <button
                         type="button"
                         className={cn(
-                          "w-full group flex items-center justify-between px-2 py-2 text-base rounded-md cursor-pointer",
+                          "w-full group flex items-center justify-between px-3 py-2.5 text-base rounded-md cursor-pointer touch-manipulation",
+                          "min-h-[44px]",
                           isChildActive
                             ? "bg-secondary/50 text-foreground"
-                            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground active:bg-secondary/70"
                         )}
                         onClick={() => toggleExpanded(item.name)}
                       >
@@ -280,10 +289,11 @@ export default function Sidebar() {
                               >
                                 <div
                                   className={cn(
-                                    "group flex items-center px-2 py-1.5 text-sm rounded-md cursor-pointer",
+                                    "group flex items-center px-3 py-2 text-sm rounded-md cursor-pointer touch-manipulation",
+                                    "min-h-[40px]",
                                     isChildItemActive
                                       ? "bg-primary/10 text-primary font-medium"
-                                      : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                                      : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground active:bg-secondary/70"
                                   )}
                                 >
                                   <span className="mr-2">
@@ -304,10 +314,11 @@ export default function Sidebar() {
                     >
                       <div
                         className={cn(
-                          "group flex items-center px-2 py-2 text-base rounded-md cursor-pointer",
+                          "group flex items-center px-3 py-2.5 text-base rounded-md cursor-pointer touch-manipulation",
+                          "min-h-[44px]",
                           isActive
                             ? "bg-secondary text-foreground"
-                            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground active:bg-secondary/70"
                         )}
                       >
                         <span className={cn(
@@ -327,11 +338,11 @@ export default function Sidebar() {
         </nav>
       </aside>
 
-      {/* Backdrop for mobile */}
+      {/* Backdrop for mobile - animated */}
       {mobileOpen && (
         <button
           type="button"
-          className="fixed inset-0 bg-black/50 z-20 md:hidden"
+          className="fixed inset-0 bg-black/60 z-20 md:hidden animate-in fade-in duration-200"
           onClick={() => setMobileOpen(false)}
           aria-label="Close menu"
         />

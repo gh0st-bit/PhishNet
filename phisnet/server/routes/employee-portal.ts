@@ -6,6 +6,9 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "../db";
 import { isAuthenticated, hasOrganization, isEmployee } from "../auth";
+import { dashboardAnalyticsService } from "../services/dashboard-analytics.service";
+import { dashboardInsightsService } from "../services/dashboard-insights.service";
+import { gamificationService } from "../services/gamification.service";
 import { 
   trainingModules, 
   trainingProgress, 
@@ -13,7 +16,7 @@ import {
   quizQuestions,
   quizAttempts,
   certificates,
-  userPoints,
+    userPoints, 
   badges,
   userBadges,
   articles,
@@ -30,6 +33,71 @@ const router = Router();
 router.use(isAuthenticated);
 router.use(hasOrganization);
 router.use(isEmployee);
+
+// ========================================
+// DASHBOARD ANALYTICS ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/employee/dashboard/analytics
+ * Get comprehensive dashboard analytics data
+ */
+router.get("/dashboard/analytics", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId;
+
+    const analytics = await dashboardAnalyticsService.getDashboardAnalytics(userId, organizationId);
+    
+    res.json(analytics);
+  } catch (error: any) {
+    console.error("Error fetching dashboard analytics:", error);
+    res.status(500).json({ message: "Failed to fetch dashboard analytics" });
+  }
+});
+
+/**
+ * GET /api/employee/dashboard/insights
+ * Lightweight personalized insights for widgets
+ */
+router.get("/dashboard/insights", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId;
+
+    const insights = await dashboardInsightsService.getInsights(userId, organizationId);
+    res.json(insights);
+  } catch (error: any) {
+    console.error("Error fetching dashboard insights:", error);
+    res.status(500).json({ message: "Failed to fetch dashboard insights" });
+  }
+});
+
+/**
+ * GET /api/employee/level
+ * Get user's current level and XP progress
+ */
+router.get("/level", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const status = await gamificationService.getUserStatus(req.user.id);
+    res.json(status);
+  } catch (error: any) {
+    console.error("Error fetching level:", error);
+    res.status(500).json({ message: "Failed to fetch level" });
+  }
+});
 
 // ========================================
 // TRAINING MODULES ENDPOINTS
@@ -165,8 +233,8 @@ router.post("/training/:id/progress", async (req: Request, res: Response) => {
         updateData.completedAt = new Date();
         updateData.status = "completed";
 
-        // Award points for completion
-        await awardPoints(userId, 50, "training_completion");
+        // Award XP for completion
+        await gamificationService.awardXP(userId, 50, "training_completion");
       }
 
       await db
@@ -372,13 +440,23 @@ router.post("/quizzes/:id/submit", async (req: Request, res: Response) => {
       })
       .returning();
 
-    // Award points
+    // Award XP and capture gamification data
+    let gamificationData = null;
     if (passed) {
-      const points = score === 100 ? 100 : 50; // Bonus for perfect score
-      await awardPoints(userId, points, "quiz_completion");
-
-      // Check if this unlocks any badges
-      await checkBadgeUnlocks(userId);
+      const xp = score === 100 ? 100 : 50; // Bonus for perfect score
+      const gamificationResult = await gamificationService.awardXP(userId, xp, "quiz_completion");
+      gamificationData = {
+        xpGained: xp,
+        leveledUp: gamificationResult.leveledUp,
+        oldLevel: gamificationResult.oldLevel,
+        newLevel: gamificationResult.newLevel,
+        newBadges: gamificationResult.newBadges?.map((badge: any) => ({
+          id: badge.id,
+          name: badge.name,
+          description: badge.description,
+          rarity: badge.rarity,
+        })),
+      };
     }
 
     res.json({
@@ -388,6 +466,7 @@ router.post("/quizzes/:id/submit", async (req: Request, res: Response) => {
       correctAnswers,
       totalQuestions: questions.length,
       results,
+      gamification: gamificationData,
     });
   } catch (error: any) {
     console.error("Error submitting quiz:", error);
@@ -589,9 +668,9 @@ router.get("/badges/:id", async (req: Request, res: Response) => {
       // Calculate progress based on criteria type
       if (criteria.type === 'points' && criteria.requiredPoints) {
         const [userStats] = await db
-          .select({ totalPoints: users.totalPoints })
-          .from(users)
-          .where(eq(users.id, userId));
+          .select({ totalPoints: userPoints.totalPoints })
+          .from(userPoints)
+          .where(eq(userPoints.userId, userId));
         
         if (userStats) {
           progress = Math.min(100, (userStats.totalPoints / criteria.requiredPoints) * 100);
@@ -608,7 +687,7 @@ router.get("/badges/:id", async (req: Request, res: Response) => {
           .where(
             and(
               eq(quizAttempts.userId, userId),
-              gte(quizAttempts.score, sql`(SELECT passing_score FROM quizzes WHERE id = quiz_attempts.quiz_id)`)
+              sql`${quizAttempts.score} >= (SELECT passing_score FROM quizzes WHERE id = ${quizAttempts.quizId})`
             )
           );
         
@@ -705,123 +784,7 @@ router.get("/leaderboard", async (req: Request, res: Response) => {
 // ========================================
 // HELPER FUNCTIONS
 // ========================================
-
-/**
- * Award points to a user and update their streak
- */
-async function awardPoints(userId: number, points: number, activity: string) {
-  try {
-    const [userPoint] = await db
-      .select()
-      .from(userPoints)
-      .where(eq(userPoints.userId, userId))
-      .limit(1);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (userPoint) {
-      const lastActivity = userPoint.lastActivityDate
-        ? new Date(userPoint.lastActivityDate)
-        : null;
-      
-      let newStreak = userPoint.currentStreak;
-
-      if (lastActivity) {
-        lastActivity.setHours(0, 0, 0, 0);
-        const daysDiff = Math.floor(
-          (today.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        if (daysDiff === 1) {
-          // Consecutive day
-          newStreak = userPoint.currentStreak + 1;
-        } else if (daysDiff > 1) {
-          // Streak broken
-          newStreak = 1;
-        }
-        // Same day, keep streak
-      } else {
-        newStreak = 1;
-      }
-
-      await db
-        .update(userPoints)
-        .set({
-          totalPoints: userPoint.totalPoints + points,
-          currentStreak: newStreak,
-          longestStreak: Math.max(newStreak, userPoint.longestStreak),
-          lastActivityDate: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(userPoints.userId, userId));
-    } else {
-      await db.insert(userPoints).values({
-        userId,
-        totalPoints: points,
-        currentStreak: 1,
-        longestStreak: 1,
-        lastActivityDate: new Date(),
-      });
-    }
-  } catch (error) {
-    console.error("Error awarding points:", error);
-  }
-}
-
-/**
- * Check if user has unlocked any new badges
- */
-async function checkBadgeUnlocks(userId: number) {
-  try {
-    // Get user's points and achievements
-    const [points] = await db
-      .select()
-      .from(userPoints)
-      .where(eq(userPoints.userId, userId))
-      .limit(1);
-
-    if (!points) return;
-
-    // Get all badges the user hasn't earned yet
-    const allBadges = await db.select().from(badges);
-    const earnedBadges = await db
-      .select()
-      .from(userBadges)
-      .where(eq(userBadges.userId, userId));
-
-    const earnedBadgeIds = new Set(earnedBadges.map(b => b.badgeId));
-    const unearnedBadges = allBadges.filter(b => !earnedBadgeIds.has(b.id));
-
-    // Check each badge's criteria
-    for (const badge of unearnedBadges) {
-      const criteria = badge.criteria as any;
-      let earned = false;
-
-      switch (criteria.type) {
-        case "total_points":
-          earned = points.totalPoints >= criteria.amount;
-          break;
-        case "streak":
-          earned = points.currentStreak >= criteria.days;
-          break;
-        // Add more criteria checks as needed
-      }
-
-      if (earned) {
-        await db.insert(userBadges).values({
-          userId,
-          badgeId: badge.id,
-        });
-
-        // Award bonus points for badge
-        await awardPoints(userId, badge.pointsAwarded, "badge_earned");
-      }
-    }
-  } catch (error) {
-    console.error("Error checking badge unlocks:", error);
-  }
-}
+// Note: Points/XP and badge unlocks now handled by gamificationService
 
 export function registerEmployeePortalRoutes(app: any) {
   app.use("/api/employee", router);
