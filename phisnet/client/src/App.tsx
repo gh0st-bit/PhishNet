@@ -26,7 +26,9 @@ import AuditLogsPage from "@/pages/audit-logs-page";
 import EmployeeDashboardPage from "@/pages/employee-dashboard-page";
 import EmployeeTrainingPage from "@/pages/employee-training-page";
 import EmployeeQuizzesPage from "@/pages/employee-quizzes-page";
+import EmployeeQuizTakePage from "@/pages/employee-quiz-take-page";
 import EmployeeBadgesPage from "@/pages/employee-badges-page";
+import EmployeeBadgeDetailPage from "@/pages/employee-badge-detail-page";
 import EmployeeLeaderboardPage from "@/pages/employee-leaderboard-page";
 import EmployeeProfilePage from "@/pages/employee-profile-page";
 import AdminTrainingPage from "@/pages/admin-training-page";
@@ -74,7 +76,9 @@ function Router() {
       <ProtectedRoute path="/employee" component={EmployeeDashboardPage} />
       <ProtectedRoute path="/employee/training" component={EmployeeTrainingPage} />
       <ProtectedRoute path="/employee/quizzes" component={EmployeeQuizzesPage} />
+      <ProtectedRoute path="/employee/quizzes/:id" component={EmployeeQuizTakePage} />
       <ProtectedRoute path="/employee/badges" component={EmployeeBadgesPage} />
+      <ProtectedRoute path="/employee/badges/:id" component={EmployeeBadgeDetailPage} />
       <ProtectedRoute path="/employee/leaderboard" component={EmployeeLeaderboardPage} />
       <ProtectedRoute path="/employee/profile" component={EmployeeProfilePage} />
       <ProtectedRoute path="/admin/training" component={AdminTrainingPage} />

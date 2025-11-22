@@ -781,6 +781,16 @@ export function isAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+export function isEmployee(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.isAdmin) {
+    return res.status(403).json({ message: "This endpoint is for employees only" });
+  }
+  if (!req.user) {
+    return res.status(401).json({ message: "Authentication required" });
+  }
+  next();
+}
+
 export function refreshSession(req: Request, res: Response, next: NextFunction) {
   if (req.session) {
     req.session.touch();

@@ -39,7 +39,7 @@ import { validateBody } from "../middleware/validation";
 
 const router = Router();
 
-// All routes require admin authentication
+// All admin routes require admin authentication (isAdmin middleware checks both authentication and admin role)
 router.use(isAdmin);
 
 // ========================================

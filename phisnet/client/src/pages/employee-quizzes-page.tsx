@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, HelpCircle, Play } from "lucide-react";
+import { useLocation } from "wouter";
 
 interface Quiz {
   id: number;
@@ -16,6 +17,8 @@ interface QuizzesResponse {
 }
 
 export default function EmployeeQuizzesPage() {
+  const [, setLocation] = useLocation();
+  
   const { data, isLoading, refetch } = useQuery<QuizzesResponse>({
     queryKey: ["/api/employee/quizzes"],
     queryFn: async () => {
@@ -54,7 +57,7 @@ export default function EmployeeQuizzesPage() {
               )}
             </div>
             <div className="mt-4 flex justify-end">
-              <Button size="sm" className="gap-2">
+              <Button size="sm" className="gap-2" onClick={() => setLocation(`/employee/quizzes/${q.id}`)}>
                 <Play className="h-4 w-4" /> Take Quiz
               </Button>
             </div>

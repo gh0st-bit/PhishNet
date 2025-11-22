@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Plus, Edit, Trash2, Crown, Star, Sparkles, Award } from 'lucide-react';
+import { badgeFormSchema } from '@/validation/adminSchemas';
 
 interface AdminBadge {
   id: number;
@@ -44,6 +45,7 @@ export default function AdminBadgesPage() {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBadge, setEditingBadge] = useState<AdminBadge | null>(null);
+  const [badgeFormErrors, setBadgeFormErrors] = useState<string[]>([]);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [formData, setFormData] = useState({
@@ -172,7 +174,7 @@ export default function AdminBadgesPage() {
         </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => {
           setIsDialogOpen(open);
-          if (!open) { setEditingBadge(null); resetForm(); }
+          if (!open) { setEditingBadge(null); resetForm(); setBadgeFormErrors([]); }
         }}>
           <DialogTrigger asChild>
             <Button className="gap-2"><Plus className="h-4 w-4" />{editingBadge ? 'Edit Badge' : 'New Badge'}</Button>
@@ -184,12 +186,39 @@ export default function AdminBadgesPage() {
             </DialogHeader>
             <form onSubmit={(e) => {
               e.preventDefault();
+              setBadgeFormErrors([]);
+              let parsedCriteria: any;
+              try {
+                parsedCriteria = JSON.parse(formData.criteria);
+              } catch {
+                setBadgeFormErrors(['criteria: Invalid JSON format']);
+                return;
+              }
+              const parsed = badgeFormSchema.safeParse({
+                name: formData.name,
+                description: formData.description || undefined,
+                category: formData.category,
+                pointsAwarded: formData.pointsAwarded,
+                rarity: formData.rarity,
+                criteria: parsedCriteria,
+              });
+              if (!parsed.success) {
+                setBadgeFormErrors(parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`));
+                return;
+              }
               if (editingBadge) {
                 updateBadgeMutation.mutate({ id: editingBadge.id, data: formData });
               } else {
                 createBadgeMutation.mutate(formData);
               }
             }} className="space-y-4">
+              {badgeFormErrors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertDescription className="space-y-1">
+                    {badgeFormErrors.map(err => <div key={err}>{err}</div>)}
+                  </AlertDescription>
+                </Alert>
+              )}
               <div className="space-y-2">
                 <Label>Name *</Label>
                 <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />

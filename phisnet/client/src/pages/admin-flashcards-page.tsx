@@ -212,7 +212,7 @@ export default function AdminFlashcardsPage() {
             </div>
           </div>
           {isAdmin && (
-            <Dialog open={isDeckDialogOpen} onOpenChange={o => { if (!o) { setIsDeckDialogOpen(false); setEditingDeck(null); } }}>
+            <Dialog open={isDeckDialogOpen} onOpenChange={o => { if (!o) { setIsDeckDialogOpen(false); setEditingDeck(null); setDeckFormErrors([]); } }}>
               <DialogTrigger asChild>
                 <Button onClick={() => { resetDeckForm(); setEditingDeck(null); setIsDeckDialogOpen(true); }}>
                   <Plus className="h-4 w-4 mr-2" /> New Deck
@@ -223,7 +223,23 @@ export default function AdminFlashcardsPage() {
                   <DialogTitle>{editingDeck ? "Edit Deck" : "Create Deck"}</DialogTitle>
                   <DialogDescription>Structure flashcards by topic for spaced repetition.</DialogDescription>
                 </DialogHeader>
-                <form onSubmit={e => { e.preventDefault(); editingDeck ? updateDeckMutation.mutate({ id: editingDeck.id, data: deckForm }) : createDeckMutation.mutate(deckForm); }} className="space-y-4">
+                <form onSubmit={e => {
+                  e.preventDefault();
+                  setDeckFormErrors([]);
+                  const parsed = flashcardDeckFormSchema.safeParse(deckForm);
+                  if (!parsed.success) {
+                    setDeckFormErrors(parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`));
+                    return;
+                  }
+                  editingDeck ? updateDeckMutation.mutate({ id: editingDeck.id, data: deckForm }) : createDeckMutation.mutate(deckForm);
+                }} className="space-y-4">
+                  {deckFormErrors.length > 0 && (
+                    <Alert variant="destructive">
+                      <AlertDescription className="space-y-1">
+                        {deckFormErrors.map(err => <div key={err}>{err}</div>)}
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <div className="space-y-2">
                     <Label htmlFor="deckTitle">Title</Label>
                     <Input id="deckTitle" value={deckForm.title} onChange={e => setDeckForm(f => ({ ...f, title: e.target.value }))} required />
@@ -233,20 +249,6 @@ export default function AdminFlashcardsPage() {
                     <Input id="deckCategory" value={deckForm.category} onChange={e => setDeckForm(f => ({ ...f, category: e.target.value }))} required />
                   </div>
                   <div className="space-y-2">
-                    {deckFormErrors.length > 0 && (
-                      <Alert variant="destructive">
-                        <AlertDescription className="space-y-1">
-                          {deckFormErrors.map(err => <div key={err}>{err}</div>)}
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                    {deckFormErrors.length > 0 && (
-                      <Alert variant="destructive">
-                        <AlertDescription className="space-y-1">
-                          {deckFormErrors.map(err => <div key={err}>{err}</div>)}
-                        </AlertDescription>
-                      </Alert>
-                    )}
                     <Label htmlFor="deckDescription">Description</Label>
                     <Textarea id="deckDescription" rows={3} value={deckForm.description} onChange={e => setDeckForm(f => ({ ...f, description: e.target.value }))} />
                   </div>
@@ -293,7 +295,8 @@ export default function AdminFlashcardsPage() {
             {decks
               .filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase()))
               .map(deck => (
-                <div key={deck.id} className={`border rounded-lg p-4 flex flex-col gap-3 ${selectedDeck?.id === deck.id ? 'ring-2 ring-primary' : ''}`}>\n+                  <div className="flex items-start justify-between gap-3">
+                <div key={deck.id} className={`border rounded-lg p-4 flex flex-col gap-3 ${selectedDeck?.id === deck.id ? 'ring-2 ring-primary' : ''}`}>
+                  <div className="flex items-start justify-between gap-3">
                     <div className="cursor-pointer" onClick={() => setSelectedDeck(deck)}>
                       <h3 className="font-semibold line-clamp-2">{deck.title}</h3>
                       <div className="flex flex-wrap gap-1 mt-1">
@@ -378,13 +381,29 @@ export default function AdminFlashcardsPage() {
           </Card>
         )}
 
-        <Dialog open={isCardDialogOpen} onOpenChange={o => { if (!o) { setIsCardDialogOpen(false); setEditingCard(null); } }}>
+        <Dialog open={isCardDialogOpen} onOpenChange={o => { if (!o) { setIsCardDialogOpen(false); setEditingCard(null); setCardFormErrors([]); } }}>
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>{editingCard ? 'Edit Card' : 'Add Card'}</DialogTitle>
               <DialogDescription>{editingCard ? 'Modify flashcard content.' : 'Create a new flashcard for this deck.'}</DialogDescription>
             </DialogHeader>
-            <form onSubmit={e => { e.preventDefault(); editingCard ? updateCardMutation.mutate({ id: editingCard.id, data: cardForm }) : createCardMutation.mutate(cardForm); }} className="space-y-4">
+            <form onSubmit={e => {
+              e.preventDefault();
+              setCardFormErrors([]);
+              const parsed = flashcardFormSchema.safeParse(cardForm);
+              if (!parsed.success) {
+                setCardFormErrors(parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`));
+                return;
+              }
+              editingCard ? updateCardMutation.mutate({ id: editingCard.id, data: cardForm }) : createCardMutation.mutate(cardForm);
+            }} className="space-y-4">
+              {cardFormErrors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertDescription className="space-y-1">
+                    {cardFormErrors.map(err => <div key={err}>{err}</div>)}
+                  </AlertDescription>
+                </Alert>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="frontContent">Front (Prompt / Question)</Label>
                 <Textarea id="frontContent" rows={2} value={cardForm.frontContent} onChange={e => setCardForm(f => ({ ...f, frontContent: e.target.value }))} required />

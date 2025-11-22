@@ -5,6 +5,7 @@
 
 import { Router, type Request, type Response } from "express";
 import { db } from "../db";
+import { isAuthenticated, hasOrganization, isEmployee } from "../auth";
 import { 
   trainingModules, 
   trainingProgress, 
@@ -24,6 +25,11 @@ import { z } from "zod";
 import crypto from "node:crypto";
 
 const router = Router();
+
+// All employee routes require authentication, organization membership, and employee role (not admin)
+router.use(isAuthenticated);
+router.use(hasOrganization);
+router.use(isEmployee);
 
 // ========================================
 // TRAINING MODULES ENDPOINTS
@@ -521,6 +527,138 @@ router.get("/badges", async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error fetching badges:", error);
     res.status(500).json({ message: "Failed to fetch badges" });
+  }
+});
+
+/**
+ * GET /api/employee/badges/:id
+ * Get detailed information about a specific badge
+ */
+router.get("/badges/:id", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const userId = req.user.id;
+    const badgeId = Number.parseInt(req.params.id);
+
+    if (isNaN(badgeId)) {
+      return res.status(400).json({ message: "Invalid badge ID" });
+    }
+
+    // Get badge details
+    const [badge] = await db
+      .select()
+      .from(badges)
+      .where(eq(badges.id, badgeId));
+
+    if (!badge) {
+      return res.status(404).json({ message: "Badge not found" });
+    }
+
+    // Check if user has earned this badge
+    const userBadgeRecord = await db
+      .select()
+      .from(userBadges)
+      .where(
+        and(
+          eq(userBadges.userId, userId),
+          eq(userBadges.badgeId, badgeId)
+        )
+      );
+
+    const earned = userBadgeRecord.length > 0;
+    const earnedAt = earned ? userBadgeRecord[0].earnedAt : null;
+
+    // Get total number of users who earned this badge
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(userBadges)
+      .where(eq(userBadges.badgeId, badgeId));
+
+    // Calculate user progress based on badge criteria
+    let progress = 0;
+    let progressDetails = null;
+
+    const criteria = badge.criteria as any;
+    
+    if (earned) {
+      progress = 100;
+    } else if (criteria) {
+      // Calculate progress based on criteria type
+      if (criteria.type === 'points' && criteria.requiredPoints) {
+        const [userStats] = await db
+          .select({ totalPoints: users.totalPoints })
+          .from(users)
+          .where(eq(users.id, userId));
+        
+        if (userStats) {
+          progress = Math.min(100, (userStats.totalPoints / criteria.requiredPoints) * 100);
+          progressDetails = {
+            current: userStats.totalPoints,
+            required: criteria.requiredPoints,
+            type: 'points'
+          };
+        }
+      } else if (criteria.type === 'quiz_completion' && criteria.requiredCompletions) {
+        const [{ quizCount }] = await db
+          .select({ quizCount: sql<number>`count(DISTINCT quiz_id)::int` })
+          .from(quizAttempts)
+          .where(
+            and(
+              eq(quizAttempts.userId, userId),
+              gte(quizAttempts.score, sql`(SELECT passing_score FROM quizzes WHERE id = quiz_attempts.quiz_id)`)
+            )
+          );
+        
+        progress = Math.min(100, (quizCount / criteria.requiredCompletions) * 100);
+        progressDetails = {
+          current: quizCount,
+          required: criteria.requiredCompletions,
+          type: 'quiz_completion'
+        };
+      } else if (criteria.type === 'streak' && criteria.requiredDays) {
+        // For streak badges, we'd need to calculate current streak
+        // Simplified version - just show requirement
+        progressDetails = {
+          current: 0,
+          required: criteria.requiredDays,
+          type: 'streak'
+        };
+      } else if (criteria.type === 'perfect_score' && criteria.requiredCount) {
+        const [{ perfectScores }] = await db
+          .select({ perfectScores: sql<number>`count(*)::int` })
+          .from(quizAttempts)
+          .where(
+            and(
+              eq(quizAttempts.userId, userId),
+              eq(quizAttempts.score, 100)
+            )
+          );
+        
+        progress = Math.min(100, (perfectScores / criteria.requiredCount) * 100);
+        progressDetails = {
+          current: perfectScores,
+          required: criteria.requiredCount,
+          type: 'perfect_score'
+        };
+      }
+    }
+
+    res.json({
+      badge: {
+        ...badge,
+        earned,
+        earnedAt,
+        totalEarned: count,
+        progress: Math.round(progress),
+        progressDetails
+      }
+    });
+  } catch (error: any) {
+    console.error("Error fetching badge details:", error);
+    res.status(500).json({ message: "Failed to fetch badge details" });
   }
 });
 
