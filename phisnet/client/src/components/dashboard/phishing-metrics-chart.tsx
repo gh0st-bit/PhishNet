@@ -16,6 +16,7 @@ export default function PhishingMetricsChart({ data }: PhishingMetricsChartProps
   const isDark = theme === "dark";
 
   // Use theme colors that match your tailwind theme
+  // System Color Scheme can be handled with additional logic if needed
   const colors = {
     text: isDark ? "#C9D1D9" : "#24292F",
     muted: isDark ? "#8B949E" : "#6E7781",
