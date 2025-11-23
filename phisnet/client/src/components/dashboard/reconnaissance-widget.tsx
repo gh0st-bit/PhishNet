@@ -1,10 +1,18 @@
+// UI components from your design system
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+
+// React Query for data fetching/caching
 import { useQuery } from "@tanstack/react-query";
+
+// Icons from lucide-react
 import { Search, Globe, Users, Bot, Eye, ArrowRight } from "lucide-react";
+
+// Client-side navigation
 import { Link } from "wouter";
 
+// Define the expected structure of the reconnaissance statistics
 interface ReconStats {
   activeCampaigns: number;
   totalContacts: number;
@@ -13,11 +21,13 @@ interface ReconStats {
 }
 
 export function ReconnaissanceWidget() {
+  // Fetch reconnaissance statistics — currently using mock data
   // Mock data - in real app this would fetch from API
   const { data: reconStats } = useQuery({
-    queryKey: ['reconnaissance-stats'],
+    queryKey: ['reconnaissance-stats'], // Unique key for caching
     queryFn: async (): Promise<ReconStats> => {
       // This would be a real API call
+      // Simulated API response — replace with actual backend call
       return {
         activeCampaigns: 3,
         totalContacts: 127,
@@ -25,8 +35,8 @@ export function ReconnaissanceWidget() {
         recentActivity: "2 hours ago"
       };
     },
-    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
-    refetchOnWindowFocus: false // Don't refetch on window focus
+    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes // Keep data fresh
+    refetchOnWindowFocus: false // Don't refetch on window focus / Prevent auto-refresh when switching tabs/windows
   });
 
   return (
