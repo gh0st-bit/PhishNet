@@ -29,18 +29,18 @@ import { format, formatDistance, formatDistanceToNow } from "date-fns";
 import { useCampaignDetails, useCampaignResults } from "@/hooks/useApi";
 import { getBadgeVariant, safeToString } from "@/lib/utils";
 import type { Campaign, CampaignResult } from "@shared/types/api";
-
+// Define the props for CampaignDetails component
 interface CampaignDetailsProps {
   campaignId: number;
   onEdit: () => void;
 }
-
+// CampaignDetails component to display detailed information about a campaign
 export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsProps) {
   const [activeTab, setActiveTab] = useState("overview");
-
+// Fetch campaign details and results using custom hooks
   const { data: campaign, isLoading } = useCampaignDetails(campaignId);
   const { data: results = [] } = useCampaignResults(campaignId);
-
+// Show loading state if data is still being fetched
   if (isLoading || !campaign) {
     return <div className="flex justify-center p-12">Loading campaign details...</div>;
   }
@@ -52,16 +52,16 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
   const openedCount = typedResults.filter((r: CampaignResult) => r.opened).length;
   const clickedCount = typedResults.filter((r: CampaignResult) => r.clicked).length;
   const submittedCount = typedResults.filter((r: CampaignResult) => r.submitted).length;
-  
+  // Calculate percentages safely
   const sentPercentage = totalTargets > 0 ? Math.round((sentCount / totalTargets) * 100) : 0;
   const openedPercentage = sentCount > 0 ? Math.round((openedCount / sentCount) * 100) : 0;
   const clickedPercentage = openedCount > 0 ? Math.round((clickedCount / openedCount) * 100) : 0;
   const submittedPercentage = clickedCount > 0 ? Math.round((submittedCount / clickedCount) * 100) : 0;
-
+  // Calculate campaign duration
   const campaignStartTime = campaign.created_at ? new Date(campaign.created_at) : new Date();
   const campaignEndTime = null; // endDate not available in basic Campaign type
   const campaignDuration = 'Duration not specified';
-
+  // Determine badge variant based on campaign status
   const statusBadgeVariant = {
     "active": "success",
     "draft": "outline", 

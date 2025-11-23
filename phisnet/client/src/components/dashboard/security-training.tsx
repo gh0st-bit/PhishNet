@@ -1,18 +1,22 @@
+// Import necessary components and icons
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// Import Progress component for displaying progress bars
 import { Progress } from "@/components/ui/progress";
+// Import icons from lucide-react
 import { Shield, Lock, Smartphone } from "lucide-react";
 
+// Define the structure of a training item
 interface Training {
   id: number;
   name: string;
   progress: number;
   icon: "shield" | "lock" | "smartphone";
 }
-
+// Define the props for the SecurityTraining component
 interface SecurityTrainingProps {
   trainings?: Training[];
 }
-
+// SecurityTraining component to display security training progress
 export default function SecurityTraining({ trainings }: SecurityTrainingProps) {
   const getIcon = (iconType: string) => {
     switch(iconType) {
