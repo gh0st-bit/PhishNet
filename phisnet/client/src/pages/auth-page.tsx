@@ -12,9 +12,11 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { Link, useLocation } from "wouter";
 import { Shield, Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
+import { TwoFactorVerificationDialog } from '@/components/security/two-factor-verification-dialog';
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { customToast } from "@/components/ui/custom-toast";
 import { Logo } from "@/components/common/logo";
+import { queryClient } from "@/lib/queryClient";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -81,26 +83,59 @@ export default function AuthPage() {
     },
   });
 
-  function onLoginSubmit(data: LoginFormValues) {
-    loginMutation.mutate({
-      email: data.email,
-      password: data.password,
-    }, {
-      onSuccess: () => {
-        // Show success toast
-        customToast.success({
-          title: "Login Successful",
-          description: "Welcome back to PhishNet",
-        });
-      },
-      onError: (error) => {
-        // Show error toast
-        customToast.error({
-          title: "Login Failed",
-          description: error.message || "Please check your credentials and try again"
-        });
+  const [twoFactorPending, setTwoFactorPending] = useState(false);
+  const [twoFactorSetupRequired, setTwoFactorSetupRequired] = useState(false);
+  
+  async function onLoginSubmit(data: LoginFormValues) {
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: data.email, password: data.password })
+      });
+      
+      const body = await res.json().catch(() => ({}));
+      
+      if (!res.ok) {
+        customToast.error({ title: 'Login Failed', description: body.message || 'Please check your credentials and try again' });
+        return;
       }
-    });
+      
+      // Handle 2FA setup requirement
+      if (body.requiresTwoFactorSetup) {
+        setTwoFactorSetupRequired(true);
+        customToast.info({ title: 'Two-Factor Setup Required', description: 'Scan the QR code and then enter a 6-digit code to activate 2FA.' });
+        return;
+      }
+      
+      // Handle 2FA verification requirement
+      if (body.requiresTwoFactor) {
+        setTwoFactorPending(true);
+        customToast.info({ title: 'Two-Factor Verification', description: 'Enter the current 6-digit code from your authenticator app to continue.' });
+        return;
+      }
+      
+      // Handle successful login without 2FA
+      if (body.id && body.email) {
+        customToast.success({ 
+          title: 'Login Successful', 
+          description: `Welcome back, ${body.firstName} ${body.lastName}!` 
+        });
+        
+        // Invalidate and refetch user data, then navigate
+        await queryClient.invalidateQueries({ queryKey: ['/api/user'] });
+        
+        // Small delay to ensure session cookie is set
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 300);
+      } else {
+        customToast.error({ title: 'Login Failed', description: 'Unexpected response from server' });
+      }
+    } catch (err: any) {
+      customToast.error({ title: 'Login Failed', description: err.message || 'Unexpected error' });
+    }
   }
 
   async function checkSsoForEmail(email: string) {
@@ -310,9 +345,9 @@ export default function AuthPage() {
                       <Button 
                         type="submit" 
                         className="w-full" 
-                        disabled={loginMutation.isPending}
+                        disabled={twoFactorPending}
                       >
-                        {loginMutation.isPending ? "Signing in..." : "Sign in"}
+                        {twoFactorPending ? "Awaiting 2FA..." : "Sign in"}
                       </Button>
                     </form>
                   </Form>
@@ -465,6 +500,22 @@ export default function AuthPage() {
             </TabsContent>
           </Tabs>
         </div>
+        <TwoFactorVerificationDialog 
+          open={twoFactorPending} 
+          onClose={() => setTwoFactorPending(false)}
+          onSuccess={async () => {
+            setTwoFactorPending(false);
+            customToast.success({ title: 'Login Complete', description: '2FA verified.' });
+            
+            // Invalidate queries and wait a moment for session
+            await queryClient.invalidateQueries({ queryKey: ['/api/user'] });
+            
+            // Navigate after small delay
+            setTimeout(() => {
+              window.location.href = '/';
+            }, 300);
+          }}
+        />
       </div>
 
       {/* Right column: Hero section */}

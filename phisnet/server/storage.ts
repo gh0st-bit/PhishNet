@@ -173,7 +173,11 @@ export class DatabaseStorage implements IStorage {
               last_failed_login,
               COALESCE(account_locked, false) AS account_locked,
               account_locked_until,
-              last_login
+              last_login,
+              COALESCE(two_factor_enabled, false) AS two_factor_enabled,
+              two_factor_secret,
+              two_factor_backup_codes,
+              two_factor_verified_at
          FROM users
         WHERE id = $1
         LIMIT 1`,
@@ -200,6 +204,10 @@ export class DatabaseStorage implements IStorage {
       isAdmin: r.is_admin ?? false,
       organizationId: r.organization_id,
       organizationName: r.organization_name ?? "None",
+      twoFactorEnabled: r.two_factor_enabled ?? false,
+      twoFactorSecret: r.two_factor_secret ?? null,
+      twoFactorBackupCodes: r.two_factor_backup_codes ?? [],
+      twoFactorVerifiedAt: r.two_factor_verified_at ?? null,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     } as unknown as User;
@@ -215,7 +223,11 @@ export class DatabaseStorage implements IStorage {
               last_failed_login,
               COALESCE(account_locked, false) AS account_locked,
               account_locked_until,
-              last_login
+              last_login,
+              COALESCE(two_factor_enabled, false) AS two_factor_enabled,
+              two_factor_secret,
+              two_factor_backup_codes,
+              two_factor_verified_at
          FROM users
         WHERE email = $1
         LIMIT 1`,
@@ -242,6 +254,10 @@ export class DatabaseStorage implements IStorage {
       isAdmin: r.is_admin ?? false,
       organizationId: r.organization_id,
       organizationName: r.organization_name ?? "None",
+      twoFactorEnabled: r.two_factor_enabled ?? false,
+      twoFactorSecret: r.two_factor_secret ?? null,
+      twoFactorBackupCodes: r.two_factor_backup_codes ?? [],
+      twoFactorVerifiedAt: r.two_factor_verified_at ?? null,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     } as unknown as User;
@@ -761,19 +777,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async findUserInviteByToken(token: string): Promise<UserInvite | undefined> {
-    // Since tokens are now hashed, we need to check all unexpired, unaccepted invites
-    const bcrypt = await import('bcryptjs');
+    // Tokens now stored as SHA-256 hex digests (see enrollment route)
+    const hashed = require('node:crypto').createHash('sha256').update(token).digest('hex');
     const candidates = await db.select()
       .from(userInvites)
       .where(
-        sql`${userInvites.acceptedAt} IS NULL AND ${userInvites.expiresAt} > NOW()`
+        and(
+          eq(userInvites.token, hashed),
+          sql`${userInvites.acceptedAt} IS NULL`,
+          sql`${userInvites.expiresAt} > NOW()`
+        )
       );
-    
-    for (const invite of candidates) {
-      const isMatch = await bcrypt.compare(token, invite.token);
-      if (isMatch) return invite;
-    }
-    return undefined;
+    return candidates[0] || undefined;
   }
 
   async listUserInvites(organizationId: number): Promise<UserInvite[]> {

@@ -51,18 +51,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mutationFn: async (credentials: LoginData) => {
       const res = await apiRequest("POST", "/api/login", credentials);
       const data = await res.json();
+      
+      // Don't throw error if requiresTwoFactor or requiresTwoFactorSetup is returned
+      if (data.requiresTwoFactor || data.requiresTwoFactorSetup) {
+        return data;
+      }
+      
       return data;
     },
-    onSuccess: (user: SelectUser) => {
-      // Update cache so /api/user query resolves immediately
-      queryClient.setQueryData(["/api/user"], user);
-      customToast.success({
-        title: "Login successful",
-        description: `Welcome back, ${user.firstName} ${user.lastName}!`,
-      });
-      // Force a full reload to ensure session cookie is applied before protected route check
-      // (avoids edge case where client-side navigation happens before browser commits cookie)
-      window.location.replace("/");
+    onSuccess: (data: any) => {
+      // Only update cache and redirect if we have a full user object (not just 2FA flags)
+      if (data.id && data.email) {
+        // Update cache so /api/user query resolves immediately
+        queryClient.setQueryData(["/api/user"], data);
+        customToast.success({
+          title: "Login successful",
+          description: `Welcome back, ${data.firstName} ${data.lastName}!`,
+        });
+        // Force a full reload to ensure session cookie is applied before protected route check
+        // (avoids edge case where client-side navigation happens before browser commits cookie)
+        window.location.replace("/");
+      }
     },
     onError: (error: Error) => {
       let errorMessage = error.message;

@@ -19,6 +19,8 @@ import { registerSecretsRoutes } from './secrets';
 import { registerEmployeePortalRoutes } from './employee-portal';
 import { registerAdminPortalRoutes } from './admin-portal';
 import { registerEnrollmentRoutes } from './enrollment';
+import { registerTwoFactorRoutes } from './two-factor';
+import { registerOrganizationRoutes } from './organization';
 
 /**
  * Register all modular routes
@@ -81,6 +83,12 @@ export function registerModularRoutes(app: Express) {
 
   // Enrollment / Invites routes
   registerEnrollmentRoutes(app);
+
+  // Two-Factor Authentication routes
+  registerTwoFactorRoutes(app);
+
+  // Organization management routes
+  registerOrganizationRoutes(app);
   
   // Public tracking routes (must be last - no auth required)
   registerTrackingRoutes(app);

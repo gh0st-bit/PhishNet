@@ -353,29 +353,30 @@ export function setupAuth(app: Express) {
 
   // Login endpoint (with rate limiter: 10 failed attempts per 15 minutes)
   app.post("/api/login", loginLimiter, (req, res, next) => {
-    passport.authenticate("local", (err: any, user: any, info: any) => {
-      if (err) {
-        return next(err);
+    passport.authenticate("local", async (err: any, user: any, info: any) => {
+      if (err) return next(err);
+      if (!user) return res.status(401).json({ message: info?.message || "Authentication failed" });
+
+      // Organization enforcement: if org requires 2FA but user not enabled, signal setup required
+      const org = await storage.getOrganization(user.organizationId);
+      if (org && (org as any).twoFactorRequired && !(user as any).twoFactorEnabled) {
+        (req.session as any).pendingTwoFactorUserId = user.id;
+        return res.status(200).json({ requiresTwoFactorSetup: true });
       }
-      
-      if (!user) {
-        return res.status(401).json({ message: info?.message || "Authentication failed" });
+      // If 2FA is enabled for this user, create a pending session and require second factor
+      if ((user as any).twoFactorEnabled) {
+        (req.session as any).pendingTwoFactorUserId = user.id;
+        // Do NOT establish login session yet
+        return res.status(200).json({ requiresTwoFactor: true });
       }
-      
+
       req.login(user, (loginErr) => {
-        if (loginErr) {
-          return next(loginErr);
-        }
-        
-        // Explicitly save the session before responding to ensure it's persisted
-        // This prevents race conditions where subsequent requests arrive before session is saved
+        if (loginErr) return next(loginErr);
         req.session.save((saveErr) => {
           if (saveErr) {
             console.error("Session save error:", saveErr);
             return next(saveErr);
           }
-          
-          // Audit log the login
           AuditService.log({
             context: {
               userId: user.id,
@@ -387,12 +388,76 @@ export function setupAuth(app: Express) {
             resource: "auth",
             metadata: { email: user.email },
           }).catch((err) => console.error("[Audit] Failed to log login:", err));
-          
           const { password, ...userWithoutPassword } = user;
           return res.status(200).json(userWithoutPassword);
         });
       });
     })(req, res, next);
+  });
+
+  // Complete 2FA login: verify TOTP or backup code then establish session
+  app.post('/api/login/2fa', authLimiter, async (req, res, next) => {
+    try {
+      const { token, backupCode } = req.body as { token?: string; backupCode?: string };
+      const pendingId = (req.session as any).pendingTwoFactorUserId;
+      if (!pendingId) return res.status(400).json({ message: 'No pending 2FA login' });
+      const user = await storage.getUser(pendingId);
+      if (!user) return res.status(404).json({ message: 'User not found' });
+      if (!(user as any).twoFactorEnabled || !(user as any).twoFactorSecret) {
+        return res.status(400).json({ message: '2FA not enabled' });
+      }
+
+      // Decrypt secret
+      const { SecretsService } = await import('./services/secrets.service');
+      const decrypted = await SecretsService.decrypt(user.organizationId, (user as any).twoFactorSecret);
+      let success = false;
+      let usedBackupIndex: number | null = null;
+
+      if (token && /^\d{6}$/.test(token)) {
+        const { TwoFactorService } = await import('./services/two-factor.service');
+        success = TwoFactorService.verifyToken(decrypted, token);
+      } else if (backupCode) {
+        const { TwoFactorService } = await import('./services/two-factor.service');
+        const codes: string[] = (user as any).twoFactorBackupCodes || [];
+        for (let i = 0; i < codes.length; i++) {
+          if (await TwoFactorService.verifyBackupCode(codes[i], backupCode)) {
+            success = true;
+            usedBackupIndex = i;
+            break;
+          }
+        }
+      } else {
+        return res.status(400).json({ message: 'Token or backupCode required' });
+      }
+
+      if (!success) return res.status(401).json({ message: 'Invalid 2FA credentials' });
+
+      // Consume backup code if used
+      if (usedBackupIndex !== null) {
+        const codes: string[] = (user as any).twoFactorBackupCodes || [];
+        codes.splice(usedBackupIndex, 1);
+        await storage.updateUser(user.id, { twoFactorBackupCodes: codes as any } as any);
+      }
+
+      await storage.updateUser(user.id, { twoFactorVerifiedAt: new Date() } as any);
+      delete (req.session as any).pendingTwoFactorUserId;
+
+      req.login(user, (loginErr) => {
+        if (loginErr) return next(loginErr);
+        req.session.save(async (saveErr) => {
+          if (saveErr) return next(saveErr);
+          await AuditService.log({
+            context: { userId: user.id, organizationId: user.organizationId, ip: req.ip || req.socket.remoteAddress, userAgent: req.get('user-agent') },
+            action: 'user.login.2fa', resource: 'auth', metadata: { email: user.email }
+          }).catch(()=>{});
+          const { password, ...userWithoutPassword } = user;
+          res.status(200).json(userWithoutPassword);
+        });
+      });
+    } catch (e) {
+      console.error('2FA login error', e);
+      next(e);
+    }
   });
 
   app.post("/api/logout", (req, res, next) => {

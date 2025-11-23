@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +9,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { User } from "@shared/schema";
 import { getQueryFn } from "@/lib/queryClient";
 import { Loader2, UsersRound, Lock, Building, Users, UserCheck, Shield, X, ArrowLeft } from "lucide-react";
+import { TwoFactorSetupDialog } from '@/components/security/two-factor-setup-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { apiRequest } from '@/lib/queryClient';
+import { customToast } from '@/components/ui/custom-toast';
 import { useLocation } from "wouter";
 
 
@@ -268,23 +273,7 @@ export default function OrganizationPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-between p-4 border rounded-md mb-4 bg-card/50">
-              <div className="flex items-start space-x-3">
-                <div className="mt-0.5">
-                  <Lock className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <div className="font-medium">Two-Factor Authentication</div>
-                  <div className="text-sm text-muted-foreground max-w-lg">
-                    Add an extra layer of security to your account by requiring a
-                    one-time code in addition to your password when you sign in.
-                  </div>
-                </div>
-              </div>
-              <Button variant="outline" disabled={!user?.isAdmin}>
-                Configure
-              </Button>
-            </div>
+            <TwoFactorSection user={user} />
 
             <div className="flex items-center justify-between p-4 border rounded-md mb-4 bg-card/50">
               <div className="flex items-start space-x-3">
@@ -298,9 +287,7 @@ export default function OrganizationPage() {
                   </div>
                 </div>
               </div>
-              <Button variant="outline" disabled={!user?.isAdmin}>
-                Manage
-              </Button>
+              <ManageOrganizationButton disabled={!user?.isAdmin} currentName={orgName || ''} />
             </div>
 
             <div className="flex items-center justify-between p-4 border rounded-md bg-card/50">
@@ -325,3 +312,176 @@ export default function OrganizationPage() {
     </div>
   );
 }
+
+// 2FA section component
+const TwoFactorSection: React.FC<{ user: any }> = ({ user }) => {
+  const [open, setOpen] = useState(false);
+  const [disableOpen, setDisableOpen] = useState(false);
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const isAdmin = !!user?.isAdmin;
+
+  async function fetchStatus() {
+    if (!isAdmin) return;
+    try {
+      const res = await apiRequest('GET', '/api/user/2fa/status');
+      if (res.ok) {
+        const data = await res.json();
+        setEnabled(data.enabled);
+      }
+    } catch {/* ignore */}
+  }
+
+  useEffect(() => { fetchStatus(); }, []);
+
+  function handleComplete() {
+    fetchStatus();
+  }
+
+  return (
+    <div className="flex items-center justify-between p-4 border rounded-md mb-4 bg-card/50">
+      <div className="flex items-start space-x-3">
+        <div className="mt-0.5">
+          <Lock className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <div className="font-medium flex items-center gap-2">
+            Two-Factor Authentication
+            {enabled !== null && (
+              <span className={`text-xs px-2 py-0.5 rounded-full border ${enabled ? 'bg-green-500/10 text-green-600 border-green-500/40' : 'bg-yellow-500/10 text-yellow-700 border-yellow-500/40'}`}>{enabled ? 'Enabled' : 'Disabled'}</span>
+            )}
+          </div>
+          <div className="text-sm text-muted-foreground max-w-lg">
+            Add an extra layer of security to your account by requiring a one-time code in addition to your password when you sign in.
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" disabled={!isAdmin} onClick={() => setOpen(true)}>
+          {enabled ? 'Reconfigure' : 'Configure'}
+        </Button>
+        {enabled && (
+          <Button variant="destructive" disabled={!isAdmin} onClick={() => setDisableOpen(true)}>
+            Disable
+          </Button>
+        )}
+      </div>
+      <TwoFactorSetupDialog open={open} onOpenChange={setOpen} onComplete={handleComplete} />
+      {enabled && (
+        <DisableTwoFactorDialog
+          open={disableOpen}
+          onOpenChange={setDisableOpen}
+          onDisabled={() => { setDisableOpen(false); handleComplete(); }}
+        />
+      )}
+    </div>
+  );
+};
+
+// Manage Organization dialog/button component
+// Disable 2FA dialog component (placed above for clarity)
+const DisableTwoFactorDialog: React.FC<{ open: boolean; onOpenChange: (v:boolean)=>void; onDisabled: ()=>void }> = ({ open, onOpenChange, onDisabled }) => {
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string|null>(null);
+
+  async function handleDisable() {
+    setError(null); setLoading(true);
+    try {
+      const res = await apiRequest('POST', '/api/user/2fa/disable', { password });
+      const body = await res.json().catch(()=>({}));
+      if (!res.ok) {
+        setError(body.message || 'Failed to disable 2FA');
+        customToast.error({ title: 'Disable Failed', description: body.message || 'Invalid password or server error' });
+      } else {
+        customToast.success({ title: 'Two-Factor Disabled', description: '2FA removed. You can re-enable it anytime.' });
+        setPassword('');
+        onDisabled();
+      }
+    } catch (e:any) {
+      setError(e.message || 'Unexpected error');
+      customToast.error({ title: 'Disable Failed', description: e.message || 'Unexpected error' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if(!loading) onOpenChange(v); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Disable Two-Factor Authentication</DialogTitle>
+          <DialogDescription>
+            This will stop requiring a one-time code at login and clears your backup codes. To enable again, choose Configure later.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium">Confirm Password</label>
+            <Input type="password" value={password} onChange={e=>setPassword(e.target.value)} disabled={loading} placeholder="Enter current password" />
+            <p className="text-xs text-muted-foreground mt-1">Required for security confirmation.</p>
+          </div>
+          {error && <div className="text-sm text-red-600">{error}</div>}
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={()=>onOpenChange(false)} disabled={loading}>Cancel</Button>
+          <Button variant="destructive" onClick={handleDisable} disabled={loading || password.length < 6}>{loading ? 'Disabling…' : 'Disable 2FA'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const ManageOrganizationButton: React.FC<{ disabled: boolean; currentName: string }> = ({ disabled, currentName }) => {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(currentName);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => { setName(currentName); }, [currentName]);
+
+  async function handleSave() {
+    setError(null); setSuccess(false); setSaving(true);
+    try {
+      const res = await apiRequest('PUT', '/api/organization/name', { name });
+      if (!res.ok) {
+        const data = await res.json().catch(()=>({message:'Failed'}));
+        setError(data.message || 'Update failed');
+      } else {
+        setSuccess(true);
+        // Force refresh of user/org display (simple approach)
+        setTimeout(() => { window.location.reload(); }, 700);
+      }
+    } catch (e:any) {
+      setError(e.message || 'Unexpected error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <Button variant="outline" disabled={disabled} onClick={() => setOpen(true)}>Manage</Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manage Organization</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Organization Name</label>
+              <Input value={name} onChange={e => setName(e.target.value)} disabled={saving} placeholder="Enter organization name" />
+              <p className="text-xs text-muted-foreground mt-1">2–100 characters. Changes propagate to all users.</p>
+            </div>
+            {error && <div className="text-sm text-red-600">{error}</div>}
+            {success && <div className="text-sm text-green-600">Name updated. Refreshing…</div>}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
+            <Button onClick={handleSave} disabled={saving || name.trim().length < 2}> {saving ? 'Saving…' : 'Save'} </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+};

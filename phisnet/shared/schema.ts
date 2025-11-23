@@ -10,6 +10,8 @@ export const organizations = pgTable("organizations", {
   dataRetentionDays: integer("data_retention_days").default(365).notNull(),
   // Per-organization encryption key for secrets management
   encryptionKey: text("encryption_key"),
+  // Whether all users in this organization must have 2FA enabled
+  twoFactorRequired: boolean("two_factor_required").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -55,6 +57,14 @@ export const users = pgTable("users", {
   emailVerified: boolean("email_verified").default(false).notNull(),
   emailVerificationToken: text("email_verification_token"),
   emailVerificationExpiry: timestamp("email_verification_expiry"),
+  // Two-Factor Authentication fields
+  twoFactorEnabled: boolean("two_factor_enabled").default(false).notNull(),
+  // Encrypted base32 secret (using SecretsService + org key)
+  twoFactorSecret: text("two_factor_secret"),
+  // Array of hashed backup codes (each one-time use). Stored as TEXT[] matching migration.
+  twoFactorBackupCodes: text("two_factor_backup_codes").array().default([]),
+  // Timestamp of last successful 2FA verification (login or setup)
+  twoFactorVerifiedAt: timestamp("two_factor_verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

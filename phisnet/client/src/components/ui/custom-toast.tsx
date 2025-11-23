@@ -1,5 +1,5 @@
 import { toast as baseToast } from "@/hooks/use-toast";
-import { CheckCircle, XCircle } from "lucide-react";
+import { CheckCircle, XCircle, Info } from "lucide-react";
 
 interface CustomToastProps {
   title: string;
@@ -52,6 +52,26 @@ export const customToast = {
     return baseToast({
       description: <ToastContent {...props} variant="destructive" />,
       duration: props.duration || 5000,
+    });
+  },
+
+  // Informational (neutral) toast
+  info: (props: Omit<CustomToastProps, "variant">) => {
+    return baseToast({
+      description: (
+        <div className="rounded-md w-full p-4 flex flex-col gap-1 bg-muted text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Info className="h-5 w-5 shrink-0" />
+            <div>
+              <div className="font-semibold">{props.title}</div>
+              {props.description && (
+                <div className="text-sm mt-1 opacity-90">{props.description}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      ),
+      duration: props.duration || 4000,
     });
   }
 };

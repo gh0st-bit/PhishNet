@@ -1,6 +1,5 @@
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
-import bcrypt from "bcryptjs";
 import { isAdmin, isAuthenticated, hashPassword } from "../auth";
 import { storage } from "../storage";
 import { acceptInviteSchema } from "@shared/schema";
@@ -11,12 +10,9 @@ function generateInviteToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-async function hashToken(token: string): Promise<string> {
-  return await bcrypt.hash(token, 10);
-}
-
-async function verifyToken(token: string, hashedToken: string): Promise<boolean> {
-  return await bcrypt.compare(token, hashedToken);
+// Hash invite tokens with SHA-256 for deterministic lookup (no need for slow password hash)
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
 // Rate limiting for accept endpoint
