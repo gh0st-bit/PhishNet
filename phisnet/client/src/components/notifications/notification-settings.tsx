@@ -24,6 +24,8 @@ interface NotificationPreferences {
   securityAlerts: boolean;
   systemUpdates: boolean;
   weeklyReports: boolean;
+  inviteDashboard: boolean;
+  inviteEmail: boolean; // present for completeness; updated in Email tab
 }
 
 export function NotificationSettings() {
@@ -36,6 +38,8 @@ export function NotificationSettings() {
     securityAlerts: true,
     systemUpdates: true,
     weeklyReports: true,
+    inviteDashboard: true,
+    inviteEmail: true,
   });
 
   useEffect(() => {
@@ -55,7 +59,18 @@ export function NotificationSettings() {
       }
       
       const data = await response.json();
-      setPreferences(data);
+      // Map possible snake_case from API to camelCase expected in state
+      const mapped: NotificationPreferences = {
+        emailNotifications: data.email_notifications ?? data.emailNotifications ?? true,
+        pushNotifications: data.push_notifications ?? data.pushNotifications ?? true,
+        campaignAlerts: data.campaign_alerts ?? data.campaignAlerts ?? true,
+        securityAlerts: data.security_alerts ?? data.securityAlerts ?? true,
+        systemUpdates: data.system_updates ?? data.systemUpdates ?? true,
+        weeklyReports: data.weekly_reports ?? data.weeklyReports ?? true,
+        inviteDashboard: data.invite_dashboard ?? data.inviteDashboard ?? true,
+        inviteEmail: data.invite_email ?? data.inviteEmail ?? true,
+      };
+      setPreferences(mapped);
     } catch (error) {
       console.error('Error fetching notification preferences:', error);
       toast({
@@ -71,19 +86,30 @@ export function NotificationSettings() {
   // Handle settings toggle
   const handleToggle = async (setting: keyof NotificationPreferences, value: boolean) => {
     try {
-      const updatedPreferences = {
+      const updatedPreferences: NotificationPreferences = {
         ...preferences,
         [setting]: value
       };
       
       setPreferences(updatedPreferences);
       
+      // Send camelCase payload matching backend expectation
       const response = await fetch('/api/notifications/preferences', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(updatedPreferences),
+        body: JSON.stringify({
+          emailNotifications: updatedPreferences.emailNotifications,
+          pushNotifications: updatedPreferences.pushNotifications,
+          campaignAlerts: updatedPreferences.campaignAlerts,
+          securityAlerts: updatedPreferences.securityAlerts,
+          systemUpdates: updatedPreferences.systemUpdates,
+          weeklyReports: updatedPreferences.weeklyReports,
+          inviteDashboard: updatedPreferences.inviteDashboard,
+          // inviteEmail managed in Email tab, but include current value for completeness
+          inviteEmail: updatedPreferences.inviteEmail,
+        }),
         credentials: 'include',
       });
       
@@ -237,6 +263,26 @@ export function NotificationSettings() {
                       checked={preferences.weeklyReports}
                       disabled={!preferences.pushNotifications}
                       onCheckedChange={(value) => handleToggle("weeklyReports", value)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="inviteDashboard">
+                        <div className="flex items-center">
+                          <Bell className="h-4 w-4 mr-2" />
+                          Invite Acceptance
+                        </div>
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Show notifications when user invitations are accepted
+                      </p>
+                    </div>
+                    <Switch
+                      id="inviteDashboard"
+                      checked={preferences.inviteDashboard}
+                      disabled={!preferences.pushNotifications}
+                      onCheckedChange={(value) => handleToggle("inviteDashboard", value)}
                     />
                   </div>
                 </div>

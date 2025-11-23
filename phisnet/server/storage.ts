@@ -16,6 +16,7 @@ import {
   userInvites
 } from "@shared/schema";
 import { eq, and, count, sql, gte } from "drizzle-orm";
+import crypto from "node:crypto";
 
 // Add missing type imports
 import type { 
@@ -127,6 +128,8 @@ export interface IStorage {
   findUserInviteByToken(token: string): Promise<UserInvite | undefined>;
   listUserInvites(organizationId: number): Promise<UserInvite[]>;
   markUserInviteAccepted(id: number): Promise<UserInvite | undefined>;
+  deleteUserInvite(id: number): Promise<boolean>;
+  resendUserInvite(id: number, newToken: string, newExpiry: Date): Promise<UserInvite | undefined>;
   
   // Dashboard stats
   getDashboardStats(organizationId: number): Promise<any>;
@@ -420,7 +423,23 @@ export class DatabaseStorage implements IStorage {
   // SMTP Profile methods
   async getSmtpProfile(id: number): Promise<SmtpProfile | undefined> {
     const [profile] = await db.select().from(smtpProfiles).where(eq(smtpProfiles.id, id));
-    return profile;
+    if (!profile) {
+      return undefined;
+    }
+
+    try {
+      const SecretsService = (await import('./services/secrets.service')).default;
+      const decryptedPassword = (profile.password && SecretsService.isEncrypted(profile.password))
+        ? await SecretsService.decrypt(profile.organizationId, profile.password)
+        : profile.password;
+      return {
+        ...profile,
+        password: decryptedPassword,
+      };
+    } catch (error) {
+      console.error('[Storage] Failed to decrypt SMTP profile password:', error);
+      return profile;
+    }
   }
   
   async createSmtpProfile(organizationId: number, profile: InsertSmtpProfile): Promise<SmtpProfile> {
@@ -476,7 +495,9 @@ export class DatabaseStorage implements IStorage {
     const SecretsService = (await import('./services/secrets.service')).default;
     return Promise.all(profiles.map(async (profile) => ({
       ...profile,
-      password: await SecretsService.decrypt(organizationId, profile.password),
+      password: (profile.password && SecretsService.isEncrypted(profile.password))
+        ? await SecretsService.decrypt(organizationId, profile.password)
+        : profile.password,
     })));
   }
   
@@ -778,7 +799,7 @@ export class DatabaseStorage implements IStorage {
 
   async findUserInviteByToken(token: string): Promise<UserInvite | undefined> {
     // Tokens now stored as SHA-256 hex digests (see enrollment route)
-    const hashed = require('node:crypto').createHash('sha256').update(token).digest('hex');
+    const hashed = crypto.createHash('sha256').update(token).digest('hex');
     const candidates = await db.select()
       .from(userInvites)
       .where(
@@ -801,6 +822,21 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userInvites.id, id))
       .returning();
     return row;
+  }
+
+  async deleteUserInvite(id: number): Promise<boolean> {
+    const result = await db.delete(userInvites)
+      .where(eq(userInvites.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  async resendUserInvite(id: number, newToken: string, newExpiry: Date): Promise<UserInvite | undefined> {
+    const [invite] = await db.update(userInvites)
+      .set({ token: newToken, expiresAt: newExpiry })
+      .where(eq(userInvites.id, id))
+      .returning();
+    return invite;
   }
   
   // Dashboard stats

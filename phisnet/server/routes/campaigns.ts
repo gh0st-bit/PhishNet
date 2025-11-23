@@ -4,6 +4,9 @@ import { storage } from '../storage';
 import { insertCampaignSchema } from '@shared/schema';
 import { sendCampaignEmails } from '../services/email-service';
 import { AuditService } from '../services/audit.service';
+import { NotificationService } from '../services/notification-service';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { z } from 'zod';
 
 function assertUser(user: Express.User | undefined): asserts user is Express.User {
@@ -132,6 +135,20 @@ export function registerCampaignRoutes(app: Express) {
         resourceId: campaign.id,
         metadata: { name: campaign.name },
       }).catch((err) => console.error("[Audit] Failed to log campaign creation:", err));
+      
+      // Create organization-wide notification that a campaign was created
+      try {
+        await NotificationService.createOrganizationNotification({
+          organizationId: req.user.organizationId,
+          type: "campaign_created",
+          title: "Campaign created",
+          message: `Campaign "${campaign.name}" has been created.`,
+          priority: "medium",
+          actionUrl: `/campaigns/${campaign.id}`,
+        });
+      } catch (notifyErr) {
+        console.error("Failed to create campaign created notification:", notifyErr);
+      }
       
       // If no schedule provided, send immediately in background
       if (!validatedData.scheduledAt) {
@@ -456,21 +473,77 @@ export function registerCampaignRoutes(app: Express) {
         res.setHeader('Content-Disposition', `attachment; filename="campaign-${campaignId}-results.xls"`);
         return res.send(csv);
       } else if (formatLower === 'pdf') {
-        // PDF format - return simple text-based representation for now
-        const textContent = `Campaign Report: ${campaign.name}\n` +
-          `Campaign ID: ${campaign.id}\n` +
-          `Status: ${campaign.status}\n` +
-          `Generated: ${new Date().toLocaleString()}\n\n` +
-          `Total Results: ${exportData.length}\n\n` +
-          exportData.map((row, idx) => 
-            `Result #${idx + 1}\n` +
-            Object.entries(row).map(([key, val]) => `  ${key}: ${val}`).join('\n')
-          ).join('\n\n');
-        
+        // PDF format - build a structured document via jsPDF
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const margin = 48;
+
+        // Header
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(20);
+        doc.text('PhishNet Campaign Report', pageWidth / 2, margin, { align: 'center' });
+
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Campaign: ${campaign.name}`, margin, margin + 30);
+        doc.text(`Campaign ID: ${campaign.id}`, margin, margin + 46);
+        doc.text(`Status: ${(campaign.status || 'Unknown').toString()}`, margin, margin + 62);
+        doc.text(`Generated: ${new Date().toLocaleString()}`, margin, margin + 78);
+
+        const sentCount = results.filter(r => r.sent).length;
+        const openedCount = results.filter(r => r.opened).length;
+        const clickedCount = results.filter(r => r.clicked).length;
+        const submittedCount = results.filter(r => r.submitted).length;
+
+        doc.text(`Total Targets: ${targets.length}`, margin, margin + 110);
+        doc.text(`Emails Sent: ${sentCount}`, margin, margin + 126);
+        doc.text(`Opened: ${openedCount}`, margin, margin + 142);
+        doc.text(`Clicked: ${clickedCount}`, margin, margin + 158);
+        doc.text(`Submitted Data: ${submittedCount}`, margin, margin + 174);
+
+        const tableStartY = margin + 200;
+        const tableBody = exportData.map(row => ([
+          row['Target Name'] || '',
+          row['Target Email'] || '',
+          row['Status'] || '',
+          row['Sent At'] || '',
+          row['Opened At'] || '',
+          row['Clicked At'] || '',
+          row['Submitted At'] || ''
+        ]));
+
+        if (tableBody.length > 0) {
+          autoTable(doc, {
+            startY: tableStartY,
+            head: [[
+              'Target Name',
+              'Email',
+              'Status',
+              'Sent At',
+              'Opened At',
+              'Clicked At',
+              'Submitted At'
+            ]],
+            body: tableBody,
+            styles: { fontSize: 9 },
+            headStyles: {
+              fillColor: [255, 140, 0],
+              textColor: [255, 255, 255],
+              fontStyle: 'bold'
+            },
+            alternateRowStyles: { fillColor: [248, 248, 248] },
+            margin: { left: margin, right: margin }
+          });
+        } else {
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(11);
+          doc.text('No campaign activity has been recorded yet for this campaign.', margin, tableStartY);
+        }
+
+        const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="campaign-${campaignId}-results.pdf"`);
-        // Note: This is a simplified text-based PDF. For proper PDF generation, integrate a library like pdfkit
-        return res.send(textContent);
+        return res.send(pdfBuffer);
       } else {
         return res.status(400).json({ message: "Invalid format. Supported formats: pdf, excel, json, csv" });
       }

@@ -11,6 +11,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+} from "@/components/ui/dropdown-menu";
 import { 
   CalendarClock, 
   CheckCircle2, 
@@ -22,12 +30,13 @@ import {
   Pencil, 
   Send, 
   ServerCrash, 
-  UserRound 
+  UserRound,
+  X
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { format, formatDistance, formatDistanceToNow } from "date-fns";
+import { format, formatDistance, formatDistanceToNow, differenceInHours, differenceInDays, differenceInMinutes } from "date-fns";
 import { useCampaignDetails, useCampaignResults } from "@/hooks/useApi";
-import { getBadgeVariant, safeToString } from "@/lib/utils";
+import { getBadgeVariant, safeToString, getDisplayStatus } from "@/lib/utils";
 import type { Campaign, CampaignResult } from "@shared/types/api";
 
 interface CampaignDetailsProps {
@@ -35,11 +44,73 @@ interface CampaignDetailsProps {
   onEdit: () => void;
 }
 
+interface FilterState {
+  sent: boolean | null;
+  opened: boolean | null;
+  clicked: boolean | null;
+  submitted: boolean | null;
+}
+
 export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsProps) {
   const [activeTab, setActiveTab] = useState("overview");
+  const [filters, setFilters] = useState<FilterState>({
+    sent: null,
+    opened: null,
+    clicked: null,
+    submitted: null,
+  });
 
   const { data: campaign, isLoading } = useCampaignDetails(campaignId);
   const { data: results = [] } = useCampaignResults(campaignId);
+
+  // Filter results based on selected filters
+  const filteredResults = results.filter((result) => {
+    if (filters.sent !== null && result.sent !== filters.sent) return false;
+    if (filters.opened !== null && result.opened !== filters.opened) return false;
+    if (filters.clicked !== null && result.clicked !== filters.clicked) return false;
+    if (filters.submitted !== null && result.submitted !== filters.submitted) return false;
+    return true;
+  });
+
+  // Check if any filters are active
+  const hasActiveFilters = Object.values(filters).some((f) => f !== null);
+
+  // Reset filters
+  const handleResetFilters = () => {
+    setFilters({
+      sent: null,
+      opened: null,
+      clicked: null,
+      submitted: null,
+    });
+  };
+
+  // Export to CSV
+  const handleExport = () => {
+    const csv = [
+      ["Target", "Sent", "Opened", "Clicked", "Data Submitted", "Timestamp"],
+      ...filteredResults.map((result) => [
+        `Target #${result.targetId}`,
+        result.sent ? "Yes" : "No",
+        result.opened ? "Yes" : "No",
+        result.clicked ? "Yes" : "No",
+        result.submitted ? "Yes" : "No",
+        result.timestamp ? format(new Date(result.timestamp), "MMM d, yyyy h:mm a") : "-",
+      ]),
+    ]
+      .map((row) => row.map((cell) => `"${cell}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `campaign-results-${campaignId}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   if (isLoading || !campaign) {
     return <div className="flex justify-center p-12">Loading campaign details...</div>;
@@ -58,16 +129,33 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
   const clickedPercentage = openedCount > 0 ? Math.round((clickedCount / openedCount) * 100) : 0;
   const submittedPercentage = clickedCount > 0 ? Math.round((submittedCount / clickedCount) * 100) : 0;
 
-  const campaignStartTime = campaign.created_at ? new Date(campaign.created_at) : new Date();
-  const campaignEndTime = null; // endDate not available in basic Campaign type
-  const campaignDuration = 'Duration not specified';
+  // Calculate campaign duration
+  let campaignDuration = 'Duration not specified';
+  if (campaign.scheduledAt && campaign.endDate) {
+    const startDate = new Date(campaign.scheduledAt);
+    const endDate = new Date(campaign.endDate);
+    const days = differenceInDays(endDate, startDate);
+    const hours = differenceInHours(endDate, startDate) % 24;
+    const minutes = differenceInMinutes(endDate, startDate) % 60;
+    
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    
+    campaignDuration = parts.length > 0 ? parts.join(' ') : 'Less than a minute';
+  }
+
+  // Get display status based on schedule timing
+  const displayStatus = getDisplayStatus(campaign);
 
   const statusBadgeVariant = {
     "active": "success",
     "draft": "outline", 
     "completed": "secondary",
+    "scheduled": "default",
     "paused": "warning"
-  }[campaign.status] || "outline";
+  }[displayStatus] || "outline";
 
   return (
     <div className="space-y-6">
@@ -76,10 +164,10 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
           <h2 className="text-2xl font-bold">{campaign.name}</h2>
           <div className="flex items-center gap-2 mt-1">
             <Badge variant={statusBadgeVariant as any}>
-              {campaign.status}
+              {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
             </Badge>
             <span className="text-sm text-muted-foreground">
-              Created {formatDistanceToNow(new Date(campaign.createdAt), { addSuffix: true })}
+              Created {campaign.createdAt ? format(new Date(campaign.createdAt), "MMM dd, yyyy 'at' HH:mm") : 'Unknown'}
             </span>
           </div>
         </div>
@@ -97,7 +185,7 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
                 <p className="text-sm text-muted-foreground">Status</p>
                 <div className="flex items-center gap-2 mt-1">
                   <Clock className="h-4 w-4 text-primary" />
-                  <span className="font-semibold">{campaign.status}</span>
+                  <span className="font-semibold">{displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}</span>
                 </div>
               </div>
               <div>
@@ -217,17 +305,115 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
                 <CardDescription>Detailed results for each target</CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm">
-                  <Filter className="h-4 w-4 mr-2" />
-                  Filter
-                </Button>
-                <Button variant="outline" size="sm">
+                <DropdownMenu>
+                  <Button variant={hasActiveFilters ? "default" : "outline"} size="sm" asChild>
+                    <div>
+                      <Filter className="h-4 w-4 mr-2" />
+                      Filter
+                      {hasActiveFilters && (
+                        <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-primary rounded-full">
+                          {Object.values(filters).filter((f) => f !== null).length}
+                        </span>
+                      )}
+                    </div>
+                  </Button>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuLabel>Filter Results</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuCheckboxItem
+                      checked={filters.sent === true}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFilters((prev) => ({ ...prev, sent: true }));
+                        } else {
+                          setFilters((prev) => ({ ...prev, sent: null }));
+                        }
+                      }}
+                    >
+                      Sent ✓
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={filters.sent === false}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFilters((prev) => ({ ...prev, sent: false }));
+                        } else {
+                          setFilters((prev) => ({ ...prev, sent: null }));
+                        }
+                      }}
+                    >
+                      Not Sent ✗
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuCheckboxItem
+                      checked={filters.opened === true}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFilters((prev) => ({ ...prev, opened: true }));
+                        } else {
+                          setFilters((prev) => ({ ...prev, opened: null }));
+                        }
+                      }}
+                    >
+                      Opened ✓
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={filters.clicked === true}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFilters((prev) => ({ ...prev, clicked: true }));
+                        } else {
+                          setFilters((prev) => ({ ...prev, clicked: null }));
+                        }
+                      }}
+                    >
+                      Clicked ✓
+                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem
+                      checked={filters.submitted === true}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setFilters((prev) => ({ ...prev, submitted: true }));
+                        } else {
+                          setFilters((prev) => ({ ...prev, submitted: null }));
+                        }
+                      }}
+                    >
+                      Data Submitted ✓
+                    </DropdownMenuCheckboxItem>
+                    {hasActiveFilters && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleResetFilters} className="text-muted-foreground">
+                          <X className="h-4 w-4 mr-2" />
+                          Clear Filters
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button variant="outline" size="sm" onClick={handleExport} disabled={filteredResults.length === 0}>
                   <Download className="h-4 w-4 mr-2" />
-                  Export
+                  Export CSV
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
+              {hasActiveFilters && (
+                <div className="mb-4 p-3 bg-muted rounded-lg flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">
+                    Showing {filteredResults.length} of {results.length} results
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleResetFilters}
+                    className="h-6"
+                  >
+                    Clear Filters
+                  </Button>
+                </div>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -239,8 +425,8 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {results.length > 0 ? (
-                    results.map((result) => (
+                  {filteredResults.length > 0 ? (
+                    filteredResults.map((result) => (
                       <TableRow key={result.id}>
                         <TableCell className="font-medium">Target #{result.targetId}</TableCell>
                         <TableCell>
@@ -280,7 +466,7 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
                   ) : (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
-                        No results data available yet.
+                        {hasActiveFilters ? "No results match the selected filters." : "No results data available yet."}
                       </TableCell>
                     </TableRow>
                   )}

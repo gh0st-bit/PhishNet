@@ -477,3 +477,64 @@ export async function sendEnrollmentInviteEmail(params: { toEmail: string; organ
     return false;
   }
 }
+
+/**
+ * Sends an email to admins when an invitation is accepted (subject to preferences).
+ */
+export async function sendInviteAcceptedEmail(params: { toEmail: string; organizationName?: string; userFullName: string; invitedEmail: string; }) {
+  const { toEmail, organizationName, userFullName, invitedEmail } = params;
+  try {
+    const subject = `Invitation accepted in ${organizationName || 'PhishNet'}`;
+    const text = `Hello,
+
+${userFullName} (${invitedEmail}) has accepted their invitation and activated an account in ${organizationName || 'PhishNet'}.
+
+You can review users in the admin enrollment section.
+
+— PhishNet Security Team`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin:0 auto; padding:20px; border:1px solid #ddd; border-radius:6px;">
+        <h2 style="color:#FF8000; margin-top:0;">Invitation Accepted</h2>
+        <p><strong>${userFullName}</strong> (<code>${invitedEmail}</code>) has accepted an invitation and activated an account in <strong>${organizationName || 'PhishNet'}</strong>.</p>
+        <p style="margin:24px 0;">
+          <a href="${process.env.BASE_URL || 'http://localhost:5000'}/admin/enroll" style="background:#FF8000;color:#fff;padding:12px 20px;text-decoration:none;border-radius:4px;font-weight:bold;">View Enrollment</a>
+        </p>
+        <p style="color:#666;font-size:13px;">If you did not expect this action you can revoke access or adjust user roles.</p>
+        <hr style="border:none;border-top:1px solid #eee;margin:28px 0;" />
+        <p style="color:#666;font-size:12px;">PhishNet Security Team</p>
+      </div>
+    `;
+
+    if (SENDGRID_AVAILABLE) {
+      const msg = { to: toEmail, from: { email: EMAIL_FROM, name: EMAIL_NAME }, subject, text, html } as any;
+      await mailService.send(msg);
+      console.log('Invite accepted email sent via SendGrid to:', toEmail);
+      return true;
+    }
+
+    // SMTP fallback
+    try {
+      let fromEmail = process.env.SMTP_FROM_EMAIL || EMAIL_FROM;
+      let fromName = process.env.SMTP_FROM_NAME || EMAIL_NAME;
+      const host = process.env.SMTP_HOST;
+      const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined;
+      const username = process.env.SMTP_USERNAME;
+      const password = process.env.SMTP_PASSWORD;
+      if (!host || !port || !username || !password) {
+        console.warn('SMTP not configured for invite accepted emails');
+        return false;
+      }
+      const transporter = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user: username, pass: password } });
+      try { await transporter.verify(); } catch {}
+      const info = await transporter.sendMail({ from: `${fromName} <${fromEmail}>`, to: toEmail, subject, text, html });
+      console.log('Invite accepted email sent via SMTP to:', toEmail, 'messageId:', (info as any).messageId);
+      return true;
+    } catch (smtpErr) {
+      console.error('SMTP invite accepted email failed:', smtpErr);
+      return false;
+    }
+  } catch (error) {
+    console.error('Error sending invite accepted email:', error);
+    return false;
+  }
+}

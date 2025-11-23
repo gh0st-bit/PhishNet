@@ -233,6 +233,9 @@ export const notificationPreferencesSchema = pgTable("notification_preferences",
   securityAlerts: boolean("security_alerts").default(true),
   systemUpdates: boolean("system_updates").default(true),
   weeklyReports: boolean("weekly_reports").default(true),
+  // New granular invite notification toggles
+  inviteDashboard: boolean("invite_dashboard").default(true),
+  inviteEmail: boolean("invite_email").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

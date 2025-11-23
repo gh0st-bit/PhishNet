@@ -148,12 +148,6 @@ export default function Sidebar() {
       icon: <Shield className="h-5 w-5" />,
       adminOnly: true
     },
-    { 
-      name: "Enrollment", 
-      href: "/enrollment", 
-      icon: <UserPlus className="h-5 w-5" />,
-      adminOnly: true
-    },
     
     // Employee Portal (user-only)
     {

@@ -76,7 +76,7 @@ class ApiClient {
 
   // Templates API
   async getTemplates(): Promise<TemplatesResponse> {
-    return this.fetch<TemplatesResponse>('/api/templates');
+    return this.fetch<TemplatesResponse>('/api/email-templates');
   }
 
   // Groups and Targets API

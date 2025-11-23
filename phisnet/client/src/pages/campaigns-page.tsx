@@ -27,11 +27,11 @@ import CampaignForm from "@/components/campaigns/campaign-form";
 import CampaignEditor from "@/components/campaigns/campaign-editor";
 import CampaignDetails from "@/components/campaigns/campaign-details";
 import { Plus, ChevronRight, Calendar, Mail, Users, Edit, Trash2, Loader2, FileText, FileSpreadsheet, FileJson, FileDown } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useCampaigns } from "@/hooks/useApi";
-import { getBadgeVariant, safeToString } from "@/lib/utils";
+import { getBadgeVariant, safeToString, getDisplayStatus } from "@/lib/utils";
 import type { Campaign } from "@shared/types/api";
 import { useTheme } from "next-themes";
 import {
@@ -244,15 +244,15 @@ export default function CampaignsPage() {
                   <TableRow key={campaign.id}>
                     <TableCell className="font-medium">{safeToString(campaign.name)}</TableCell>
                     <TableCell>
-                      <Badge variant={getBadgeVariant(safeToString(campaign.status))}>
-                        {safeToString(campaign.status)}
+                      <Badge variant={getBadgeVariant(getDisplayStatus(campaign))}>
+                        {getDisplayStatus(campaign).charAt(0).toUpperCase() + getDisplayStatus(campaign).slice(1)}
                       </Badge>
                     </TableCell>
                     <TableCell>{campaign.targets || 0}</TableCell>
                     <TableCell>{campaign.targets ? `${Math.round((campaign.opened / campaign.targets) * 100)}%` : "-"}</TableCell>
                     <TableCell>{campaign.targets ? `${Math.round((campaign.clicked / campaign.targets) * 100)}%` : "-"}</TableCell>
                     <TableCell>
-                      {campaign.created_at ? formatDistanceToNow(new Date(campaign.created_at), { addSuffix: true }) : "-"}
+                      {campaign.created_at ? format(new Date(campaign.created_at), "MMM dd, yyyy HH:mm") : "-"}
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end space-x-2">

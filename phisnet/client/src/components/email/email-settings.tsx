@@ -20,6 +20,7 @@ interface EmailPreferences {
   weeklyReports: boolean;
   campaignResults: boolean;
   securityAlerts: boolean;
+  inviteEmail: boolean;
 }
 
 export function EmailSettings() {
@@ -30,6 +31,7 @@ export function EmailSettings() {
     weeklyReports: true,
     campaignResults: true,
     securityAlerts: true,
+    inviteEmail: true,
   });
 
   useEffect(() => {
@@ -50,12 +52,13 @@ export function EmailSettings() {
       
       const data = await response.json();
       
-      // Map API preferences to our email preferences
+      // Map API preferences (snake_case or camelCase) to our email preferences
       setPreferences({
-        emailNotifications: data.emailNotifications,
-        weeklyReports: data.weeklyReports,
-        campaignResults: data.campaignAlerts,
-        securityAlerts: data.securityAlerts
+        emailNotifications: data.emailNotifications ?? data.email_notifications ?? true,
+        weeklyReports: data.weeklyReports ?? data.weekly_reports ?? true,
+        campaignResults: data.campaignAlerts ?? data.campaign_alerts ?? true,
+        securityAlerts: data.securityAlerts ?? data.security_alerts ?? true,
+        inviteEmail: data.inviteEmail ?? data.invite_email ?? true,
       });
     } catch (error) {
       console.error('Error fetching notification preferences:', error);
@@ -88,7 +91,8 @@ export function EmailSettings() {
           ...updatedPreferences,
           weeklyReports: false,
           campaignResults: false,
-          securityAlerts: false
+          securityAlerts: false,
+          inviteEmail: false,
         });
         
         apiPreferences = {
@@ -96,7 +100,8 @@ export function EmailSettings() {
           // Keep push notifications unchanged
           weeklyReports: false,
           campaignAlerts: false,
-          securityAlerts: false
+          securityAlerts: false,
+          inviteEmail: false,
         };
       } else {
         // Map our email preferences to API structure
@@ -104,7 +109,8 @@ export function EmailSettings() {
           emailNotifications: updatedPreferences.emailNotifications,
           weeklyReports: updatedPreferences.weeklyReports,
           campaignAlerts: updatedPreferences.campaignResults,
-          securityAlerts: updatedPreferences.securityAlerts
+          securityAlerts: updatedPreferences.securityAlerts,
+          inviteEmail: updatedPreferences.inviteEmail,
         };
       }
       
@@ -233,6 +239,25 @@ export function EmailSettings() {
                     checked={preferences.securityAlerts}
                     disabled={!preferences.emailNotifications}
                     onCheckedChange={(value) => handleToggle("securityAlerts", value)}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="inviteEmail">
+                      <div className="flex items-center">
+                        <Mail className="h-4 w-4 mr-2" />
+                        Invite Acceptance
+                      </div>
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Receive an email when a user accepts an invitation
+                    </p>
+                  </div>
+                  <Switch
+                    id="inviteEmail"
+                    checked={preferences.inviteEmail}
+                    disabled={!preferences.emailNotifications}
+                    onCheckedChange={(value) => handleToggle("inviteEmail", value)}
                   />
                 </div>
               </div>
