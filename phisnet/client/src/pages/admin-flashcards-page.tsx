@@ -9,10 +9,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Edit, Trash2, Layers, Search, ArrowUp, ArrowDown } from "lucide-react";
+import { Loader2, Plus, Edit, Trash2, Layers, Search, ArrowUp, ArrowDown, Eye, EyeOff } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { flashcardDeckFormSchema, flashcardFormSchema } from "@/validation/adminSchemas";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 
 interface FlashcardDeck {
   id: number;
@@ -23,6 +24,7 @@ interface FlashcardDeck {
   createdAt: string;
   creatorName?: string;
   cardCount?: number;
+  published: boolean;
 }
 
 interface Flashcard {
@@ -57,6 +59,7 @@ export default function AdminFlashcardsPage() {
   const { user } = useAuth();
   const isAdmin = !!user?.isAdmin;
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [editingDeck, setEditingDeck] = useState<FlashcardDeck | null>(null);
   const [selectedDeck, setSelectedDeck] = useState<FlashcardDeck | null>(null);
   const [isDeckDialogOpen, setIsDeckDialogOpen] = useState(false);
@@ -136,6 +139,31 @@ export default function AdminFlashcardsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/flashcard-decks"] });
       if (selectedDeck?.id === editingDeck?.id) setSelectedDeck(null);
+    },
+  });
+
+  // Publish toggle mutation
+  const publishMutation = useMutation({
+    mutationFn: async ({ id, published }: { id: number; published: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/admin/flashcard-decks/${id}/publish`, { published });
+      if (!res.ok) throw new Error("Failed to update publish status");
+      return res.json();
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/flashcard-decks"] });
+      toast({
+        title: variables.published ? "✓ Deck Published" : "✓ Deck Unpublished",
+        description: variables.published 
+          ? "Flashcard deck is now visible to employees." 
+          : "Flashcard deck is now hidden from employees.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update deck status. Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -297,16 +325,40 @@ export default function AdminFlashcardsPage() {
               .map(deck => (
                 <div key={deck.id} className={`border rounded-lg p-4 flex flex-col gap-3 ${selectedDeck?.id === deck.id ? 'ring-2 ring-primary' : ''}`}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="cursor-pointer" onClick={() => setSelectedDeck(deck)}>
+                    <div className="cursor-pointer flex-1" onClick={() => setSelectedDeck(deck)}>
                       <h3 className="font-semibold line-clamp-2">{deck.title}</h3>
                       <div className="flex flex-wrap gap-1 mt-1">
                         <Badge variant="secondary" className="text-xs">{deck.category}</Badge>
                         {deck.cardCount !== undefined && <Badge variant="outline" className="text-xs">{deck.cardCount} cards</Badge>}
+                        <Badge variant={deck.published ? "default" : "secondary"} className="text-xs">
+                          {deck.published ? "Published" : "Draft"}
+                        </Badge>
                       </div>
                     </div>
                     {isAdmin && (
                       <div className="flex gap-1">
                         <Button size="icon" variant="ghost" onClick={() => { setEditingDeck(deck); setDeckForm({ title: deck.title, description: deck.description || "", category: deck.category }); setIsDeckDialogOpen(true); }}><Edit className="h-4 w-4" /></Button>
+                        {deck.published ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1"
+                            onClick={() => publishMutation.mutate({ id: deck.id, published: false })}
+                          >
+                            <EyeOff className="h-4 w-4" />
+                            Unpublish
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="default"
+                            className="gap-1"
+                            onClick={() => publishMutation.mutate({ id: deck.id, published: true })}
+                          >
+                            <Eye className="h-4 w-4" />
+                            Publish
+                          </Button>
+                        )}
                         <Button size="icon" variant="ghost" onClick={() => { if (confirm(`Delete deck "${deck.title}"? This removes all cards.`)) deleteDeckMutation.mutate(deck.id); }}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     )}

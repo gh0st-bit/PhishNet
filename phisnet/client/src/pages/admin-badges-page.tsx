@@ -10,8 +10,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Plus, Edit, Trash2, Crown, Star, Sparkles, Award } from 'lucide-react';
+import { Loader2, Plus, Edit, Trash2, Crown, Star, Sparkles, Award, Eye, EyeOff } from 'lucide-react';
 import { badgeFormSchema } from '@/validation/adminSchemas';
+import { useToast } from '@/hooks/use-toast';
 
 interface AdminBadge {
   id: number;
@@ -24,6 +25,7 @@ interface AdminBadge {
   rarity: string;
   createdAt: string;
   earnedCount?: number;
+  published: boolean;
 }
 
 interface BadgeListResponse {
@@ -43,6 +45,7 @@ const rarityIconMap: Record<string, JSX.Element> = {
 
 export default function AdminBadgesPage() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBadge, setEditingBadge] = useState<AdminBadge | null>(null);
   const [badgeFormErrors, setBadgeFormErrors] = useState<string[]>([]);
@@ -125,6 +128,31 @@ export default function AdminBadgesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/badges'] });
+    },
+  });
+
+  // Publish toggle mutation
+  const publishMutation = useMutation({
+    mutationFn: async ({ id, published }: { id: number; published: boolean }) => {
+      const res = await apiRequest('PATCH', `/api/admin/badges/${id}/publish`, { published });
+      if (!res.ok) throw new Error('Failed to update publish status');
+      return res.json();
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/badges'] });
+      toast({
+        title: variables.published ? '✓ Badge Published' : '✓ Badge Unpublished',
+        description: variables.published 
+          ? 'Badge is now visible to employees.' 
+          : 'Badge is now hidden from employees.',
+      });
+    },
+    onError: () => {
+      toast({
+        title: 'Error',
+        description: 'Failed to update badge status. Please try again.',
+        variant: 'destructive',
+      });
     },
   });
 
@@ -332,15 +360,39 @@ export default function AdminBadgesPage() {
           {filtered.map(badge => (
             <Card key={badge.id} className="p-4 flex flex-col gap-3 hover:shadow-md transition-shadow">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="flex items-center gap-1">
+                <div className="flex flex-wrap gap-2 text-xs mt-auto">
+                  <Badge variant="default" className="flex items-center gap-1">
                     {rarityIconMap[badge.rarity]}
                     <span className="capitalize">{badge.rarity}</span>
                   </Badge>
                   <Badge variant="secondary" className="capitalize">{badge.category}</Badge>
+                  <Badge variant={badge.published ? "default" : "secondary"}>
+                    {badge.published ? "Published" : "Draft"}
+                  </Badge>
                 </div>
                 <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                   <Button size="sm" variant="outline" onClick={() => handleEdit(badge)}><Edit className="h-4 w-4" /></Button>
+                  {badge.published ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1"
+                      onClick={() => publishMutation.mutate({ id: badge.id, published: false })}
+                    >
+                      <EyeOff className="h-4 w-4" />
+                      Unpublish
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="default"
+                      className="gap-1"
+                      onClick={() => publishMutation.mutate({ id: badge.id, published: true })}
+                    >
+                      <Eye className="h-4 w-4" />
+                      Publish
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" className="text-destructive" onClick={() => { if (confirm(`Delete badge "${badge.name}"? This action cannot be undone.`)) deleteBadgeMutation.mutate(badge.id); }}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>

@@ -10,8 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, Plus, Edit, Trash2, HelpCircle, AlertCircle } from "lucide-react";
+import { Loader2, Plus, Edit, Trash2, HelpCircle, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
 
 interface QuizQuestion {
   id: number;
@@ -35,6 +36,7 @@ interface Quiz {
   showCorrectAnswers: boolean;
   randomizeQuestions?: boolean;
   questions?: QuizQuestion[];
+  published: boolean;
 }
 
 interface PaginatedQuizzesResponse {
@@ -47,6 +49,7 @@ interface PaginatedQuizzesResponse {
 
 export default function AdminQuizPage() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [isQuizDialogOpen, setIsQuizDialogOpen] = useState(false);
   const [isQuestionDialogOpen, setIsQuestionDialogOpen] = useState(false);
   const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
@@ -154,6 +157,31 @@ export default function AdminQuizPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/quizzes", page, pageSize] });
       setSelectedQuiz(null);
+    },
+  });
+
+  // Publish toggle mutation
+  const publishMutation = useMutation({
+    mutationFn: async ({ id, published }: { id: number; published: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/admin/quizzes/${id}/publish`, { published });
+      if (!res.ok) throw new Error("Failed to update publish status");
+      return res.json();
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/quizzes", page, pageSize] });
+      toast({
+        title: variables.published ? "✓ Quiz Published" : "✓ Quiz Unpublished",
+        description: variables.published 
+          ? "Quiz is now visible to employees." 
+          : "Quiz is now hidden from employees.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update quiz status. Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -719,7 +747,12 @@ export default function AdminQuizPage() {
                     <h3 className="font-semibold text-lg line-clamp-2">{quiz.title}</h3>
                     <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{quiz.description}</p>
                   </div>
-                  <Badge variant="outline">{quiz.passingScore}% pass</Badge>
+                  <div className="flex flex-col gap-1 items-end">
+                    <Badge variant="outline">{quiz.passingScore}% pass</Badge>
+                    <Badge variant={quiz.published ? "default" : "secondary"}>
+                      {quiz.published ? "Published" : "Draft"}
+                    </Badge>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2 text-xs">
@@ -734,6 +767,27 @@ export default function AdminQuizPage() {
                     <Edit className="h-4 w-4 mr-2" />
                     Edit
                   </Button>
+                  {quiz.published ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1"
+                      onClick={() => publishMutation.mutate({ id: quiz.id, published: false })}
+                    >
+                      <EyeOff className="h-4 w-4" />
+                      Unpublish
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="default"
+                      className="gap-1"
+                      onClick={() => publishMutation.mutate({ id: quiz.id, published: true })}
+                    >
+                      <Eye className="h-4 w-4" />
+                      Publish
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="outline"

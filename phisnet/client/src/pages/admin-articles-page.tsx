@@ -9,10 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Edit, Trash2, Search, FileText } from "lucide-react";
+import { Loader2, Plus, Edit, Trash2, Search, FileText, PenLine, Eye, EyeOff } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { articleFormSchema } from "@/validation/adminSchemas";
 import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 
 interface Article {
   id: number;
@@ -25,6 +27,7 @@ interface Article {
   author: number | null;
   authorName?: string | null;
   readTimeMinutes: number | null;
+  published: boolean;
   publishedAt: string;
   updatedAt: string;
 }
@@ -49,7 +52,10 @@ interface PaginatedArticlesResponse {
 
 export default function AdminArticlesPage() {
   const { user } = useAuth();
+  const isAdmin = !!user?.isAdmin;
+  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -131,6 +137,31 @@ export default function AdminArticlesPage() {
     },
   });
 
+  // Publish toggle mutation
+  const publishMutation = useMutation({
+    mutationFn: async ({ id, published }: { id: number; published: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/admin/articles/${id}/publish`, { published });
+      if (!res.ok) throw new Error("Failed to update publish status");
+      return res.json();
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/articles"] });
+      toast({
+        title: variables.published ? "✓ Article Published" : "✓ Article Unpublished",
+        description: variables.published 
+          ? "Article is now visible to employees." 
+          : "Article is now hidden from employees.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update article status. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       title: "",
@@ -187,10 +218,9 @@ export default function AdminArticlesPage() {
   };
 
   const articles = data?.articles || [];
-  const isAdmin = !!user?.isAdmin;
 
   return (
-    <AppLayout title="Content: Articles">
+    <AppLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
@@ -201,13 +231,17 @@ export default function AdminArticlesPage() {
             </div>
           </div>
           {isAdmin && (
-            <Dialog open={isDialogOpen} onOpenChange={o => { if (!o) { setIsDialogOpen(false); setEditingArticle(null); setArticleFormErrors([]); } }}>
-              <DialogTrigger asChild>
-                <Button onClick={() => { resetForm(); setEditingArticle(null); setIsDialogOpen(true); }}>
-                  <Plus className="h-4 w-4 mr-2" /> New Article
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
+            <div className="flex items-center gap-2">
+              <Button onClick={() => navigate("/admin/content/articles/new")} size="lg" className="gap-2">
+                <PenLine className="h-4 w-4" /> Create with Rich Editor
+              </Button>
+              <Dialog open={isDialogOpen} onOpenChange={o => { if (!o) { setIsDialogOpen(false); setEditingArticle(null); setArticleFormErrors([]); } }}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="lg" onClick={() => { resetForm(); setEditingArticle(null); setIsDialogOpen(true); }}>
+                    <Plus className="h-4 w-4 mr-2" /> Quick Add (Plain Text)
+                  </Button>
+                </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>{editingArticle ? "Edit Article" : "Create Article"}</DialogTitle>
                   <DialogDescription>Provide structured awareness content for employees.</DialogDescription>
@@ -247,7 +281,7 @@ export default function AdminArticlesPage() {
                     </div>
                     <div className="space-y-2 md:col-span-2">
                       <Label htmlFor="content">Content (Markdown)</Label>
-                      <Textarea id="content" rows={10} value={formData.content} onChange={e => setFormData(f => ({ ...f, content: e.target.value }))} required />
+                      <Textarea id="content" rows={6} value={formData.content} onChange={e => setFormData(f => ({ ...f, content: e.target.value }))} required />
                     </div>
                   </div>
                   <DialogFooter>
@@ -262,6 +296,7 @@ export default function AdminArticlesPage() {
                 </form>
               </DialogContent>
             </Dialog>
+          </div>
           )}
         </div>
 
@@ -293,27 +328,23 @@ export default function AdminArticlesPage() {
           {!isLoading && articles.length === 0 && (
             <div className="border rounded-md p-8 flex flex-col items-center justify-center gap-2">
               <span className="text-muted-foreground">No articles found.</span>
-              {isAdmin && <Button onClick={() => { resetForm(); setEditingArticle(null); setIsDialogOpen(true); }} size="sm"><Plus className="h-4 w-4 mr-2" /> New Article</Button>}
             </div>
           )}
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {articles.map(article => (
               <div key={article.id} className="border rounded-lg p-4 flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold line-clamp-2">{article.title}</h3>
-                    <div className="flex flex-wrap gap-1 mt-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold line-clamp-2 mb-2">{article.title}</h3>
+                    <div className="flex flex-wrap gap-1">
+                      <Badge variant={article.published ? "default" : "secondary"} className="text-xs">
+                        {article.published ? "Published" : "Draft"}
+                      </Badge>
                       <Badge variant="secondary" className="text-xs">{article.category}</Badge>
-                      {article.tags.slice(0,3).map(t => <Badge key={t} variant="outline" className="text-xs">{t}</Badge>)}
+                      {article.tags.slice(0,2).map(t => <Badge key={t} variant="outline" className="text-xs">{t}</Badge>)}
                     </div>
                   </div>
-                  {isAdmin && (
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => handleEdit(article)}><Edit className="h-4 w-4" /></Button>
-                      <Button size="icon" variant="ghost" onClick={() => handleDelete(article.id, article.title)}><Trash2 className="h-4 w-4" /></Button>
-                    </div>
-                  )}
                 </div>
                 {article.thumbnailUrl && (
                   <img src={article.thumbnailUrl} alt="thumb" className="h-32 w-full object-cover rounded-md" />
@@ -323,6 +354,35 @@ export default function AdminArticlesPage() {
                   <span>{article.readTimeMinutes ? `${article.readTimeMinutes} min read` : ""}</span>
                   <span>{new Date(article.publishedAt).toLocaleDateString()}</span>
                 </div>
+                {isAdmin && (
+                  <div className="flex gap-2 pt-2 border-t">
+                    {article.published ? (
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        className="gap-1 flex-1"
+                        disabled={publishMutation.isPending}
+                        onClick={() => publishMutation.mutate({ id: article.id, published: false })}
+                      >
+                        {publishMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <EyeOff className="h-4 w-4" />}
+                        Unpublish
+                      </Button>
+                    ) : (
+                      <Button 
+                        size="sm" 
+                        variant="default"
+                        className="gap-1 flex-1"
+                        disabled={publishMutation.isPending}
+                        onClick={() => publishMutation.mutate({ id: article.id, published: true })}
+                      >
+                        {publishMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                        Publish
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => handleEdit(article)}><Edit className="h-4 w-4" /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => handleDelete(article.id, article.title)}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

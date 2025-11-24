@@ -31,10 +31,13 @@ import EmployeeBadgesPage from "@/pages/employee-badges-page";
 import EmployeeBadgeDetailPage from "@/pages/employee-badge-detail-page";
 import EmployeeLeaderboardPage from "@/pages/employee-leaderboard-page";
 import EmployeeProfilePage from "@/pages/employee-profile-page";
+import EmployeeArticlesPage from "@/pages/employee-articles-page";
+import EmployeeArticleDetailPage from "@/pages/employee-article-detail-page";
 import AdminTrainingPage from "@/pages/admin-training-page";
 import AdminQuizPage from "@/pages/admin-quiz-page";
 import AdminBadgePage from "@/pages/admin-badge-page";
 import AdminArticlesPage from "@/pages/admin-articles-page";
+import AdminArticleCreatePage from "@/pages/admin-article-create-page";
 import AdminBlogsPage from "@/pages/admin-blogs-page";
 import AdminVideosPage from "@/pages/admin-videos-page";
 import AdminFlashcardsPage from "@/pages/admin-flashcards-page";
@@ -81,10 +84,13 @@ function Router() {
       <ProtectedRoute path="/employee/badges/:id" component={EmployeeBadgeDetailPage} />
       <ProtectedRoute path="/employee/leaderboard" component={EmployeeLeaderboardPage} />
       <ProtectedRoute path="/employee/profile" component={EmployeeProfilePage} />
+      <ProtectedRoute path="/employee/articles" component={EmployeeArticlesPage} />
+      <ProtectedRoute path="/employee/articles/:id" component={EmployeeArticleDetailPage} />
       <ProtectedRoute path="/admin/training" component={AdminTrainingPage} />
       <ProtectedRoute path="/admin/quizzes" component={AdminQuizPage} />
       <ProtectedRoute path="/admin/badges" component={AdminBadgePage} />
       <ProtectedRoute path="/admin/content/articles" component={AdminArticlesPage} />
+      <ProtectedRoute path="/admin/content/articles/new" component={AdminArticleCreatePage} />
       <ProtectedRoute path="/admin/content/blogs" component={AdminBlogsPage} />
       <ProtectedRoute path="/admin/content/videos" component={AdminVideosPage} />
       <ProtectedRoute path="/admin/content/flashcards" component={AdminFlashcardsPage} />

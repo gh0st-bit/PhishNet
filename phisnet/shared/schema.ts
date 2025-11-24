@@ -916,6 +916,7 @@ export const quizzes = pgTable("quizzes", {
   maxAttempts: integer("max_attempts").default(3), // null = unlimited
   randomizeQuestions: boolean("randomize_questions").default(false).notNull(),
   showCorrectAnswers: boolean("show_correct_answers").default(true).notNull(),
+  published: boolean("published").default(false).notNull(), // Control visibility to employees
   createdBy: integer("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -988,6 +989,7 @@ export const badges = pgTable("badges", {
   criteria: jsonb("criteria").notNull(), // JSON object defining how to earn this badge
   pointsAwarded: integer("points_awarded").default(0).notNull(),
   rarity: varchar("rarity", { length: 50 }).default('common').notNull(), // 'common', 'rare', 'epic', 'legendary'
+  published: boolean("published").default(false).notNull(), // Control visibility to employees
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -1011,6 +1013,7 @@ export const articles = pgTable("articles", {
   thumbnailUrl: text("thumbnail_url"),
   author: integer("author").references(() => users.id),
   readTimeMinutes: integer("read_time_minutes"),
+  published: boolean("published").default(false).notNull(), // Control visibility to employees
   publishedAt: timestamp("published_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1022,6 +1025,7 @@ export const flashcardDecks = pgTable("flashcard_decks", {
   title: text("title").notNull(),
   description: text("description"),
   category: varchar("category", { length: 100 }).notNull(),
+  published: boolean("published").default(false).notNull(), // Control visibility to employees
   createdBy: integer("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -1095,6 +1099,17 @@ export const insertArticleSchema = createInsertSchema(articles, {
 }).omit({ id: true, publishedAt: true, updatedAt: true });
 
 export const updateArticleSchema = insertArticleSchema.partial();
+
+// Request schema for creating an article via API (excludes server-managed fields)
+export const createArticleRequestSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  content: z.string().min(1, "Content is required"),
+  category: z.string().min(1, "Category is required"),
+  excerpt: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  thumbnailUrl: z.string().url().optional(),
+  readTimeMinutes: z.number().int().positive().optional().nullable(),
+});
 
 export const insertFlashcardDeckSchema = createInsertSchema(flashcardDecks, {
   title: z.string().min(1, "Title is required"),

@@ -169,6 +169,12 @@ export default function Sidebar() {
           userOnly: true
         },
         { 
+          name: "Articles", 
+          href: "/employee/articles", 
+          icon: <FileText className="h-4 w-4" />,
+          userOnly: true
+        },
+        { 
           name: "Badges", 
           href: "/employee/badges", 
           icon: <Award className="h-4 w-4" />,

@@ -299,7 +299,12 @@ router.get("/quizzes", async (req: Request, res: Response) => {
           eq(quizAttempts.userId, userId)
         )
       )
-      .where(eq(quizzes.organizationId, orgId))
+      .where(
+        and(
+          eq(quizzes.organizationId, orgId),
+          eq(quizzes.published, true) // Only published quizzes
+        )
+      )
       .groupBy(quizzes.id);
 
     res.json({ quizzes: quizzesWithAttempts });
@@ -324,11 +329,16 @@ router.get("/quizzes/:id", async (req: Request, res: Response) => {
     const [quiz] = await db
       .select()
       .from(quizzes)
-      .where(eq(quizzes.id, quizId))
+      .where(
+        and(
+          eq(quizzes.id, quizId),
+          eq(quizzes.published, true) // Only published quizzes
+        )
+      )
       .limit(1);
 
     if (!quiz) {
-      return res.status(404).json({ message: "Quiz not found" });
+      return res.status(404).json({ message: "Quiz not found or not published" });
     }
 
     // Get all questions (without correct answers for initial load)
@@ -582,8 +592,11 @@ router.get("/badges", async (req: Request, res: Response) => {
 
     const userId = req.user.id;
 
-    // Get all badges
-    const allBadges = await db.select().from(badges);
+    // Get all badges (only published ones)
+    const allBadges = await db
+      .select()
+      .from(badges)
+      .where(eq(badges.published, true));
 
     // Get user's earned badges
     const earnedBadgeIds = await db
@@ -626,14 +639,19 @@ router.get("/badges/:id", async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid badge ID" });
     }
 
-    // Get badge details
+    // Get badge details (only if published)
     const [badge] = await db
       .select()
       .from(badges)
-      .where(eq(badges.id, badgeId));
+      .where(
+        and(
+          eq(badges.id, badgeId),
+          eq(badges.published, true)
+        )
+      );
 
     if (!badge) {
-      return res.status(404).json({ message: "Badge not found" });
+      return res.status(404).json({ message: "Badge not found or not published" });
     }
 
     // Check if user has earned this badge
@@ -778,6 +796,81 @@ router.get("/leaderboard", async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error fetching leaderboard:", error);
     res.status(500).json({ message: "Failed to fetch leaderboard" });
+  }
+});
+
+// ========================================
+// ARTICLES ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/employee/articles
+ * Get all published articles for the employee's organization
+ */
+router.get("/articles", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+
+    // Only return published articles
+    const publishedArticles = await db
+      .select()
+      .from(articles)
+      .where(
+        and(
+          eq(articles.organizationId, orgId),
+          eq(articles.published, true)
+        )
+      )
+      .orderBy(desc(articles.publishedAt));
+
+    res.json(publishedArticles);
+  } catch (error: any) {
+    console.error("Error fetching articles:", error);
+    res.status(500).json({ message: "Failed to fetch articles" });
+  }
+});
+
+/**
+ * GET /api/employee/articles/:id
+ * Get a specific published article
+ */
+router.get("/articles/:id", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+    const articleId = Number.parseInt(req.params.id);
+
+    if (isNaN(articleId)) {
+      return res.status(400).json({ message: "Invalid article ID" });
+    }
+
+    const [article] = await db
+      .select()
+      .from(articles)
+      .where(
+        and(
+          eq(articles.id, articleId),
+          eq(articles.organizationId, orgId),
+          eq(articles.published, true) // Only published articles
+        )
+      )
+      .limit(1);
+
+    if (!article) {
+      return res.status(404).json({ message: "Article not found or not published" });
+    }
+
+    res.json(article);
+  } catch (error: any) {
+    console.error("Error fetching article:", error);
+    res.status(500).json({ message: "Failed to fetch article" });
   }
 });
 
