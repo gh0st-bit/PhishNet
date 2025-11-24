@@ -803,6 +803,113 @@ router.get("/leaderboard", async (req: Request, res: Response) => {
 // ARTICLES ENDPOINTS
 // ========================================
 
+// ========================================
+// FLASHCARDS ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/employee/flashcard-decks
+ * Get all published flashcard decks with card counts
+ */
+router.get("/flashcard-decks", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+
+    // Get published decks with card counts
+    const decks = await db
+      .select({
+        id: flashcardDecks.id,
+        title: flashcardDecks.title,
+        description: flashcardDecks.description,
+        category: flashcardDecks.category,
+        cardCount: sql<number>`cast(count(${flashcards.id}) as integer)`,
+      })
+      .from(flashcardDecks)
+      .leftJoin(flashcards, eq(flashcards.deckId, flashcardDecks.id))
+      .where(
+        and(
+          eq(flashcardDecks.organizationId, orgId),
+          eq(flashcardDecks.published, true)
+        )
+      )
+      .groupBy(
+        flashcardDecks.id,
+        flashcardDecks.title,
+        flashcardDecks.description,
+        flashcardDecks.category
+      )
+      .orderBy(flashcardDecks.title);
+
+    // Prevent caching to ensure published status changes are reflected immediately
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.json(decks);
+  } catch (error: any) {
+    console.error("Error fetching flashcard decks:", error);
+    res.status(500).json({ message: "Failed to fetch flashcard decks" });
+  }
+});
+
+/**
+ * GET /api/employee/flashcard-decks/:id/cards
+ * Get all cards for a specific published deck
+ */
+router.get("/flashcard-decks/:id/cards", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+    const deckId = Number.parseInt(req.params.id);
+
+    if (isNaN(deckId)) {
+      return res.status(400).json({ message: "Invalid deck ID" });
+    }
+
+    // Verify deck exists and is published
+    const [deck] = await db
+      .select()
+      .from(flashcardDecks)
+      .where(
+        and(
+          eq(flashcardDecks.id, deckId),
+          eq(flashcardDecks.organizationId, orgId),
+          eq(flashcardDecks.published, true)
+        )
+      )
+      .limit(1);
+
+    if (!deck) {
+      return res.status(404).json({ message: "Deck not found or not published" });
+    }
+
+    // Get all cards for this deck, ordered by orderIndex
+    const cards = await db
+      .select()
+      .from(flashcards)
+      .where(eq(flashcards.deckId, deckId))
+      .orderBy(flashcards.orderIndex);
+
+    console.log(`[FLASHCARDS] Deck ${deckId}: Found ${cards.length} cards`);
+    console.log('[FLASHCARDS] Cards data:', JSON.stringify(cards, null, 2));
+
+    // Prevent caching to ensure card updates are reflected immediately
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.json(cards);
+  } catch (error: any) {
+    console.error("Error fetching flashcards:", error);
+    res.status(500).json({ message: "Failed to fetch flashcards" });
+  }
+});
+
+// ========================================
+// ARTICLES ENDPOINTS
+// ========================================
+
 /**
  * GET /api/employee/articles
  * Get all published articles for the employee's organization

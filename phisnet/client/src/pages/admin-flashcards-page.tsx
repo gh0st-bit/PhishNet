@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import AppLayout from "@/components/layout/app-layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -74,9 +74,21 @@ export default function AdminFlashcardsPage() {
    const [deckFormErrors, setDeckFormErrors] = useState<string[]>([]);
    const [cardFormErrors, setCardFormErrors] = useState<string[]>([]);
 
+  // Ref for cards section
+  const cardsRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to cards when deck is selected
+  useEffect(() => {
+    if (selectedDeck && cardsRef.current) {
+      cardsRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [selectedDeck]);
+
   // Decks query with pagination
   const { data: deckData, isLoading: decksLoading, error: decksError } = useQuery<PaginatedDecksResponse>({
     queryKey: ["/api/admin/flashcard-decks", { search: searchTerm, category: categoryFilter, page, pageSize }],
+    staleTime: 0, // Always fetch fresh data
+    gcTime: 0, // Don't cache
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
@@ -92,6 +104,8 @@ export default function AdminFlashcardsPage() {
   // Selected deck with cards
   const { data: deckDetailData, isLoading: deckDetailLoading } = useQuery<{ deck: FlashcardDeck; cards: Flashcard[] } | null>({
     queryKey: selectedDeck ? ["/api/admin/flashcard-decks", selectedDeck.id] : ["deck-none"],
+    staleTime: 0, // Always fetch fresh data
+    gcTime: 0, // Don't cache
     queryFn: async () => {
       if (!selectedDeck) return null;
       const res = await apiRequest("GET", `/api/admin/flashcard-decks/${selectedDeck.id}`);
@@ -104,29 +118,66 @@ export default function AdminFlashcardsPage() {
   // Mutations
   const createDeckMutation = useMutation({
     mutationFn: async (data: DeckFormData) => {
-      const res = await apiRequest("POST", "/api/admin/flashcard-decks", data);
-      if (!res.ok) throw new Error("Failed to create deck");
+      // Clean up data - send undefined instead of empty string for description
+      const payload = {
+        title: data.title.trim(),
+        category: data.category.trim(),
+        description: data.description?.trim() || undefined,
+      };
+      const res = await apiRequest("POST", "/api/admin/flashcard-decks", payload);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: "Failed to create deck" }));
+        throw new Error(errorData.message || "Failed to create deck");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/flashcard-decks"] });
+      // Also invalidate notifications to show the new notification immediately
+      queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/notifications/unread-count'] });
+      toast({
+        title: "✓ Deck Created",
+        description: "Flashcard deck created successfully.",
+      });
       setIsDeckDialogOpen(false);
       resetDeckForm();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create deck. Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
   const updateDeckMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: DeckFormData }) => {
       const res = await apiRequest("PUT", `/api/admin/flashcard-decks/${id}`, data);
-      if (!res.ok) throw new Error("Failed to update deck");
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: "Failed to update deck" }));
+        throw new Error(errorData.message || "Failed to update deck");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/flashcard-decks"] });
       if (selectedDeck) queryClient.invalidateQueries({ queryKey: ["/api/admin/flashcard-decks", selectedDeck.id] });
+      toast({
+        title: "✓ Deck Updated",
+        description: "Changes saved successfully.",
+      });
       setIsDeckDialogOpen(false);
       setEditingDeck(null);
       resetDeckForm();
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update deck. Please try again.",
+        variant: "destructive",
+      });
     },
   });
 
@@ -399,7 +450,7 @@ export default function AdminFlashcardsPage() {
         </Card>
 
         {selectedDeck && (
-          <Card className="p-4 space-y-4">
+          <Card ref={cardsRef} className="p-4 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Deck: {selectedDeck.title}</h2>
               {isAdmin && <Button size="sm" onClick={() => { resetCardForm(); setEditingCard(null); setIsCardDialogOpen(true); }}>Add Card</Button>}

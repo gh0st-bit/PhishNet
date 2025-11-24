@@ -23,9 +23,10 @@ import {
   GraduationCap,
   Trophy,
   UserPlus,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Logo } from "@/components/common/logo";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -41,11 +42,28 @@ interface NavigationItem {
 export default function Sidebar() {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [expandedItems, setExpandedItems] = useState<string[]>(['Employee Portal']);
   const { user } = useAuth();
 
   const isAdmin = user?.isAdmin;
   const isEmployee = !user?.isAdmin;
+
+  // Initialize expandedItems based on current location
+  const [expandedItems, setExpandedItems] = useState<string[]>(() => {
+    const initial = ['Employee Portal'];
+    const contentPaths = [
+      '/admin/content/articles',
+      '/admin/content/videos',
+      '/admin/content/flashcards',
+      '/admin/content/mcqs'
+    ];
+    
+    const isOnContentPage = contentPaths.some(path => location.startsWith(path));
+    if (isOnContentPage) {
+      initial.push('Content');
+    }
+    
+    return initial;
+  });
 
   const toggleExpanded = (name: string) => {
     setExpandedItems(prev => 
@@ -82,7 +100,6 @@ export default function Sidebar() {
       adminOnly: true,
       children: [
         { name: "Articles", href: "/admin/content/articles", icon: <FileText className="h-4 w-4" /> },
-        { name: "Blogs", href: "/admin/content/blogs", icon: <FileText className="h-4 w-4" /> },
         { name: "Videos", href: "/admin/content/videos", icon: <FolderOpen className="h-4 w-4" /> },
         { name: "Flashcards", href: "/admin/content/flashcards", icon: <BookOpen className="h-4 w-4" /> },
         { name: "MCQs", href: "/admin/content/mcqs", icon: <HelpCircle className="h-4 w-4" /> },
@@ -172,6 +189,12 @@ export default function Sidebar() {
           name: "Articles", 
           href: "/employee/articles", 
           icon: <FileText className="h-4 w-4" />,
+          userOnly: true
+        },
+        { 
+          name: "Flashcards", 
+          href: "/employee/flashcards", 
+          icon: <Layers className="h-4 w-4" />,
           userOnly: true
         },
         { 
@@ -285,7 +308,6 @@ export default function Sidebar() {
                               <Link
                                 key={child.name}
                                 href={child.href!}
-                                onClick={() => setMobileOpen(false)}
                               >
                                 <div
                                   className={cn(

@@ -97,17 +97,20 @@ export class NotificationService {
   static async createOrganizationNotification(notification: any) {
     // Create notification for all users in organization
     try {
+      console.log(`📢 Creating organization notification for org ${notification.organizationId}, type: ${notification.type}`);
       const usersResult = await pool.query(
         'SELECT id FROM users WHERE organization_id = $1',
         [notification.organizationId]
       );
+      
+      console.log(`👥 Found ${usersResult.rows.length} users in organization ${notification.organizationId}`);
       
       const notifications = [];
       for (const user of usersResult.rows) {
         // Check if the user has enabled this type of notification
         const shouldNotify = await this.shouldNotify(user.id, notification.type);
         if (!shouldNotify) {
-          console.log(`Organization notification of type ${notification.type} skipped for user ${user.id} based on preferences`);
+          console.log(`⏭️ Organization notification of type ${notification.type} skipped for user ${user.id} based on preferences`);
           continue;
         }
         
@@ -118,12 +121,14 @@ export class NotificationService {
         
         if (notif) {
           notifications.push(notif);
+          console.log(`✅ Created notification for user ${user.id}`);
         }
       }
       
+      console.log(`📬 Total notifications created: ${notifications.length}`);
       return notifications;
     } catch (error) {
-      console.error("Error creating organization notification:", error);
+      console.error("❌ Error creating organization notification:", error);
       throw error;
     }
   }
@@ -233,6 +238,11 @@ export class NotificationService {
 
         case 'invite_accepted':
           return preferences.inviteDashboard !== false; // default true
+        
+        case 'flashcard':
+        case 'article':
+        case 'training':
+          return true; // Always show training content notifications
           
         default:
           return true; // Default to showing notifications

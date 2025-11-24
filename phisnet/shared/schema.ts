@@ -1114,7 +1114,8 @@ export const createArticleRequestSchema = z.object({
 export const insertFlashcardDeckSchema = createInsertSchema(flashcardDecks, {
   title: z.string().min(1, "Title is required"),
   category: z.string().min(1, "Category is required"),
-}).omit({ id: true, createdAt: true });
+  description: z.string().optional().nullable(),
+}).omit({ id: true, createdAt: true, organizationId: true, createdBy: true, published: true });
 
 export const updateFlashcardDeckSchema = insertFlashcardDeckSchema.partial();
 
@@ -1122,7 +1123,7 @@ export const insertFlashcardSchema = createInsertSchema(flashcards, {
   frontContent: z.string().min(1, "Front content is required"),
   backContent: z.string().min(1, "Back content is required"),
   orderIndex: z.number().int().min(0).optional(),
-}).omit({ id: true });
+}).omit({ id: true, deckId: true }); // deckId comes from URL parameter
 
 export const updateFlashcardSchema = insertFlashcardSchema.partial();
 

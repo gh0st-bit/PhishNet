@@ -6,12 +6,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Edit, Trash2, Search, FileText, PenLine, Eye, EyeOff } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { articleFormSchema } from "@/validation/adminSchemas";
+import { Loader2, Edit, Trash2, Search, FileText, PenLine, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -32,16 +28,6 @@ interface Article {
   updatedAt: string;
 }
 
-interface ArticleFormData {
-  title: string;
-  content: string;
-  excerpt: string;
-  category: string;
-  tags: string; // comma-separated in form
-  thumbnailUrl: string;
-  readTimeMinutes: number;
-}
-
 interface PaginatedArticlesResponse {
   articles: Article[];
   page: number;
@@ -56,22 +42,10 @@ export default function AdminArticlesPage() {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingArticle, setEditingArticle] = useState<Article | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 12;
-  const [formData, setFormData] = useState<ArticleFormData>({
-    title: "",
-    content: "",
-    excerpt: "",
-    category: "general",
-    tags: "",
-    thumbnailUrl: "",
-    readTimeMinutes: 5,
-  });
-  const [articleFormErrors, setArticleFormErrors] = useState<string[]>([]);
 
   // Fetch articles with pagination
   const { data, isLoading, error } = useQuery<PaginatedArticlesResponse>({
@@ -86,42 +60,6 @@ export default function AdminArticlesPage() {
       const res = await apiRequest("GET", `/api/admin/articles?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch articles");
       return res.json();
-    },
-  });
-
-  // Create mutation
-  const createMutation = useMutation({
-    mutationFn: async (fd: ArticleFormData) => {
-      const res = await apiRequest("POST", "/api/admin/articles", {
-        ...fd,
-        tags: fd.tags.split(",").map(t => t.trim()).filter(Boolean),
-      });
-      if (!res.ok) throw new Error("Failed to create article");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/articles"] });
-      setIsDialogOpen(false);
-      resetForm();
-      setPage(1);
-    },
-  });
-
-  // Update mutation
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: ArticleFormData }) => {
-      const res = await apiRequest("PUT", `/api/admin/articles/${id}`, {
-        ...data,
-        tags: data.tags.split(",").map(t => t.trim()).filter(Boolean),
-      });
-      if (!res.ok) throw new Error("Failed to update article");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/articles"] });
-      setIsDialogOpen(false);
-      setEditingArticle(null);
-      resetForm();
     },
   });
 
@@ -162,55 +100,6 @@ export default function AdminArticlesPage() {
     },
   });
 
-  const resetForm = () => {
-    setFormData({
-      title: "",
-      content: "",
-      excerpt: "",
-      category: "general",
-      tags: "",
-      thumbnailUrl: "",
-      readTimeMinutes: 5,
-    });
-  };
-
-  const handleEdit = (article: Article) => {
-    setEditingArticle(article);
-    setFormData({
-      title: article.title,
-      content: article.content,
-      excerpt: article.excerpt || "",
-      category: article.category,
-      tags: article.tags.join(", "),
-      thumbnailUrl: article.thumbnailUrl || "",
-      readTimeMinutes: article.readTimeMinutes || 5,
-    });
-    setArticleFormErrors([]);
-    setIsDialogOpen(true);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setArticleFormErrors([]);
-    const parsed = articleFormSchema.safeParse({
-      title: formData.title,
-      content: formData.content,
-      excerpt: formData.excerpt || undefined,
-      category: formData.category,
-      tags: formData.tags.split(",").map(t => t.trim()).filter(Boolean),
-      readTimeMinutes: formData.readTimeMinutes || 0,
-    });
-    if (!parsed.success) {
-      setArticleFormErrors(parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`));
-      return;
-    }
-    if (editingArticle) {
-      updateMutation.mutate({ id: editingArticle.id, data: formData });
-    } else {
-      createMutation.mutate(formData);
-    }
-  };
-
   const handleDelete = (id: number, title: string) => {
     if (confirm(`Delete article "${title}"? This action cannot be undone.`)) {
       deleteMutation.mutate(id);
@@ -233,70 +122,9 @@ export default function AdminArticlesPage() {
           {isAdmin && (
             <div className="flex items-center gap-2">
               <Button onClick={() => navigate("/admin/content/articles/new")} size="lg" className="gap-2">
-                <PenLine className="h-4 w-4" /> Create with Rich Editor
+                <PenLine className="h-4 w-4" /> Create Article
               </Button>
-              <Dialog open={isDialogOpen} onOpenChange={o => { if (!o) { setIsDialogOpen(false); setEditingArticle(null); setArticleFormErrors([]); } }}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="lg" onClick={() => { resetForm(); setEditingArticle(null); setIsDialogOpen(true); }}>
-                    <Plus className="h-4 w-4 mr-2" /> Quick Add (Plain Text)
-                  </Button>
-                </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>{editingArticle ? "Edit Article" : "Create Article"}</DialogTitle>
-                  <DialogDescription>Provide structured awareness content for employees.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {articleFormErrors.length > 0 && (
-                    <Alert variant="destructive">
-                      <AlertDescription className="space-y-1">
-                        {articleFormErrors.map(err => <div key={err}>{err}</div>)}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="title">Title</Label>
-                      <Input id="title" value={formData.title} onChange={e => setFormData(f => ({ ...f, title: e.target.value }))} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="category">Category</Label>
-                      <Input id="category" placeholder="e.g. phishing" value={formData.category} onChange={e => setFormData(f => ({ ...f, category: e.target.value }))} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="tags">Tags (comma separated)</Label>
-                      <Input id="tags" value={formData.tags} onChange={e => setFormData(f => ({ ...f, tags: e.target.value }))} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="readTime">Read Time (minutes)</Label>
-                      <Input id="readTime" type="number" min={1} value={formData.readTimeMinutes} onChange={e => setFormData(f => ({ ...f, readTimeMinutes: Number(e.target.value) }))} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="thumbnail">Thumbnail URL</Label>
-                      <Input id="thumbnail" value={formData.thumbnailUrl} onChange={e => setFormData(f => ({ ...f, thumbnailUrl: e.target.value }))} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="excerpt">Excerpt</Label>
-                      <Textarea id="excerpt" rows={2} value={formData.excerpt} onChange={e => setFormData(f => ({ ...f, excerpt: e.target.value }))} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="content">Content (Markdown)</Label>
-                      <Textarea id="content" rows={6} value={formData.content} onChange={e => setFormData(f => ({ ...f, content: e.target.value }))} required />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); setEditingArticle(null); }}>
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
-                      {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                      {editingArticle ? "Save Changes" : "Create"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          </div>
+            </div>
           )}
         </div>
 
@@ -379,7 +207,7 @@ export default function AdminArticlesPage() {
                         Publish
                       </Button>
                     )}
-                    <Button size="sm" variant="ghost" onClick={() => handleEdit(article)}><Edit className="h-4 w-4" /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => navigate(`/admin/content/articles/edit/${article.id}`)}><Edit className="h-4 w-4" /></Button>
                     <Button size="sm" variant="ghost" onClick={() => handleDelete(article.id, article.title)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 )}

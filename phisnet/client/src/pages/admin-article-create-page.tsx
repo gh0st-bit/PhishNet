@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import SunEditor from "suneditor-react";
 import "suneditor/dist/css/suneditor.min.css";
 import { Loader2 } from "lucide-react";
@@ -17,6 +19,7 @@ interface CreateArticlePayload {
   tags?: string[];
   thumbnailUrl?: string;
   readTimeMinutes?: number | null;
+  published: boolean;
 }
 
 export default function AdminArticleCreatePage() {
@@ -31,12 +34,13 @@ export default function AdminArticleCreatePage() {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent, published: boolean = true) {
     e.preventDefault();
-    setSaving(true); setError(null); setSuccess(null);
+    setSaving(true); setError(null);
     try {
       const payload: CreateArticlePayload = {
         title: form.title.trim(),
@@ -48,6 +52,7 @@ export default function AdminArticleCreatePage() {
           : undefined,
         thumbnailUrl: form.thumbnailUrl.trim() || undefined,
         readTimeMinutes: form.readTimeMinutes ? parseInt(form.readTimeMinutes, 10) : undefined,
+        published,
       };
 
       const res = await fetch("/api/admin/articles", {
@@ -59,10 +64,27 @@ export default function AdminArticleCreatePage() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.message || "Failed to create article");
       }
-      setSuccess("Article created successfully");
+      
+      // Invalidate notification queries to show new notification immediately
+      queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/notifications/unread-count'] });
+      
+      toast({
+        title: published ? "✓ Article Published" : "✓ Draft Saved",
+        description: published 
+          ? "Article created and published successfully."
+          : "Article saved as draft. You can publish it later from the articles page.",
+      });
+      
+      // Always redirect back to articles list after successful save
       setTimeout(() => navigate("/admin/content/articles"), 1200);
     } catch (err: any) {
       setError(err.message);
+      toast({
+        title: "Error",
+        description: err.message || "Failed to save article",
+        variant: "destructive",
+      });
     } finally {
       setSaving(false);
     }
@@ -108,11 +130,12 @@ export default function AdminArticleCreatePage() {
           <div>
             <label className="text-sm font-medium mb-2 block">Content *</label>
             <SunEditor
-              onChange={(content) => setForm({ ...form, content })}
+              onChange={(content) => setForm(prev => ({ ...prev, content }))}
               setContents={form.content}
               setOptions={{
                 height: 400,
-                resizeEnable: true,
+                resizeEnable: false,
+                showPathLabel: false,
                 font: ["Arial", "Verdana", "Times New Roman", "Courier"],
                 buttonList: [
                   ['undo', 'redo'],
@@ -128,15 +151,31 @@ export default function AdminArticleCreatePage() {
             />
           </div>
 
-          {error && <div className="text-sm text-red-600">{error}</div>}
-          {success && <div className="text-sm text-green-600">{success}</div>}
-
-          <div className="flex gap-3">
-            <Button type="submit" disabled={saving} className="gap-2">
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {saving ? 'Publishing...' : 'Publish Article'}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigate("/admin/content/articles")}
+              disabled={saving}
+            >
+              Cancel
             </Button>
-            <Button type="button" variant="outline" onClick={() => navigate('/admin/content/articles')}>Cancel</Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={(e) => handleSubmit(e, false)}
+              disabled={saving || !form.title.trim() || !form.category.trim()}
+            >
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Save as Draft
+            </Button>
+            <Button
+              type="submit"
+              disabled={saving || !form.title.trim() || !form.category.trim()}
+            >
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Publish Article
+            </Button>
           </div>
         </form>
       </Card>

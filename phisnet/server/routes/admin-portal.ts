@@ -4,6 +4,7 @@ import sanitizeHtml from "sanitize-html";
 import { db } from "../db";
 import { validateBody } from "../middleware/validation";
 import { isAuthenticated, isAdmin } from "../auth"; // optional guards if needed
+import { NotificationService } from "../services/notification-service";
 import {
   // Tables
   trainingModules,
@@ -1115,6 +1116,28 @@ router.post("/articles", validateBody(createArticleRequestSchema), async (req: R
       .values(articleData)
       .returning();
 
+    // Create notification for organization members
+    try {
+      console.log(`Creating article notification for org ${orgId}: "${newArticle.title}"`);
+      const notifications = await NotificationService.createOrganizationNotification({
+        organizationId: orgId,
+        type: 'article',
+        title: 'New Article Published',
+        message: `New article available: "${newArticle.title}"`,
+        priority: 'low',
+        actionUrl: '/employee/articles',
+        metadata: {
+          articleId: newArticle.id,
+          articleTitle: newArticle.title,
+          category: newArticle.category,
+        },
+      });
+      console.log(`✅ Created ${notifications?.length || 0} article notifications`);
+    } catch (notifError) {
+      console.error('❌ Failed to create article notification:', notifError);
+      // Don't fail the request if notification fails
+    }
+
     res.status(201).json({ article: newArticle });
   } catch (error: any) {
     console.error("Error creating article:", error);
@@ -1330,6 +1353,8 @@ router.get("/flashcard-decks", async (req: Request, res: Response) => {
       .limit(pageSize)
       .offset(offset);
 
+    // Prevent caching to ensure publish status changes are reflected immediately
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.json({
       decks: rows,
       ...buildPaginationMetadata(total, page, pageSize),
@@ -1374,6 +1399,8 @@ router.get("/flashcard-decks/:id", async (req: Request, res: Response) => {
       .where(eq(flashcards.deckId, deckId))
       .orderBy(flashcards.orderIndex);
 
+    // Prevent caching to ensure card updates are reflected immediately
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.json({ deck, cards });
   } catch (error: any) {
     console.error("Error fetching flashcard deck:", error);
@@ -1404,6 +1431,28 @@ router.post("/flashcard-decks", validateBody(insertFlashcardDeckSchema), async (
       .insert(flashcardDecks)
       .values(deckData)
       .returning();
+
+    // Create notification for organization members
+    try {
+      console.log(`Creating flashcard deck notification for org ${orgId}: "${newDeck.title}"`);
+      const notifications = await NotificationService.createOrganizationNotification({
+        organizationId: orgId,
+        type: 'flashcard',
+        title: 'New Flashcard Deck Created',
+        message: `A new flashcard deck "${newDeck.title}" has been added to your training library.`,
+        priority: 'medium',
+        actionUrl: '/employee/flashcards',
+        metadata: {
+          deckId: newDeck.id,
+          deckTitle: newDeck.title,
+          category: newDeck.category,
+        },
+      });
+      console.log(`✅ Created ${notifications?.length || 0} flashcard deck notifications`);
+    } catch (notifError) {
+      console.error('❌ Failed to create flashcard deck notification:', notifError);
+      // Don't fail the request if notification fails
+    }
 
     res.status(201).json({ deck: newDeck });
   } catch (error: any) {
