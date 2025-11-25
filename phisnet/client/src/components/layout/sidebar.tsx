@@ -24,6 +24,7 @@ import {
   Trophy,
   UserPlus,
   Layers,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -36,6 +37,7 @@ interface NavigationItem {
   icon: React.ReactNode;
   children?: NavigationItem[];
   adminOnly?: boolean;
+  orgAdminOnly?: boolean;
   userOnly?: boolean;
 }
 
@@ -45,11 +47,14 @@ export default function Sidebar() {
   const { user } = useAuth();
 
   const isAdmin = user?.isAdmin;
-  const isEmployee = !user?.isAdmin;
+  const isOrgAdmin = user?.roles?.includes("OrgAdmin");
+  // Treat org admins as distinct from employees so they cannot see
+  // or navigate to employee-only pages.
+  const isEmployee = !user?.isAdmin && !isOrgAdmin && user?.roles?.includes("User");
 
   // Initialize expandedItems based on current location
   const [expandedItems, setExpandedItems] = useState<string[]>(() => {
-    const initial = ['Employee Portal'];
+    const initial: string[] = [];
     const contentPaths = [
       '/admin/content/articles',
       '/admin/content/videos',
@@ -92,6 +97,12 @@ export default function Sidebar() {
       name: "Enrollment", 
       href: "/enrollment", 
       icon: <UserPlus className="h-5 w-5" />,
+      adminOnly: true
+    },
+    { 
+      name: "Manage Organizations", 
+      href: "/organization-management", 
+      icon: <Building2 className="h-5 w-5" />,
       adminOnly: true
     },
     {
@@ -164,6 +175,62 @@ export default function Sidebar() {
       href: "/users", 
       icon: <Shield className="h-5 w-5" />,
       adminOnly: true
+    },
+    
+    // Org Admin navigation (limited to their organization)
+    { 
+      name: "Dashboard", 
+      href: "/org-admin", 
+      icon: <BarChart3 className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Campaigns", 
+      href: "/org-admin/campaigns", 
+      icon: <Mail className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Templates", 
+      href: "/org-admin/templates", 
+      icon: <FolderOpen className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Landing Pages", 
+      href: "/org-admin/landing-pages", 
+      icon: <Layout className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "SMTP Profiles", 
+      href: "/org-admin/smtp-profiles", 
+      icon: <Send className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Enrollment", 
+      href: "/org-admin/enrollment", 
+      icon: <UserPlus className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Groups", 
+      href: "/org-admin/groups", 
+      icon: <Users className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Users", 
+      href: "/org-admin/users", 
+      icon: <Shield className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Reports", 
+      href: "/org-admin/reports", 
+      icon: <BarChart className="h-5 w-5" />,
+      orgAdminOnly: true
     },
     
     // Employee Portal (user-only)
@@ -259,6 +326,7 @@ export default function Sidebar() {
             {navigation.map((item) => {
               // Filter based on role
               if (item.adminOnly && !isAdmin) return null;
+              if (item.orgAdminOnly && !isOrgAdmin) return null;
               if (item.userOnly && !isEmployee) return null;
 
               const isExpanded = expandedItems.includes(item.name);
@@ -301,6 +369,7 @@ export default function Sidebar() {
                           {item.children?.map((child) => {
                             // Filter children based on role
                             if (child.adminOnly && !isAdmin) return null;
+                            if (child.orgAdminOnly && !isOrgAdmin) return null;
                             if (child.userOnly && !isEmployee) return null;
 
                             const isChildItemActive = location === child.href;

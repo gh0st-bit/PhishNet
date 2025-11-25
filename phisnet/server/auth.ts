@@ -6,6 +6,9 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { storage } from "./storage";
+import { db } from "./db";
+import { rolesSchema, userRolesSchema } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { User as SelectUser, userValidationSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/schema";
 import { z } from "zod";
 import { AuditService } from "./services/audit.service";
@@ -372,7 +375,7 @@ export function setupAuth(app: Express) {
 
       req.login(user, (loginErr) => {
         if (loginErr) return next(loginErr);
-        req.session.save((saveErr) => {
+        req.session.save(async (saveErr) => {
           if (saveErr) {
             console.error("Session save error:", saveErr);
             return next(saveErr);
@@ -388,8 +391,21 @@ export function setupAuth(app: Express) {
             resource: "auth",
             metadata: { email: user.email },
           }).catch((err) => console.error("[Audit] Failed to log login:", err));
-          const { password, ...userWithoutPassword } = user;
-          return res.status(200).json(userWithoutPassword);
+          
+          // Fetch roles before responding
+          try {
+            const rows = await db.select({ roleName: rolesSchema.name })
+              .from(userRolesSchema)
+              .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
+              .where(eq(userRolesSchema.userId, user.id));
+            const roles = rows.map((r) => r.roleName);
+            const { password, ...userWithoutPassword } = user;
+            return res.status(200).json({ ...userWithoutPassword, roles });
+          } catch (e) {
+            console.error("Failed to fetch roles on login:", e);
+            const { password, ...userWithoutPassword } = user;
+            return res.status(200).json({ ...userWithoutPassword, roles: [] });
+          }
         });
       });
     })(req, res, next);
@@ -451,7 +467,17 @@ export function setupAuth(app: Express) {
             action: 'user.login.2fa', resource: 'auth', metadata: { email: user.email }
           }).catch(()=>{});
           const { password, ...userWithoutPassword } = user;
-          res.status(200).json(userWithoutPassword);
+          try {
+            const rows = await db.select({ roleName: rolesSchema.name })
+              .from(userRolesSchema)
+              .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
+              .where(eq(userRolesSchema.userId, user.id));
+            const roles = rows.map(r => r.roleName);
+            res.status(200).json({ ...userWithoutPassword, roles });
+          } catch (e) {
+            console.error('Failed to fetch roles on 2FA login:', e);
+            res.status(200).json({ ...userWithoutPassword, roles: [] });
+          }
         });
       });
     } catch (e) {
@@ -485,11 +511,23 @@ export function setupAuth(app: Express) {
     });
   });
 
-  app.get("/api/user", (req, res) => {
+  app.get("/api/user", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
+    // Fetch user's roles from database
+    const userRoles = await db.select({
+      roleName: rolesSchema.name,
+      roleId: rolesSchema.id,
+    })
+    .from(userRolesSchema)
+    .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
+    .where(eq(userRolesSchema.userId, req.user.id));
+    
     const { password, ...userWithoutPassword } = req.user;
-    res.json(userWithoutPassword);
+    res.json({
+      ...userWithoutPassword,
+      roles: userRoles.map(r => r.roleName),
+    });
   });
 
   // Upload profile picture endpoint
@@ -844,6 +882,33 @@ export function isAdmin(req: Request, res: Response, next: NextFunction) {
     return res.status(403).json({ message: "Admin access required" });
   }
   next();
+}
+
+export async function isOrgAdminRequest(req: Request): Promise<boolean> {
+  if (!req.user || !req.user.organizationId) return false;
+  // Global admins are not treated as org admins here; they already have broader access
+  if (req.user.isAdmin) return false;
+
+  const rows = await db.select({ roleName: rolesSchema.name })
+    .from(userRolesSchema)
+    .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
+    .where(eq(userRolesSchema.userId, req.user.id));
+
+  return rows.some((r) => r.roleName === "OrgAdmin");
+}
+
+export async function isAdminOrOrgAdmin(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (req.user?.isAdmin) return next();
+    const orgAdmin = await isOrgAdminRequest(req);
+    if (!orgAdmin) {
+      return res.status(403).json({ message: "Admin or OrgAdmin access required" });
+    }
+    return next();
+  } catch (error) {
+    console.error("Role check failed:", error);
+    return res.status(500).json({ message: "Authorization check failed" });
+  }
 }
 
 export function isEmployee(req: Request, res: Response, next: NextFunction) {

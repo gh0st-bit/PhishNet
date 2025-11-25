@@ -15,7 +15,7 @@ import {
   passwordResetTokens,
   userInvites
 } from "@shared/schema";
-import { eq, and, count, sql, gte } from "drizzle-orm";
+import { eq, and, count, sql, gte, desc } from "drizzle-orm";
 import crypto from "node:crypto";
 
 // Add missing type imports
@@ -329,7 +329,11 @@ export class DatabaseStorage implements IStorage {
   }
   
   async listOrganizations(): Promise<Organization[]> {
-    return await db.select().from(organizations);
+    // Show newest organizations first for admin UX
+    return await db
+      .select()
+      .from(organizations)
+      .orderBy(desc(organizations.createdAt), desc(organizations.id));
   }
   
   // Group methods
@@ -380,6 +384,31 @@ export class DatabaseStorage implements IStorage {
     );
     
     return groupsWithCounts;
+  }
+  
+  /**
+   * Helper to determine if a group is used by any campaigns.
+   * Returns counts and active campaign details so the API can
+   * block deletion with a helpful error message.
+   */
+  async getGroupUsage(groupId: number): Promise<{
+    isInUse: boolean;
+    totalCampaigns: number;
+    activeCampaigns: { id: number; name: string; status: string }[];
+  }> {
+    const campaignsForGroup = await db
+      .select({ id: campaigns.id, name: campaigns.name, status: campaigns.status })
+      .from(campaigns)
+      .where(eq(campaigns.targetGroupId, groupId));
+
+    const totalCampaigns = campaignsForGroup.length;
+    const activeCampaigns = campaignsForGroup.filter(c => (c.status || '').toString().toLowerCase() === 'active');
+
+    return {
+      isInUse: totalCampaigns > 0,
+      totalCampaigns,
+      activeCampaigns,
+    };
   }
   
   // Target methods
@@ -829,6 +858,19 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userInvites.id, id))
       .returning();
     return result.length > 0;
+  }
+
+  /**
+   * Delete all invites for a given email address.
+   * Used when an Org Admin user is removed so any leftover org-admin invites
+   * for that email no longer appear in the Invites tab.
+   */
+  async deleteUserInvitesByEmail(email: string): Promise<number> {
+    const result = await db
+      .delete(userInvites)
+      .where(eq(userInvites.email, email.toLowerCase()))
+      .returning({ id: userInvites.id });
+    return result.length;
   }
 
   async resendUserInvite(id: number, newToken: string, newExpiry: Date): Promise<UserInvite | undefined> {

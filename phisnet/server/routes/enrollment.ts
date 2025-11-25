@@ -2,7 +2,9 @@ import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
 import { isAdmin, isAuthenticated, hashPassword } from "../auth";
 import { storage } from "../storage";
-import { acceptInviteSchema } from "@shared/schema";
+import { db } from "../db";
+import { acceptInviteSchema, rolesSchema, userRolesSchema } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { sendEnrollmentInviteEmail, sendInviteAcceptedEmail } from "../email";
 import { NotificationService } from "../services/notification-service";
@@ -193,7 +195,8 @@ export function registerEnrollmentRoutes(app: Express) {
       
       const invite = await storage.findUserInviteByToken(token);
       if (!invite) return res.status(400).send(`<p>Invalid or expired invite.</p>`);
-      if (invite.acceptedAt) return res.status(200).send(`<p>Invite already accepted. You can log in now. <a href="/auth">Go to Login</a></p>`);
+      const loginUrl = invite.roleType === "OrgAdmin" ? "/auth?mode=org-admin" : "/auth";
+      if (invite.acceptedAt) return res.status(200).send(`<p>Invite already accepted. You can log in now. <a href="${loginUrl}">Go to Login</a></p>`);
       if (new Date() > new Date(invite.expiresAt)) return res.status(400).send(`<p>Invite expired. Ask your admin to re-invite you.</p>`);
 
       // Accept form with styling similar to app UI
@@ -340,7 +343,7 @@ export function registerEnrollmentRoutes(app: Express) {
             <input id="password" name="password" type="password" minlength="8" required placeholder="Minimum 8 characters" />
           </div>
           <button type="submit">Activate Account</button>
-          <div class="footer">Already have an account? You can close this tab.</div>
+          <div class="footer">Already have an account? <a href="${loginUrl}" style="color: #FF8000; text-decoration: none;">Go to Login</a></div>
         </form>
       </div>
     </div>
@@ -381,8 +384,15 @@ export function registerEnrollmentRoutes(app: Express) {
       if (invite.acceptedAt) return res.status(400).json({ message: "This invite has already been used" });
       if (new Date() > new Date(invite.expiresAt)) return res.status(400).json({ message: "Invite expired" });
 
-      // If a user already exists with this email in same org, just activate and update basic info
+      // If a user already exists with this email
       const existing = await storage.getUserByEmail(invite.email);
+      if (existing && existing.organizationId !== invite.organizationId) {
+        // Single-tenant user model: cannot move user between organizations automatically.
+        return res.status(409).json({ 
+          message: "Email already registered under a different organization. Contact an administrator." 
+        });
+      }
+
       if (existing && existing.organizationId === invite.organizationId) {
         await storage.updateUser(existing.id, {
           firstName: body.firstName,
@@ -391,20 +401,79 @@ export function registerEnrollmentRoutes(app: Express) {
           isActive: true,
           updatedAt: new Date(),
         } as any);
-      } else {
-        // Create a new employee user (non-admin)
-        await storage.createUser({
-          email: invite.email,
-          password: await hashPassword(body.password),
-          firstName: body.firstName,
-          lastName: body.lastName,
-          isAdmin: false,
-          isActive: true,
-          organizationId: invite.organizationId,
-          organizationName: (await storage.getOrganization(invite.organizationId))?.name || "None",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        } as any);
+        
+        // If this is an Admin invite, elevate to global admin
+        if (invite.roleType === "Admin") {
+          try { await storage.updateUser(existing.id, { isAdmin: true } as any); } catch (e) { console.warn('Admin elevation failed:', e); }
+        }
+
+        // If this is an org-admin invite, assign the role
+        if (invite.roleType === "OrgAdmin") {
+          const [orgAdminRole] = await db.select({ id: rolesSchema.id })
+            .from(rolesSchema)
+            .where(eq(rolesSchema.name, 'OrgAdmin'));
+          
+          if (orgAdminRole) {
+            try {
+              await db.insert(userRolesSchema).values({
+                userId: existing.id,
+                roleId: orgAdminRole.id,
+              });
+              console.log(`✅ Assigned OrgAdmin role to existing user ${existing.id}`);
+            } catch (e: any) {
+              // Check if it's a duplicate key error (already has the role)
+              if (e?.code !== '23505') {
+                console.error('Role assignment failed:', e);
+              }
+            }
+          } else {
+            console.error('❌ OrgAdmin role not found in database!');
+          }
+        }
+      } else if (!existing) {
+        try {
+          // Create a new user (employee or org-admin based on invite type)
+          const newUser = await storage.createUser({
+            email: invite.email,
+            password: await hashPassword(body.password),
+            firstName: body.firstName,
+            lastName: body.lastName,
+            isAdmin: invite.roleType === 'Admin',
+            isActive: true,
+            organizationId: invite.organizationId,
+            organizationName: (await storage.getOrganization(invite.organizationId))?.name || "None",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          } as any);
+
+          // If this is an org-admin invite, assign the OrgAdmin role
+          if (invite.roleType === "OrgAdmin") {
+            const [orgAdminRole] = await db.select({ id: rolesSchema.id })
+              .from(rolesSchema)
+              .where(eq(rolesSchema.name, 'OrgAdmin'));
+            
+            if (orgAdminRole) {
+              try {
+                await db.insert(userRolesSchema).values({
+                  userId: newUser.id,
+                  roleId: orgAdminRole.id,
+                });
+                console.log(`✅ Assigned OrgAdmin role to new user ${newUser.id}`);
+              } catch (e: any) {
+                if (e?.code !== '23505') {
+                  console.error('Role assignment failed:', e);
+                }
+              }
+            } else {
+              console.error('❌ OrgAdmin role not found in database!');
+            }
+          }
+        } catch (createErr: any) {
+          if (createErr?.code === '23505') {
+            return res.status(409).json({ message: 'Email already registered. Contact an administrator.' });
+          }
+          throw createErr;
+        }
       }
 
       await storage.markUserInviteAccepted(invite.id);
@@ -444,6 +513,8 @@ export function registerEnrollmentRoutes(app: Express) {
       }
 
       // Respond with success and a styled page + link to login
+      const inviteForLink = await storage.findUserInviteByToken(body.token);
+      const successLoginUrl = inviteForLink?.roleType === 'OrgAdmin' ? '/auth?mode=org-admin' : '/auth';
       return res.status(200).send(`<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -551,7 +622,7 @@ export function registerEnrollmentRoutes(app: Express) {
         <div class="pill">Account Activated</div>
         <h1>You're all set!</h1>
         <p class="subtitle">Your account has been activated. You can now sign in using your new password.</p>
-        <a href="/auth" class="button">Go to Login</a>
+        <a href="${successLoginUrl}" class="button">Go to Login</a>
       </div>
     </div>
   </body>

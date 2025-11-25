@@ -89,7 +89,21 @@ export function registerGroupRoutes(app: Express) {
       if (group.organizationId !== req.user.organizationId) {
         return res.status(403).json({ message: "Access denied" });
       }
-      
+
+      // Check if group is used in any campaigns and block deletion if so
+      try {
+        const activeUsage = await storage.getGroupUsage?.(groupId);
+        if (activeUsage && activeUsage.isInUse) {
+          return res.status(400).json({
+            error: "GROUP_IN_USE",
+            message: "This group is used in one or more campaigns and cannot be deleted.",
+            details: activeUsage,
+          });
+        }
+      } catch (usageError) {
+        console.warn("Group usage check failed, continuing with delete:", usageError);
+      }
+
       await storage.deleteGroup(groupId);
       res.status(204).send();
     } catch (error) {

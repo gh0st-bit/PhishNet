@@ -76,6 +76,7 @@ export const userInvites = pgTable("user_invites", {
   organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   invitedByUserId: integer("invited_by_user_id").references(() => users.id, { onDelete: 'set null' }),
   token: varchar("token", { length: 128 }).notNull().unique(),
+  roleType: text("role_type").default("Employee"), // 'Employee' or 'OrgAdmin'
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -470,7 +471,7 @@ export const DEFAULT_ROLE_PERMISSIONS = {
 };
 
 // Export TypeScript types
-export type User = typeof users.$inferSelect;
+export type User = typeof users.$inferSelect & { roles?: string[] };
 export type InsertUser = typeof users.$inferInsert;
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = typeof organizations.$inferInsert;
@@ -1133,6 +1134,35 @@ export const DEFAULT_ROLES = [
     name: "Admin",
     description: "Full system access and user management",
     permissions: ["all"]
+  },
+  {
+    name: "OrgAdmin",
+    description: "Organization-scoped admin for campaigns and settings",
+    permissions: [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.DASHBOARD_ANALYTICS,
+      PERMISSIONS.CAMPAIGNS_VIEW,
+      PERMISSIONS.CAMPAIGNS_CREATE,
+      PERMISSIONS.CAMPAIGNS_EDIT,
+      PERMISSIONS.CAMPAIGNS_DELETE,
+      PERMISSIONS.CAMPAIGNS_LAUNCH,
+      PERMISSIONS.GROUPS_VIEW,
+      PERMISSIONS.GROUPS_CREATE,
+      PERMISSIONS.GROUPS_EDIT,
+      PERMISSIONS.GROUPS_DELETE,
+      PERMISSIONS.TEMPLATES_VIEW,
+      PERMISSIONS.TEMPLATES_CREATE,
+      PERMISSIONS.TEMPLATES_EDIT,
+      PERMISSIONS.TEMPLATES_DELETE,
+      PERMISSIONS.SMTP_VIEW,
+      PERMISSIONS.SMTP_CREATE,
+      PERMISSIONS.SMTP_EDIT,
+      PERMISSIONS.SMTP_DELETE,
+      PERMISSIONS.REPORTS_VIEW,
+      PERMISSIONS.REPORTS_EXPORT,
+      PERMISSIONS.REPORTS_ANALYTICS,
+      PERMISSIONS.ORG_SETTINGS,
+    ]
   },
   {
     name: "Manager", 

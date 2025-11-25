@@ -21,6 +21,7 @@ import { registerAdminPortalRoutes } from './admin-portal';
 import { registerEnrollmentRoutes } from './enrollment';
 import { registerTwoFactorRoutes } from './two-factor';
 import { registerOrganizationRoutes } from './organization';
+import { registerOrganizationManagementRoutes } from './organization-management';
 
 /**
  * Register all modular routes
@@ -83,6 +84,18 @@ export function registerModularRoutes(app: Express) {
 
   // Enrollment / Invites routes
   registerEnrollmentRoutes(app);
+
+  // Organization Management routes (global admin only)
+  registerOrganizationManagementRoutes(app);
+
+  // Server-side redirect for unauthenticated org-admin entry point
+  app.get('/org-admin', (req, res, next) => {
+    if (!req.isAuthenticated || !req.isAuthenticated()) {
+      return res.redirect('/auth?mode=org-admin');
+    }
+    // Authenticated org-admin users handled by frontend router
+    return next();
+  });
 
   // Two-Factor Authentication routes
   registerTwoFactorRoutes(app);

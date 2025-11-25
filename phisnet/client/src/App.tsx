@@ -42,7 +42,17 @@ import AdminArticleCreatePage from "@/pages/admin-article-create-page";
 import AdminVideosPage from "@/pages/admin-videos-page";
 import AdminFlashcardsPage from "@/pages/admin-flashcards-page";
 import AdminMcqsPage from "@/pages/admin-mcqs-page";
+import OrgAdminDashboardPage from "@/pages/org-admin-dashboard-page";
+import OrgAdminCampaignsPage from "@/pages/org-admin-campaigns-page";
+import OrgAdminGroupsPage from "@/pages/org-admin-groups-page";
+import OrgAdminUsersPage from "@/pages/org-admin-users-page";
+import OrgAdminReportsPage from "@/pages/org-admin-reports-page";
+import OrgAdminEnrollmentPage from "@/pages/org-admin-enrollment-page";
+import OrgAdminTemplatesPage from "@/pages/org-admin-templates-page";
+import OrgAdminSmtpProfilesPage from "@/pages/org-admin-smtp-profiles-page";
+import OrgAdminLandingPagesPage from "@/pages/org-admin-landing-pages-page";
 import EnrollmentPage from "@/pages/enrollment-page";
+import OrganizationManagementPage from "@/pages/organization-management-page";
 import AcceptInvitePage from "@/pages/accept-invite-page";
 import SessionTimeoutWrapper from "@/components/session-timeout-wrapper";
 import { ProtectedRoute } from "./lib/protected-route";
@@ -59,6 +69,15 @@ function Router() {
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password/:token" component={ResetPasswordPage} />
       <Route path="/accept-invite/:token" component={AcceptInvitePage} />
+      <ProtectedRoute path="/org-admin" component={OrgAdminDashboardPage} />
+      <ProtectedRoute path="/org-admin/campaigns" component={OrgAdminCampaignsPage} />
+      <ProtectedRoute path="/org-admin/groups" component={OrgAdminGroupsPage} />
+      <ProtectedRoute path="/org-admin/users" component={OrgAdminUsersPage} />
+      <ProtectedRoute path="/org-admin/reports" component={OrgAdminReportsPage} />
+      <ProtectedRoute path="/org-admin/enrollment" component={OrgAdminEnrollmentPage} />
+      <ProtectedRoute path="/org-admin/templates" component={OrgAdminTemplatesPage} />
+      <ProtectedRoute path="/org-admin/smtp-profiles" component={OrgAdminSmtpProfilesPage} />
+      <ProtectedRoute path="/org-admin/landing-pages" component={OrgAdminLandingPagesPage} />
       <ProtectedRoute path="/" component={DashboardPage} />
       <ProtectedRoute path="/campaigns" component={CampaignsPage} />
       <ProtectedRoute path="/reconnaissance" component={ReconnaissancePage} />
@@ -70,6 +89,7 @@ function Router() {
       <ProtectedRoute path="/report-schedules" component={ReportSchedulesPage} />
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/enrollment" component={EnrollmentPage} />
+      <ProtectedRoute path="/organization-management" component={OrganizationManagementPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/profile" component={ProfilePage} />
       <ProtectedRoute path="/organization" component={OrganizationPage} />
@@ -138,6 +158,7 @@ function AppContent() {
         ) : (
           <Switch>
             <Route path="/auth" component={AuthPage} />
+            <Route path="/org-admin" component={AuthPage} />
             <Route path="/forgot-password" component={ForgotPasswordPage} />
             <Route path="/reset-password/:token" component={ResetPasswordPage} />
             <Route path="/accept-invite/:token" component={AcceptInvitePage} />

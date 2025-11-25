@@ -275,36 +275,19 @@ export default function OrganizationPage() {
           <CardContent>
             <TwoFactorSection user={user} />
 
-            <div className="flex items-center justify-between p-4 border rounded-md mb-4 bg-card/50">
+            <div className="flex items-center justify-between p-4 border rounded-md bg-card/50">
               <div className="flex items-start space-x-3">
                 <div className="mt-0.5">
                   <Building className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <div className="font-medium">Organization Name</div>
+                  <div className="font-medium">Organization Management</div>
                   <div className="text-sm text-muted-foreground max-w-lg">
-                    Change your organization name and settings.
+                    Manage your organization settings, including name, members, and access controls.
                   </div>
                 </div>
               </div>
               <ManageOrganizationButton disabled={!user?.isAdmin} currentName={orgName || ''} />
-            </div>
-
-            <div className="flex items-center justify-between p-4 border rounded-md bg-card/50">
-              <div className="flex items-start space-x-3">
-                <div className="mt-0.5">
-                  <UsersRound className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <div className="font-medium">User Invitations</div>
-                  <div className="text-sm text-muted-foreground max-w-lg">
-                    Invite new users to join your organization.
-                  </div>
-                </div>
-              </div>
-              <Button variant="outline" disabled={!user?.isAdmin}>
-                Invite Users
-              </Button>
             </div>
           </CardContent>
         </Card>
@@ -461,24 +444,29 @@ const ManageOrganizationButton: React.FC<{ disabled: boolean; currentName: strin
 
   return (
     <>
-      <Button variant="outline" disabled={disabled} onClick={() => setOpen(true)}>Manage</Button>
+      <Button variant="outline" disabled={disabled} onClick={() => setOpen(true)}>
+        Manage
+      </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Manage Organization</DialogTitle>
+            <DialogTitle>Organization Management</DialogTitle>
+            <DialogDescription>
+              Configure your organization settings and preferences
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium">Organization Name</label>
               <Input value={name} onChange={e => setName(e.target.value)} disabled={saving} placeholder="Enter organization name" />
-              <p className="text-xs text-muted-foreground mt-1">2–100 characters. Changes propagate to all users.</p>
+              <p className="text-xs text-muted-foreground mt-1">2–100 characters. Changes apply to all organization members.</p>
             </div>
             {error && <div className="text-sm text-red-600">{error}</div>}
-            {success && <div className="text-sm text-green-600">Name updated. Refreshing…</div>}
+            {success && <div className="text-sm text-green-600">✓ Organization name updated. Refreshing…</div>}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving || name.trim().length < 2}> {saving ? 'Saving…' : 'Save'} </Button>
+            <Button onClick={handleSave} disabled={saving || name.trim().length < 2}> {saving ? 'Saving…' : 'Save Changes'} </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

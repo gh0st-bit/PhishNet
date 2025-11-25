@@ -59,18 +59,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       return data;
     },
-    onSuccess: (data: any) => {
+    onSuccess: async (data: any) => {
       // Only update cache and redirect if we have a full user object (not just 2FA flags)
       if (data.id && data.email) {
+        // Ensure we have roles; if missing, fetch from /api/user to enrich
+        let enriched = data;
+        if (!Array.isArray(enriched.roles)) {
+          try {
+            const res = await apiRequest("GET", "/api/user");
+            if (res.ok) {
+              const userJson = await res.json();
+              enriched = { ...enriched, ...userJson };
+            }
+          } catch {
+            // ignore and proceed with available data
+          }
+        }
+
         // Update cache so /api/user query resolves immediately
-        queryClient.setQueryData(["/api/user"], data);
+        queryClient.setQueryData(["/api/user"], enriched);
         customToast.success({
           title: "Login successful",
-          description: `Welcome back, ${data.firstName} ${data.lastName}!`,
+          description: `Welcome back, ${enriched.firstName} ${enriched.lastName}!`,
         });
+        
+        // Redirect based on role precedence
+        const roles: string[] = Array.isArray(enriched.roles) ? enriched.roles : [];
+        const isGlobalAdmin = enriched.isAdmin || roles.includes("Admin");
+        const isOrgAdmin = roles.includes("OrgAdmin") && !isGlobalAdmin;
+        const isUser = roles.includes("User") || (!isGlobalAdmin && !isOrgAdmin);
+
+        let redirectPath = "/"; // Admin dashboard by default
+        if (isOrgAdmin) redirectPath = "/org-admin";
+        else if (isUser && !isGlobalAdmin) redirectPath = "/employee";
+        
         // Force a full reload to ensure session cookie is applied before protected route check
         // (avoids edge case where client-side navigation happens before browser commits cookie)
-        window.location.replace("/");
+        window.location.replace(redirectPath);
       }
     },
     onError: (error: Error) => {

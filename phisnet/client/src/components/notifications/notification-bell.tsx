@@ -44,7 +44,8 @@ export default function NotificationBell() {
       const response = await apiRequest('GET', '/api/notifications?limit=10');
       return await response.json();
     },
-    refetchInterval: 2000, // Refetch every 2 seconds for instant updates
+    refetchInterval: 30000, // Refetch every 30 seconds (reduced from 2s)
+    staleTime: 20000, // Consider data fresh for 20 seconds
   });
 
   // Fetch unread count
@@ -54,7 +55,8 @@ export default function NotificationBell() {
       const response = await apiRequest('GET', '/api/notifications/unread-count');
       return await response.json();
     },
-    refetchInterval: 2000, // Refetch every 2 seconds for instant updates
+    refetchInterval: 30000, // Refetch every 30 seconds (reduced from 2s)
+    staleTime: 20000, // Consider data fresh for 20 seconds
   });
 
   // Mark as read mutation

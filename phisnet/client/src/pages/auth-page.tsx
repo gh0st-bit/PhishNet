@@ -48,7 +48,9 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
   const { user, loginMutation, registerMutation } = useAuth();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+  // Wouter location excludes query string; capture search manually for mode detection
+  const search = typeof window !== 'undefined' ? window.location.search : '';
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [ssoEnabled, setSsoEnabled] = useState(false);
@@ -87,55 +89,17 @@ export default function AuthPage() {
   const [twoFactorSetupRequired, setTwoFactorSetupRequired] = useState(false);
   
   async function onLoginSubmit(data: LoginFormValues) {
-    try {
-      const res = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ email: data.email, password: data.password })
-      });
-      
-      const body = await res.json().catch(() => ({}));
-      
-      if (!res.ok) {
-        customToast.error({ title: 'Login Failed', description: body.message || 'Please check your credentials and try again' });
-        return;
+    loginMutation.mutate(
+      { email: data.email, password: data.password },
+      {
+        onError: (error) => {
+          customToast.error({
+            title: "Login Failed",
+            description: error.message || "Please check your credentials and try again",
+          });
+        },
       }
-      
-      // Handle 2FA setup requirement
-      if (body.requiresTwoFactorSetup) {
-        setTwoFactorSetupRequired(true);
-        customToast.info({ title: 'Two-Factor Setup Required', description: 'Scan the QR code and then enter a 6-digit code to activate 2FA.' });
-        return;
-      }
-      
-      // Handle 2FA verification requirement
-      if (body.requiresTwoFactor) {
-        setTwoFactorPending(true);
-        customToast.info({ title: 'Two-Factor Verification', description: 'Enter the current 6-digit code from your authenticator app to continue.' });
-        return;
-      }
-      
-      // Handle successful login without 2FA
-      if (body.id && body.email) {
-        customToast.success({ 
-          title: 'Login Successful', 
-          description: `Welcome back, ${body.firstName} ${body.lastName}!` 
-        });
-        
-        // Invalidate and refetch user data, then navigate
-        await queryClient.invalidateQueries({ queryKey: ['/api/user'] });
-        
-        // Small delay to ensure session cookie is set
-        setTimeout(() => {
-          window.location.href = '/';
-        }, 300);
-      } else {
-        customToast.error({ title: 'Login Failed', description: 'Unexpected response from server' });
-      }
-    } catch (err: any) {
-      customToast.error({ title: 'Login Failed', description: err.message || 'Unexpected error' });
-    }
+    );
   }
 
   async function checkSsoForEmail(email: string) {
@@ -209,6 +173,8 @@ export default function AuthPage() {
     });
   }
 
+  const isOrgAdminLogin = location.startsWith("/auth") && search.includes("mode=org-admin");
+
   return (
     <div className="min-h-screen flex bg-background">
       {/* Left column: Auth forms */}
@@ -222,10 +188,12 @@ export default function AuthPage() {
           </div>
 
           <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6 tabs-list">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="register">Register</TabsTrigger>
-            </TabsList>
+            {!isOrgAdminLogin && (
+              <TabsList className="grid w-full grid-cols-2 mb-6 tabs-list">
+                <TabsTrigger value="login">Login</TabsTrigger>
+                <TabsTrigger value="register">Register</TabsTrigger>
+              </TabsList>
+            )}
 
             <TabsContent value="login">
               <Card>
@@ -355,6 +323,7 @@ export default function AuthPage() {
               </Card>
             </TabsContent>
 
+            {!isOrgAdminLogin && (
             <TabsContent value="register">
               <Card>
                 <CardContent className="pt-6">
@@ -498,6 +467,7 @@ export default function AuthPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+            )}
           </Tabs>
         </div>
         <TwoFactorVerificationDialog 

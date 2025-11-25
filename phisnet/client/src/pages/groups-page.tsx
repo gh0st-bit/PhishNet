@@ -53,7 +53,8 @@ export default function GroupsPage() {
   const { data: groups = [], refetch: refetchGroups } = useGroups();
 
   const { data: targets, refetch: refetchTargets } = useQuery({
-    queryKey: ['/api/groups', selectedGroup?.id, 'targets'],
+    // Use a stable key; always refetch from network to avoid stale 304s
+    queryKey: ["groupTargets", selectedGroup?.id],
     enabled: !!selectedGroup,
     queryFn: async () => {
       if (!selectedGroup?.id) return [];
@@ -75,39 +76,21 @@ export default function GroupsPage() {
   // Add delete mutation for groups
   const deleteGroupMutation = useMutation({
     mutationFn: async (groupId: number) => {
+      console.log(`Attempting to delete group ID: ${groupId}`);
+
+      const response = await apiRequest('DELETE', `/api/groups/${groupId}`);
+
+      // For 204 No Content, just return a simple object
+      if (response.status === 204) {
+        return { success: true };
+      }
+
+      // For other statuses, try to parse JSON safely
       try {
-        console.log(`Attempting to delete group ID: ${groupId}`);
-        
-        // Create a direct fetch request without apiRequest helper
-        const response = await fetch(`/api/groups/${groupId}`, {
-          method: 'DELETE',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        // Handle successful response (204 No Content is expected)
-        if (response.status === 204 || response.ok) {
-          return { success: true };
-        }
-        
-        // Handle error response
-        let errorMessage = `Failed to delete group: ${response.statusText}`;
-        try {
-          const errorData = await response.json();
-          if (errorData && errorData.message) {
-            errorMessage = errorData.message;
-          }
-        } catch (parseError) {
-          // If response isn't valid JSON, use status text
-          console.error("Error parsing error response:", parseError);
-        }
-        
-        throw new Error(errorMessage);
-      } catch (error) {
-        console.error("Delete group error:", error);
-        throw error;
+        return await response.json();
+      } catch (e) {
+        // If backend returned HTML or empty body, still treat as success
+        return { success: response.ok };
       }
     },
     onSuccess: () => {
@@ -115,6 +98,8 @@ export default function GroupsPage() {
         title: "Group deleted",
         description: "The target group has been deleted successfully.",
       });
+      // Immediately refetch groups so the deleted group disappears without full reload
+      refetchGroups();
       queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
       
       // If the deleted group was selected, clear selection
@@ -127,9 +112,14 @@ export default function GroupsPage() {
     },
     onError: (error: any) => {
       console.error('Group deletion error:', error);
-      
-      if (error.error === 'ACTIVE_CAMPAIGNS') {
-        // Show special dialog for active campaigns
+
+      // New structured error from backend when group is used by campaigns
+      if (error?.error === 'GROUP_IN_USE' || error?.message === 'This group is used in one or more campaigns and cannot be deleted.') {
+        setActiveCampaignsError(error.details || {});
+        setShowActiveCampaignsDialog(true);
+        setDeleteDialogOpen(false);
+      } else if (error.error === 'ACTIVE_CAMPAIGNS') {
+        // Legacy shape
         setActiveCampaignsError(error);
         setShowActiveCampaignsDialog(true);
         setDeleteDialogOpen(false);
@@ -149,7 +139,16 @@ export default function GroupsPage() {
   const deleteTargetMutation = useMutation({
     mutationFn: async (targetId: number) => {
       const response = await apiRequest('DELETE', `/api/groups/${selectedGroup.id}/targets/${targetId}`);
-      return await response.json();
+
+      if (response.status === 204) {
+        return { success: true };
+      }
+
+      try {
+        return await response.json();
+      } catch (e) {
+        return { success: response.ok };
+      }
     },
     onSuccess: () => {
       toast({
@@ -157,6 +156,8 @@ export default function GroupsPage() {
         description: "The target has been deleted successfully.",
       });
       refetchTargets();
+      // Also refresh group counts so UI updates instantly
+      queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
     },
     onError: (error) => {
       toast({
@@ -180,12 +181,14 @@ export default function GroupsPage() {
   const handleViewGroup = (group: Group) => {
     setSelectedGroup(group);
     setShowTargetsModal(true);
-    // Note: targets will be automatically fetched by useQuery when selectedGroup changes
+    // Force a refetch so we always show the latest targets when switching group
+    refetchTargets();
   };
 
   // Updated delete with better error handling
   const handleDeleteGroup = (group: Group) => {
     setGroupToDelete(group);
+    setDeleteDialogOpen(true);
   };
 
   const confirmDeleteGroup = () => {
@@ -204,7 +207,12 @@ export default function GroupsPage() {
   };
 
   const handleDeleteTarget = (targetId: number) => {
-    deleteTargetMutation.mutate(targetId);
+    deleteTargetMutation.mutate(targetId, {
+      onSuccess: () => {
+        // Ensure we refetch immediately after the mutation resolves
+        refetchTargets();
+      },
+    });
   };
 
   const handleEditTarget = (target: Target) => {
@@ -397,7 +405,11 @@ export default function GroupsPage() {
           </DialogHeader>
           <GroupForm 
             group={selectedGroup} 
-            onClose={() => setIsCreatingGroup(false)} 
+            onClose={() => {
+              setIsCreatingGroup(false);
+              // Refresh groups list so new/updated group appears immediately
+              refetchGroups();
+            }} 
           />
         </DialogContent>
       </Dialog>
@@ -427,6 +439,8 @@ export default function GroupsPage() {
               setIsEditingTarget(false);
               setTargetToEdit(null);
               refetchTargets();
+              // Refresh group list (e.g., target counts) instantly
+              refetchGroups();
             }} 
           />
         </DialogContent>
@@ -443,6 +457,7 @@ export default function GroupsPage() {
             onClose={() => {
               setIsImportingCSV(false);
               refetchTargets();
+              refetchGroups();
             }} 
           />
         </DialogContent>

@@ -65,6 +65,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     await db.execute(sql`INSERT INTO roles (name, description, permissions)
       SELECT 'User', 'Basic user access', '["campaigns:read","reports:read"]'::jsonb
       WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name='User');`);
+    await db.execute(sql`INSERT INTO roles (name, description, permissions)
+      SELECT 'OrgAdmin', 'Organization-scoped admin for campaigns and settings',
+        '["dashboard:view","dashboard:analytics","campaigns:view","campaigns:create","campaigns:edit","campaigns:delete","campaigns:launch","groups:view","groups:create","groups:edit","groups:delete","templates:view","templates:create","templates:edit","templates:delete","smtp:view","smtp:create","smtp:edit","smtp:delete","reports:view","reports:export","reports:analytics","organization:settings"]'::jsonb
+      WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name='OrgAdmin');`);
     // Assign Admin role to any qualifying admin-style user lacking it
     await db.execute(sql`INSERT INTO user_roles (user_id, role_id)
       SELECT u.id, r.id
@@ -333,6 +337,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching targets:", error);
       res.status(500).json({ message: "Error fetching targets" });
+    }
+  });
+
+  app.delete("/api/groups/:groupId/targets/:targetId", isAuthenticated, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const groupId = Number.parseInt(req.params.groupId, 10);
+      const targetId = Number.parseInt(req.params.targetId, 10);
+
+      if (Number.isNaN(groupId) || Number.isNaN(targetId)) {
+        return res.status(400).json({ message: "Invalid group or target id" });
+      }
+
+      const group = await storage.getGroup(groupId);
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+
+      if (group.organizationId !== req.user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const target = await storage.getTarget(targetId);
+      if (!target || target.groupId !== groupId) {
+        return res.status(404).json({ message: "Target not found" });
+      }
+
+      if (target.organizationId !== req.user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await storage.deleteTarget(targetId);
+      return res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting target:", error);
+      return res.status(500).json({ message: "Error deleting target" });
     }
   });
 
