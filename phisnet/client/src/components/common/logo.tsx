@@ -7,7 +7,7 @@ interface LogoProps {
   className?: string;
   alt?: string;
 }
-
+// Logo component that adapts to light and dark themes
 export function Logo({ className = "h-6 w-6", alt = "PhishNet Logo" }: LogoProps) {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -16,7 +16,7 @@ export function Logo({ className = "h-6 w-6", alt = "PhishNet Logo" }: LogoProps
   useEffect(() => {
     setMounted(true);
   }, []);
-
+  // If not mounted, return a placeholder div
   if (!mounted) {
     // Return a placeholder to avoid hydration mismatch
     return <div className={className} />;

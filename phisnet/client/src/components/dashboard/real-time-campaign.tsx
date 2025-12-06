@@ -15,6 +15,7 @@ interface CampaignEvent {
   [key: string]: any;
 }
 
+// RealTimeCampaignWidget component
 export default function RealTimeCampaignWidget() {
   const { user } = useAuth();
   const orgId = user?.organizationId ?? null;
@@ -37,17 +38,21 @@ export default function RealTimeCampaignWidget() {
       transports: ["polling", "websocket"],
     });
 
+    // Save socket reference
     socketRef.current = socket;
 
+    // Handle socket events
     socket.on("connect", () => {
       setConnected(true);
       socket.emit("join-org", orgId);
     });
 
+    // Handle disconnection
     socket.on("disconnect", () => {
       setConnected(false);
     });
 
+    // Handle incoming campaign events
     socket.on("event", (evt: CampaignEvent) => {
       if (!evt || !evt.type) return;
       if (evt.type === "campaign.email_opened") setOpens((v) => v + 1);
@@ -55,6 +60,7 @@ export default function RealTimeCampaignWidget() {
       else if (evt.type === "campaign.form_submitted") setSubmissions((v) => v + 1);
     });
 
+    // Handle connection errors
     socket.on("connect_error", () => setConnected(false));
 
     return () => {

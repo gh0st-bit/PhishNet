@@ -8,26 +8,26 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Loader2 } from "lucide-react";
-
+//import { Textarea } from "@/components/ui/textarea";
 const targetSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   email: z.string().email("Please enter a valid email address"),
   position: z.string().optional(),
 });
-
+//type TargetFormValues = z.infer<typeof targetSchema>;
 type TargetFormValues = z.infer<typeof targetSchema>;
-
+//
 interface TargetFormProps {
   groupId: number;
   target?: any;
   onClose: () => void;
 }
-
+//
 export default function TargetForm({ groupId, target, onClose }: TargetFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+  //  
   const form = useForm<TargetFormValues>({
     resolver: zodResolver(targetSchema),
     defaultValues: target ? {
@@ -42,9 +42,9 @@ export default function TargetForm({ groupId, target, onClose }: TargetFormProps
       position: "",
     },
   });
-
+  //
   const isEditing = !!target;
-
+  //
   const mutation = useMutation({
     mutationFn: async (data: TargetFormValues) => {
       const url = isEditing 
@@ -156,3 +156,75 @@ export default function TargetForm({ groupId, target, onClose }: TargetFormProps
     </Form>
   );
 }
+
+
+// //
+//   isEditing ? "Update Group" : "Create Group"
+// )}
+//          </Button>
+//        </div>
+//      </form>
+//    </Form>
+//  );
+//}// import { zodResolver } from "@hookform/resolvers/zod";
+// import { useForm } from "react-hook-form";
+// import { z } from "zod";
+// import { useMutation, useQueryClient } from "@tanstack/react-query";
+// import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+// import { Input } from "@/components/ui/input";
+// import { Textarea } from "@/components/ui/textarea";
+// import { Button } from "@/components/ui/button";
+// import { useToast } from "@/hooks/use-toast";
+// import { apiRequest } from "@/lib/queryClient";
+// import { Loader2 } from "lucide-react";
+// const groupSchema = z.object({
+//   name: z.string().min(1, "Group name is required"),
+//   description: z.string().optional(),
+// });
+// type GroupFormValues = z.infer<typeof groupSchema>;
+// interface GroupFormProps {
+//   initialData?: any;
+//   onClose: () => void;
+// }
+// export default function GroupForm({ initialData, onClose }: GroupFormProps) {
+//   const { toast } = useToast();
+//   const queryClient = useQueryClient();
+//   const form = useForm<GroupFormValues>({
+//     resolver: zodResolver(groupSchema),
+//     defaultValues: initialData ? {
+//       name: initialData.name,
+//       description: initialData.description || "",
+//     } : {
+//       name: "",
+//       description: "",
+//     },
+//   });
+//   const isEditing = !!initialData;
+//   const mutation = useMutation({
+//     mutationFn: async (data: GroupFormValues) => {
+//       const url = isEditing    
+//         ? `/api/groups/${initialData.id}`
+//         : "/api/groups";
+//       const method = isEditing ? "PUT" : "POST";
+//       const res = await apiRequest(method, url, data);
+//       return await res.json();
+//     },
+//     onSuccess: () => {
+//       toast({
+//         title: `Group ${isEditing ? 'updated' : 'created'}`,
+//         description: `Your target group has been ${isEditing ? 'updated' : 'created'} successfully.`,
+//       });
+//       queryClient.invalidateQueries({ queryKey: ['/api/groups'] });
+//       onClose();
+//     },
+//     onError: (error) => {
+//       toast({
+//         title: `Error ${isEditing ? 'updating' : 'creating'} group`,
+//         description: error.message,
+//         variant: "destructive",
+//       });
+//     },
+//   });
+//   function onSubmit(data: GroupFormValues) {
+//     mutation.mutate(data);
+  

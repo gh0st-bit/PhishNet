@@ -2,15 +2,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useTheme } from "next-themes";
 
+// Define the shape of the data points
 interface DataPoint {
   date: string;
   rate: number;
 }
 
+// Define the props for the PhishingMetricsChart component
 interface PhishingMetricsChartProps {
   data?: DataPoint[];
 }
 
+// PhishingMetricsChart component
 export default function PhishingMetricsChart({ data }: PhishingMetricsChartProps) {
   const { theme } = useTheme();
   const isDark = theme === "dark";

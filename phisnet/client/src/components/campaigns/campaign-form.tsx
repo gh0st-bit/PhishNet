@@ -16,7 +16,7 @@ import {
   useTemplates, 
   useLandingPages 
 } from "@/hooks/useApi";
-
+// Define the schema for campaign form validation using zod
 const campaignSchema = z.object({
   name: z.string().min(1, "Campaign name is required"),
   targetGroupId: z.string().min(1, "Target group is required"),
@@ -26,18 +26,18 @@ const campaignSchema = z.object({
   scheduledAt: z.string().optional().or(z.literal('')),
   endDate: z.string().optional().or(z.literal('')),
 });
-
+// Infer the TypeScript type from the zod schema
 type CampaignFormValues = z.infer<typeof campaignSchema>;
-
+// Define the props for CampaignForm component
 interface CampaignFormProps {
   onClose: () => void;
 }
-
+// CampaignForm component for creating a new campaign
 export default function CampaignForm({ onClose }: CampaignFormProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
-  
+  // Fetch necessary data for form selects
   const { data: groups = [] } = useGroups();
   const { data: smtpProfiles = [] } = useSmtpProfiles();
   const { data: templatesResponse } = useTemplates();
@@ -46,7 +46,7 @@ export default function CampaignForm({ onClose }: CampaignFormProps) {
     ? templatesResponse 
     : (templatesResponse?.templates || []);
   const { data: landingPages = [] } = useLandingPages();
-
+  // Initialize the form with react-hook-form and zod validation
   const form = useForm<CampaignFormValues>({
     resolver: zodResolver(campaignSchema),
     defaultValues: {
@@ -59,7 +59,7 @@ export default function CampaignForm({ onClose }: CampaignFormProps) {
       endDate: "",
     },
   });
-
+  // Mutation for creating a new campaign
   const createMutation = useMutation({
     mutationFn: async (data: CampaignFormValues) => {
       setErrorDetails(null);
@@ -75,9 +75,9 @@ export default function CampaignForm({ onClose }: CampaignFormProps) {
         scheduledAt: data.scheduledAt && data.scheduledAt !== "" ? data.scheduledAt : null,
         endDate: data.endDate && data.endDate !== "" ? data.endDate : null,
       };
-      
+      // Debug log the formatted data
       console.log("Formatted campaign data:", formattedData);
-      
+      // Make the API request to create the campaign
       const res = await fetch("/api/campaigns", {
         method: "POST",
         headers: {
@@ -86,11 +86,11 @@ export default function CampaignForm({ onClose }: CampaignFormProps) {
         credentials: "include",
         body: JSON.stringify(formattedData),
       });
-      
+      // Handle non-OK responses
       if (!res.ok) {
         const errorData = await res.json();
         console.error("Campaign creation error:", errorData);
-        
+        //  Extract detailed validation errors if available
         if (errorData.errors && Array.isArray(errorData.errors)) {
           // Show detailed validation errors
           const errorDetails = errorData.errors.map((err: any) => 
@@ -98,7 +98,7 @@ export default function CampaignForm({ onClose }: CampaignFormProps) {
           ).join('\n');
           setErrorDetails(errorDetails);
         }
-        
+        // Throw error to be caught in onError
         throw new Error(errorData.message || "Failed to create campaign");
       }
       
@@ -121,12 +121,12 @@ export default function CampaignForm({ onClose }: CampaignFormProps) {
       });
     },
   });
-
+  // Handle form submission
   function onSubmit(data: CampaignFormValues) {
     console.log("Form values:", data);
     createMutation.mutate(data);
   }
-
+  // Render the campaign creation form
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">

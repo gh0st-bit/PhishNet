@@ -17,7 +17,7 @@ import {
   useTemplates, 
   useLandingPages 
 } from "@/hooks/useApi";
-
+// Define the schema for campaign form validation using zod
 const campaignSchema = z.object({
   name: z.string().min(1, "Campaign name is required"),
   targetGroupId: z.string().min(1, "Target group is required"),
@@ -27,14 +27,14 @@ const campaignSchema = z.object({
   scheduledAt: z.string().optional().or(z.literal('')),
   endDate: z.string().optional().or(z.literal('')),
 });
-
+// Infer the TypeScript type from the zod schema
 type CampaignFormValues = z.infer<typeof campaignSchema>;
-
+// Define the props for CampaignEditor component
 interface CampaignEditorProps {
   campaignId: number;
   onClose: () => void;
 }
-
+// CampaignEditor component for editing an existing campaign
 export default function CampaignEditor({ campaignId, onClose }: CampaignEditorProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -110,7 +110,7 @@ export default function CampaignEditor({ campaignId, onClose }: CampaignEditorPr
       form.clearErrors();
     }
   }, [campaign, form]);
-
+  // Mutation for updating the campaign
   const updateMutation = useMutation({
     mutationFn: async (data: CampaignFormValues) => {
       setErrorDetails(null);
@@ -129,26 +129,26 @@ export default function CampaignEditor({ campaignId, onClose }: CampaignEditorPr
       };
       
       console.log('Formatted data for API:', formattedData);
-      
+      // Make the API request to update the campaign
       const response = await apiRequest(
         "PUT", 
         `/api/campaigns/${campaignId}`, 
         formattedData
       );
-      
+      // Handle non-OK responses
       if (!response.ok) {
         const errorData = await response.json();
-        
+        // Extract detailed validation errors if available
         if (errorData.errors && Array.isArray(errorData.errors)) {
           const errorDetails = errorData.errors.map((err: any) => 
             `${err.path}: ${err.message}`
           ).join('\n');
           setErrorDetails(errorDetails);
         }
-        
+        // Throw error to be caught in onError
         throw new Error(errorData.message || "Failed to update campaign");
       }
-      
+      // Return the updated campaign data
       return await response.json();
     },
     onSuccess: () => {

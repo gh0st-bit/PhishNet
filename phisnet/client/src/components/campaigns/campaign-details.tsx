@@ -34,16 +34,15 @@ import {
   X
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { format, formatDistance, formatDistanceToNow, differenceInHours, differenceInDays, differenceInMinutes } from "date-fns";
+import { format, differenceInHours, differenceInDays, differenceInMinutes } from "date-fns";
 import { useCampaignDetails, useCampaignResults } from "@/hooks/useApi";
-import { getBadgeVariant, safeToString, getDisplayStatus } from "@/lib/utils";
+import { getDisplayStatus } from "@/lib/utils";
 import type { Campaign, CampaignResult } from "@shared/types/api";
-
+// Define the props for CampaignDetails component
 interface CampaignDetailsProps {
   campaignId: number;
   onEdit: () => void;
 }
-
 interface FilterState {
   sent: boolean | null;
   opened: boolean | null;
@@ -62,6 +61,48 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
 
   const { data: campaign, isLoading } = useCampaignDetails(campaignId);
   const { data: results = [] } = useCampaignResults(campaignId);
+  if (isLoading || !campaign) {
+    return <div className="flex justify-center p-12">Loading campaign details...</div>;
+  }
+
+  // Calculate stats - using type-safe array operations
+  const typedResults = results as CampaignResult[];
+  const totalTargets = typedResults.length;
+  const sentCount = typedResults.filter((r: CampaignResult) => r.sent).length;
+  const openedCount = typedResults.filter((r: CampaignResult) => r.opened).length;
+  const clickedCount = typedResults.filter((r: CampaignResult) => r.clicked).length;
+  const submittedCount = typedResults.filter((r: CampaignResult) => r.submitted).length;
+  // Calculate percentages safely
+  const sentPercentage = totalTargets > 0 ? Math.round((sentCount / totalTargets) * 100) : 0;
+  const openedPercentage = sentCount > 0 ? Math.round((openedCount / sentCount) * 100) : 0;
+  const clickedPercentage = openedCount > 0 ? Math.round((clickedCount / openedCount) * 100) : 0;
+  const submittedPercentage = clickedCount > 0 ? Math.round((submittedCount / clickedCount) * 100) : 0;
+  // Calculate campaign duration
+  let campaignDuration = 'Duration not specified';
+  if (campaign.scheduledAt && campaign.endDate) {
+    const startDate = new Date(campaign.scheduledAt);
+    const endDate = new Date(campaign.endDate);
+    const days = differenceInDays(endDate, startDate);
+    const hours = differenceInHours(endDate, startDate) % 24;
+    const minutes = differenceInMinutes(endDate, startDate) % 60;
+    
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    
+    campaignDuration = parts.length > 0 ? parts.join(' ') : 'Less than a minute';
+  }
+
+  // Get display status based on schedule timing
+  const displayStatus = getDisplayStatus(campaign);
+  const statusBadgeVariant = {
+    "active": "success",
+    "draft": "outline", 
+    "completed": "secondary",
+    "scheduled": "default",
+    "paused": "warning"
+  }[displayStatus] || "outline";
 
   // Filter results based on selected filters
   const filteredResults = results.filter((result) => {
@@ -111,51 +152,6 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
     link.click();
     document.body.removeChild(link);
   };
-
-  if (isLoading || !campaign) {
-    return <div className="flex justify-center p-12">Loading campaign details...</div>;
-  }
-
-  // Calculate stats - using type-safe array operations
-  const typedResults = results as CampaignResult[];
-  const totalTargets = typedResults.length;
-  const sentCount = typedResults.filter((r: CampaignResult) => r.sent).length;
-  const openedCount = typedResults.filter((r: CampaignResult) => r.opened).length;
-  const clickedCount = typedResults.filter((r: CampaignResult) => r.clicked).length;
-  const submittedCount = typedResults.filter((r: CampaignResult) => r.submitted).length;
-  
-  const sentPercentage = totalTargets > 0 ? Math.round((sentCount / totalTargets) * 100) : 0;
-  const openedPercentage = sentCount > 0 ? Math.round((openedCount / sentCount) * 100) : 0;
-  const clickedPercentage = openedCount > 0 ? Math.round((clickedCount / openedCount) * 100) : 0;
-  const submittedPercentage = clickedCount > 0 ? Math.round((submittedCount / clickedCount) * 100) : 0;
-
-  // Calculate campaign duration
-  let campaignDuration = 'Duration not specified';
-  if (campaign.scheduledAt && campaign.endDate) {
-    const startDate = new Date(campaign.scheduledAt);
-    const endDate = new Date(campaign.endDate);
-    const days = differenceInDays(endDate, startDate);
-    const hours = differenceInHours(endDate, startDate) % 24;
-    const minutes = differenceInMinutes(endDate, startDate) % 60;
-    
-    const parts = [];
-    if (days > 0) parts.push(`${days}d`);
-    if (hours > 0) parts.push(`${hours}h`);
-    if (minutes > 0) parts.push(`${minutes}m`);
-    
-    campaignDuration = parts.length > 0 ? parts.join(' ') : 'Less than a minute';
-  }
-
-  // Get display status based on schedule timing
-  const displayStatus = getDisplayStatus(campaign);
-
-  const statusBadgeVariant = {
-    "active": "success",
-    "draft": "outline", 
-    "completed": "secondary",
-    "scheduled": "default",
-    "paused": "warning"
-  }[displayStatus] || "outline";
 
   return (
     <div className="space-y-6">
