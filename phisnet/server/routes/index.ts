@@ -22,6 +22,7 @@ import { registerEnrollmentRoutes } from './enrollment';
 import { registerTwoFactorRoutes } from './two-factor';
 import { registerOrganizationRoutes } from './organization';
 import { registerOrganizationManagementRoutes } from './organization-management';
+import { registerCredentialCaptureRoutes } from './credential-capture';
 
 /**
  * Register all modular routes
@@ -102,6 +103,9 @@ export function registerModularRoutes(app: Express) {
 
   // Organization management routes
   registerOrganizationRoutes(app);
+
+  // Credential capture routes (public endpoint for submissions + admin endpoints)
+  registerCredentialCaptureRoutes(app);
   
   // Public tracking routes (must be last - no auth required)
   registerTrackingRoutes(app);
@@ -128,3 +132,4 @@ export { registerSsoRoutes } from './sso';
 export { registerSecretsRoutes } from './secrets';
 export { registerEmployeePortalRoutes } from './employee-portal';
 export { registerAdminPortalRoutes } from './admin-portal';
+export { registerCredentialCaptureRoutes } from './credential-capture';

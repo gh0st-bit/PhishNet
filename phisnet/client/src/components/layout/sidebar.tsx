@@ -92,6 +92,12 @@ export default function Sidebar() {
       icon: <Mail className="h-5 w-5" />,
       adminOnly: true
     },
+    { 
+      name: "Credential Captures", 
+      href: "/admin/credential-captures", 
+      icon: <Shield className="h-5 w-5" />,
+      adminOnly: true
+    },
     // ...other admin items...
     { 
       name: "Enrollment", 

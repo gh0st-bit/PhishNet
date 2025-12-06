@@ -42,6 +42,8 @@ import AdminArticleCreatePage from "@/pages/admin-article-create-page";
 import AdminVideosPage from "@/pages/admin-videos-page";
 import AdminFlashcardsPage from "@/pages/admin-flashcards-page";
 import AdminMcqsPage from "@/pages/admin-mcqs-page";
+import CaptureLoginPage from "@/pages/capture-login";
+import AdminCredentialCapturesPage from "@/pages/admin-credential-captures-page";
 import OrgAdminDashboardPage from "@/pages/org-admin-dashboard-page";
 import OrgAdminCampaignsPage from "@/pages/org-admin-campaigns-page";
 import OrgAdminGroupsPage from "@/pages/org-admin-groups-page";
@@ -66,6 +68,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/auth" component={AuthPage} />
+      <Route path="/c/login" component={CaptureLoginPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password/:token" component={ResetPasswordPage} />
       <Route path="/accept-invite/:token" component={AcceptInvitePage} />
@@ -115,6 +118,7 @@ function Router() {
       <ProtectedRoute path="/admin/content/videos" component={AdminVideosPage} />
       <ProtectedRoute path="/admin/content/flashcards" component={AdminFlashcardsPage} />
       <ProtectedRoute path="/admin/content/mcqs" component={AdminMcqsPage} />
+      <ProtectedRoute path="/admin/credential-captures" component={AdminCredentialCapturesPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -158,6 +162,7 @@ function AppContent() {
         ) : (
           <Switch>
             <Route path="/auth" component={AuthPage} />
+            <Route path="/c/login" component={CaptureLoginPage} />
             <Route path="/org-admin" component={AuthPage} />
             <Route path="/forgot-password" component={ForgotPasswordPage} />
             <Route path="/reset-password/:token" component={ResetPasswordPage} />

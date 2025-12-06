@@ -30,8 +30,9 @@ export function ProtectedRoute({
   }
 
   const roles: string[] = Array.isArray((user as any).roles) ? (user as any).roles : [];
-  const isOrgAdmin = roles.includes("OrgAdmin") && !user.isAdmin;
-  const isEmployee = roles.includes("User") && !user.isAdmin && !isOrgAdmin;
+  const isGlobalAdmin = user.isAdmin || roles.includes("Admin");
+  const isOrgAdmin = roles.includes("OrgAdmin") && !isGlobalAdmin;
+  const isEmployee = roles.includes("User") && !isGlobalAdmin && !isOrgAdmin;
 
   // Explicitly route each protected area by role
 
@@ -59,22 +60,23 @@ export function ProtectedRoute({
 
   if (isAdminPath) {
     // Only global admins allowed here
-    if (!user.isAdmin) {
+    if (!isGlobalAdmin) {
       return (
         <Route path={path}>
-          <Redirect to={isOrgAdmin ? "/org-admin" : "/employee"} />
+          <Redirect to="/employee" />
         </Route>
       );
     }
   }
 
-  // 2) Org admin dashboard
-  if (path.startsWith("/org-admin")) {
-    if (!isOrgAdmin) {
-      // Global admins and employees should not see org-admin portal
+  // 2) Org admin portal
+  const orgAdminPrefix = "/org-admin";
+  if (path.startsWith(orgAdminPrefix)) {
+    if (!isOrgAdmin && !isGlobalAdmin) {
+      // Only org admins and global admins allowed
       return (
         <Route path={path}>
-          <Redirect to={user.isAdmin ? "/" : "/employee"} />
+          <Redirect to="/employee" />
         </Route>
       );
     }
@@ -84,10 +86,11 @@ export function ProtectedRoute({
   const employeePrefix = "/employee";
   if (path.startsWith(employeePrefix)) {
     if (!isEmployee) {
-      // Org admins and global admins should not see employee portal
+      // Only employees allowed; admins/org-admins redirect to their dashboard
+      const redirectTo = isGlobalAdmin ? "/" : isOrgAdmin ? "/org-admin" : "/";
       return (
         <Route path={path}>
-          <Redirect to={user.isAdmin ? "/" : "/org-admin"} />
+          <Redirect to={redirectTo} />
         </Route>
       );
     }

@@ -62,40 +62,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSuccess: async (data: any) => {
       // Only update cache and redirect if we have a full user object (not just 2FA flags)
       if (data.id && data.email) {
-        // Ensure we have roles; if missing, fetch from /api/user to enrich
-        let enriched = data;
-        if (!Array.isArray(enriched.roles)) {
-          try {
-            const res = await apiRequest("GET", "/api/user");
-            if (res.ok) {
-              const userJson = await res.json();
-              enriched = { ...enriched, ...userJson };
-            }
-          } catch {
-            // ignore and proceed with available data
-          }
-        }
-
         // Update cache so /api/user query resolves immediately
-        queryClient.setQueryData(["/api/user"], enriched);
+        queryClient.setQueryData(["/api/user"], data);
         customToast.success({
           title: "Login successful",
-          description: `Welcome back, ${enriched.firstName} ${enriched.lastName}!`,
+          description: `Welcome back, ${data.firstName} ${data.lastName}!`,
         });
         
-        // Redirect based on role precedence
-        const roles: string[] = Array.isArray(enriched.roles) ? enriched.roles : [];
-        const isGlobalAdmin = enriched.isAdmin || roles.includes("Admin");
-        const isOrgAdmin = roles.includes("OrgAdmin") && !isGlobalAdmin;
-        const isUser = roles.includes("User") || (!isGlobalAdmin && !isOrgAdmin);
-
-        let redirectPath = "/"; // Admin dashboard by default
-        if (isOrgAdmin) redirectPath = "/org-admin";
-        else if (isUser && !isGlobalAdmin) redirectPath = "/employee";
+        // Simple role-based redirect logic
+        const roles: string[] = Array.isArray(data.roles) ? data.roles : [];
         
-        // Force a full reload to ensure session cookie is applied before protected route check
-        // (avoids edge case where client-side navigation happens before browser commits cookie)
-        window.location.replace(redirectPath);
+        // Check roles in order of precedence
+        if (data.isAdmin || roles.includes("Admin")) {
+          // Global admin → admin dashboard
+          window.location.replace("/");
+        } else if (roles.includes("OrgAdmin")) {
+          // Organization admin → org admin portal
+          window.location.replace("/org-admin");
+        } else if (roles.includes("User")) {
+          // Employee with User role → employee portal
+          window.location.replace("/employee");
+        } else {
+          // Fallback → admin dashboard
+          window.location.replace("/");
+        }
       }
     },
     onError: (error: Error) => {

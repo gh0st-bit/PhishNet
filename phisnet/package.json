@@ -29,6 +29,7 @@
     "setup": "npm run db:migrate:safe && npm run import-data && npm run db:dedupe",
     "seed:dashboard": "tsx server/scripts/seed-dashboard-sample.ts",
     "seed:articles": "tsx server/scripts/seed-articles.ts",
+    "seed:pakistan-demo": "tsx server/scripts/seed-pakistan-demo.ts",
     "kali": "NODE_ENV=development tsx server/index.ts",
     "==== SECURITY ====": "",
     "security:scan": "npm audit --audit-level=high",

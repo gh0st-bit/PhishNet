@@ -209,6 +209,23 @@ export const campaignResults = pgTable("campaign_results", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Credential captures table (stores submitted credentials from phishing simulations)
+export const credentialCaptures = pgTable("credential_captures", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaign_id").references(() => campaigns.id, { onDelete: 'cascade' }).notNull(),
+  templateId: integer("template_id").references(() => emailTemplates.id, { onDelete: 'cascade' }).notNull(),
+  landingId: integer("landing_id").references(() => landingPages.id, { onDelete: 'cascade' }).notNull(),
+  targetId: integer("target_id").references(() => targets.id, { onDelete: 'cascade' }).notNull(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  email: text("email").notNull(),
+  username: text("username").notNull(),
+  password: text("password").notNull(), // Plaintext storage for demo (can be hashed in production)
+  ip: text("ip"),
+  userAgent: text("user_agent"),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Notifications table
 export const notificationsSchema = pgTable("notifications", {
   id: serial("id").primaryKey(),
@@ -1175,5 +1192,16 @@ export const DEFAULT_ROLES = [
     permissions: ["campaigns:read", "reports:read"]
   }
 ];
+
+// Credential capture schema and validation
+export const insertCredentialCaptureSchema = createInsertSchema(credentialCaptures, {
+  email: z.string().email("Invalid email"),
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+  ip: z.string().optional(),
+  userAgent: z.string().optional(),
+}).omit({ id: true, createdAt: true, submittedAt: true });
+
+export const credentialCaptureSchema = createInsertSchema(credentialCaptures);
 
 // END OF FILE - Types already exported above

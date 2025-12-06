@@ -402,13 +402,12 @@ export function registerEnrollmentRoutes(app: Express) {
           updatedAt: new Date(),
         } as any);
         
-        // If this is an Admin invite, elevate to global admin
+        // Assign role based on invite type
         if (invite.roleType === "Admin") {
+          // Admin invite - elevate to global admin
           try { await storage.updateUser(existing.id, { isAdmin: true } as any); } catch (e) { console.warn('Admin elevation failed:', e); }
-        }
-
-        // If this is an org-admin invite, assign the role
-        if (invite.roleType === "OrgAdmin") {
+        } else if (invite.roleType === "OrgAdmin") {
+          // Org admin invite - assign OrgAdmin role
           const [orgAdminRole] = await db.select({ id: rolesSchema.id })
             .from(rolesSchema)
             .where(eq(rolesSchema.name, 'OrgAdmin'));
@@ -429,6 +428,27 @@ export function registerEnrollmentRoutes(app: Express) {
           } else {
             console.error('❌ OrgAdmin role not found in database!');
           }
+        } else {
+          // Regular employee invite - assign User role
+          const [userRole] = await db.select({ id: rolesSchema.id })
+            .from(rolesSchema)
+            .where(eq(rolesSchema.name, 'User'));
+          
+          if (userRole) {
+            try {
+              await db.insert(userRolesSchema).values({
+                userId: existing.id,
+                roleId: userRole.id,
+              });
+              console.log(`✅ Assigned User role to existing employee ${existing.id}`);
+            } catch (e: any) {
+              if (e?.code !== '23505') {
+                console.error('User role assignment failed:', e);
+              }
+            }
+          } else {
+            console.error('❌ User role not found in database!');
+          }
         }
       } else if (!existing) {
         try {
@@ -446,8 +466,9 @@ export function registerEnrollmentRoutes(app: Express) {
             updatedAt: new Date(),
           } as any);
 
-          // If this is an org-admin invite, assign the OrgAdmin role
+          // Assign role based on invite type
           if (invite.roleType === "OrgAdmin") {
+            // Org admin invite
             const [orgAdminRole] = await db.select({ id: rolesSchema.id })
               .from(rolesSchema)
               .where(eq(rolesSchema.name, 'OrgAdmin'));
@@ -466,6 +487,27 @@ export function registerEnrollmentRoutes(app: Express) {
               }
             } else {
               console.error('❌ OrgAdmin role not found in database!');
+            }
+          } else if (invite.roleType !== "Admin") {
+            // Regular employee invite - assign User role
+            const [userRole] = await db.select({ id: rolesSchema.id })
+              .from(rolesSchema)
+              .where(eq(rolesSchema.name, 'User'));
+            
+            if (userRole) {
+              try {
+                await db.insert(userRolesSchema).values({
+                  userId: newUser.id,
+                  roleId: userRole.id,
+                });
+                console.log(`✅ Assigned User role to new employee ${newUser.id}`);
+              } catch (e: any) {
+                if (e?.code !== '23505') {
+                  console.error('User role assignment failed:', e);
+                }
+              }
+            } else {
+              console.error('❌ User role not found in database!');
             }
           }
         } catch (createErr: any) {
