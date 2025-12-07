@@ -12,9 +12,11 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { Link, useLocation } from "wouter";
 import { Shield, Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
+import { TwoFactorVerificationDialog } from '@/components/security/two-factor-verification-dialog';
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { customToast } from "@/components/ui/custom-toast";
 import { Logo } from "@/components/common/logo";
+import { queryClient } from "@/lib/queryClient";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -46,7 +48,9 @@ type RegisterFormValues = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
   const { user, loginMutation, registerMutation } = useAuth();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+  // Wouter location excludes query string; capture search manually for mode detection
+  const search = typeof window !== 'undefined' ? window.location.search : '';
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [ssoEnabled, setSsoEnabled] = useState(false);
@@ -81,26 +85,21 @@ export default function AuthPage() {
     },
   });
 
-  function onLoginSubmit(data: LoginFormValues) {
-    loginMutation.mutate({
-      email: data.email,
-      password: data.password,
-    }, {
-      onSuccess: () => {
-        // Show success toast
-        customToast.success({
-          title: "Login Successful",
-          description: "Welcome back to PhishNet",
-        });
-      },
-      onError: (error) => {
-        // Show error toast
-        customToast.error({
-          title: "Login Failed",
-          description: error.message || "Please check your credentials and try again"
-        });
+  const [twoFactorPending, setTwoFactorPending] = useState(false);
+  const [twoFactorSetupRequired, setTwoFactorSetupRequired] = useState(false);
+  
+  async function onLoginSubmit(data: LoginFormValues) {
+    loginMutation.mutate(
+      { email: data.email, password: data.password },
+      {
+        onError: (error) => {
+          customToast.error({
+            title: "Login Failed",
+            description: error.message || "Please check your credentials and try again",
+          });
+        },
       }
-    });
+    );
   }
 
   async function checkSsoForEmail(email: string) {
@@ -174,6 +173,8 @@ export default function AuthPage() {
     });
   }
 
+  const isOrgAdminLogin = location.startsWith("/auth") && search.includes("mode=org-admin");
+
   return (
     <div className="min-h-screen flex bg-background">
       {/* Left column: Auth forms */}
@@ -187,10 +188,12 @@ export default function AuthPage() {
           </div>
 
           <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6 tabs-list">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="register">Register</TabsTrigger>
-            </TabsList>
+            {!isOrgAdminLogin && (
+              <TabsList className="grid w-full grid-cols-2 mb-6 tabs-list">
+                <TabsTrigger value="login">Login</TabsTrigger>
+                <TabsTrigger value="register">Register</TabsTrigger>
+              </TabsList>
+            )}
 
             <TabsContent value="login">
               <Card>
@@ -310,9 +313,9 @@ export default function AuthPage() {
                       <Button 
                         type="submit" 
                         className="w-full" 
-                        disabled={loginMutation.isPending}
+                        disabled={twoFactorPending}
                       >
-                        {loginMutation.isPending ? "Signing in..." : "Sign in"}
+                        {twoFactorPending ? "Awaiting 2FA..." : "Sign in"}
                       </Button>
                     </form>
                   </Form>
@@ -320,6 +323,7 @@ export default function AuthPage() {
               </Card>
             </TabsContent>
 
+            {!isOrgAdminLogin && (
             <TabsContent value="register">
               <Card>
                 <CardContent className="pt-6">
@@ -463,8 +467,25 @@ export default function AuthPage() {
                 </CardContent>
               </Card>
             </TabsContent>
+            )}
           </Tabs>
         </div>
+        <TwoFactorVerificationDialog 
+          open={twoFactorPending} 
+          onClose={() => setTwoFactorPending(false)}
+          onSuccess={async () => {
+            setTwoFactorPending(false);
+            customToast.success({ title: 'Login Complete', description: '2FA verified.' });
+            
+            // Invalidate queries and wait a moment for session
+            await queryClient.invalidateQueries({ queryKey: ['/api/user'] });
+            
+            // Navigate after small delay
+            setTimeout(() => {
+              window.location.href = '/';
+            }, 300);
+          }}
+        />
       </div>
 
       {/* Right column: Hero section */}

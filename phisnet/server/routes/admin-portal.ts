@@ -1,8 +1,14 @@
+import type { Express } from "express";
 import { Router, Request, Response } from "express";
+import sanitizeHtml from "sanitize-html";
 import { db } from "../db";
-import { 
-  trainingModules, 
-  quizzes, 
+import { validateBody } from "../middleware/validation";
+import { isAuthenticated, isAdmin } from "../auth"; // optional guards if needed
+import { NotificationService } from "../services/notification-service";
+import {
+  // Tables
+  trainingModules,
+  quizzes,
   quizQuestions,
   badges,
   trainingProgress,
@@ -10,13 +16,7 @@ import {
   articles,
   flashcardDecks,
   flashcards,
-  type InsertTrainingModule,
-  type InsertQuiz,
-  type InsertQuizQuestion,
-  type InsertBadge,
-  type InsertArticle,
-  type InsertFlashcardDeck,
-  type InsertFlashcard,
+  // Schemas & validation
   insertTrainingModuleSchema,
   updateTrainingModuleSchema,
   insertQuizSchema,
@@ -27,20 +27,43 @@ import {
   updateBadgeSchema,
   insertArticleSchema,
   updateArticleSchema,
+  createArticleRequestSchema,
   insertFlashcardDeckSchema,
   updateFlashcardDeckSchema,
   insertFlashcardSchema,
-  updateFlashcardSchema
+  updateFlashcardSchema,
+  // Types
+  type InsertTrainingModule,
+  type InsertArticle,
+  type InsertFlashcardDeck,
+  type InsertFlashcard,
+  type InsertQuiz,
+  type InsertQuizQuestion,
+  type InsertBadge,
 } from "../../shared/schema";
-import { eq, and, desc, sql, like, or } from "drizzle-orm";
-import { isAdmin } from "../auth";
-import { parsePaginationParams, buildPaginationMetadata } from "../utils/pagination";
-import { validateBody } from "../middleware/validation";
+import { eq, and, desc, like, or, sql } from "drizzle-orm";
 
 const router = Router();
 
-// All admin routes require admin authentication (isAdmin middleware checks both authentication and admin role)
-router.use(isAdmin);
+// Helper for pagination
+function parsePaginationParams(pageParam: any, pageSizeParam: any) {
+  const page = Math.max(1, parseInt(pageParam, 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(pageSizeParam, 10) || 20));
+  const offset = (page - 1) * pageSize;
+  return { page, pageSize, offset };
+}
+
+function buildPaginationMetadata(total: number, page: number, pageSize: number) {
+  return {
+    pagination: {
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    },
+  };
+}
+
 
 // ========================================
 // TRAINING MODULE MANAGEMENT
@@ -535,6 +558,53 @@ router.delete("/quizzes/:id", async (req: Request, res: Response) => {
 });
 
 /**
+ * PATCH /api/admin/quizzes/:id/publish
+ * Toggle published status of a quiz
+ */
+router.patch("/quizzes/:id/publish", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const quizId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+    const { published } = req.body;
+
+    if (typeof published !== 'boolean') {
+      return res.status(400).json({ message: "published must be a boolean" });
+    }
+
+    // Verify ownership
+    const [existing] = await db
+      .select()
+      .from(quizzes)
+      .where(
+        and(
+          eq(quizzes.id, quizId),
+          eq(quizzes.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ message: "Quiz not found" });
+    }
+
+    const [updatedQuiz] = await db
+      .update(quizzes)
+      .set({ published, updatedAt: new Date() })
+      .where(eq(quizzes.id, quizId))
+      .returning();
+
+    res.json({ quiz: updatedQuiz, message: `Quiz ${published ? 'published' : 'unpublished'} successfully` });
+  } catch (error: any) {
+    console.error("Error updating quiz publish status:", error);
+    res.status(500).json({ message: "Failed to update quiz publish status" });
+  }
+});
+
+/**
  * POST /api/admin/quizzes/:id/questions
  * Add a question to a quiz
  */
@@ -829,6 +899,42 @@ router.delete("/badges/:id", async (req: Request, res: Response) => {
 });
 
 /**
+ * PATCH /api/admin/badges/:id/publish
+ * Toggle published status of a badge
+ */
+router.patch("/badges/:id/publish", async (req: Request, res: Response) => {
+  try {
+    const badgeId = Number.parseInt(req.params.id);
+    const { published } = req.body;
+
+    if (typeof published !== 'boolean') {
+      return res.status(400).json({ message: "published must be a boolean" });
+    }
+
+    const [existing] = await db
+      .select()
+      .from(badges)
+      .where(eq(badges.id, badgeId))
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ message: "Badge not found" });
+    }
+
+    const [updatedBadge] = await db
+      .update(badges)
+      .set({ published })
+      .where(eq(badges.id, badgeId))
+      .returning();
+
+    res.json({ badge: updatedBadge, message: `Badge ${published ? 'published' : 'unpublished'} successfully` });
+  } catch (error: any) {
+    console.error("Error updating badge publish status:", error);
+    res.status(500).json({ message: "Failed to update badge publish status" });
+  }
+});
+
+/**
  * GET /api/admin/users
  * Get all users in the organization (for assignment)
  */
@@ -969,17 +1075,34 @@ router.get("/articles/:id", async (req: Request, res: Response) => {
  * POST /api/admin/articles
  * Create a new article
  */
-router.post("/articles", validateBody(insertArticleSchema), async (req: Request, res: Response) => {
+router.post("/articles", validateBody(createArticleRequestSchema), async (req: Request, res: Response) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
 
     const orgId = req.user.organizationId;
+    
+    // Sanitize HTML content to prevent XSS attacks
+    const safeContent = sanitizeHtml(req.body.content, {
+      allowedTags: [
+        'p','br','span','div','b','i','u','strong','em','blockquote','code','pre',
+        'ul','ol','li','table','thead','tbody','tr','td','th','h1','h2','h3','h4','h5','h6',
+        'img','a','hr'
+      ],
+      allowedAttributes: {
+        a: ['href','name','target','rel'],
+        img: ['src','alt','title','width','height'],
+        '*': ['style','class']
+      },
+      allowedSchemes: ['http','https','mailto'],
+      allowProtocolRelative: false
+    });
+    
     const articleData: InsertArticle = {
       organizationId: orgId,
       title: req.body.title,
-      content: req.body.content,
+      content: safeContent,
       excerpt: req.body.excerpt,
       category: req.body.category,
       tags: req.body.tags || [],
@@ -992,6 +1115,28 @@ router.post("/articles", validateBody(insertArticleSchema), async (req: Request,
       .insert(articles)
       .values(articleData)
       .returning();
+
+    // Create notification for organization members
+    try {
+      console.log(`Creating article notification for org ${orgId}: "${newArticle.title}"`);
+      const notifications = await NotificationService.createOrganizationNotification({
+        organizationId: orgId,
+        type: 'article',
+        title: 'New Article Published',
+        message: `New article available: "${newArticle.title}"`,
+        priority: 'low',
+        actionUrl: '/employee/articles',
+        metadata: {
+          articleId: newArticle.id,
+          articleTitle: newArticle.title,
+          category: newArticle.category,
+        },
+      });
+      console.log(`✅ Created ${notifications?.length || 0} article notifications`);
+    } catch (notifError) {
+      console.error('❌ Failed to create article notification:', notifError);
+      // Don't fail the request if notification fails
+    }
 
     res.status(201).json({ article: newArticle });
   } catch (error: any) {
@@ -1029,9 +1174,25 @@ router.put("/articles/:id", validateBody(updateArticleSchema), async (req: Reque
       return res.status(404).json({ message: "Article not found" });
     }
 
+    // Sanitize HTML content if provided
+    const safeContent = req.body.content ? sanitizeHtml(req.body.content, {
+      allowedTags: [
+        'p','br','span','div','b','i','u','strong','em','blockquote','code','pre',
+        'ul','ol','li','table','thead','tbody','tr','td','th','h1','h2','h3','h4','h5','h6',
+        'img','a','hr'
+      ],
+      allowedAttributes: {
+        a: ['href','name','target','rel'],
+        img: ['src','alt','title','width','height'],
+        '*': ['style','class']
+      },
+      allowedSchemes: ['http','https','mailto'],
+      allowProtocolRelative: false
+    }) : undefined;
+
     const updateData: Partial<InsertArticle> = {
       title: req.body.title,
-      content: req.body.content,
+      content: safeContent,
       excerpt: req.body.excerpt,
       category: req.body.category,
       tags: req.body.tags,
@@ -1091,6 +1252,53 @@ router.delete("/articles/:id", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * PATCH /api/admin/articles/:id/publish
+ * Toggle published status of an article
+ */
+router.patch("/articles/:id/publish", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const articleId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+    const { published } = req.body;
+
+    if (typeof published !== 'boolean') {
+      return res.status(400).json({ message: "published must be a boolean" });
+    }
+
+    // Verify ownership
+    const [existing] = await db
+      .select()
+      .from(articles)
+      .where(
+        and(
+          eq(articles.id, articleId),
+          eq(articles.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ message: "Article not found" });
+    }
+
+    const [updatedArticle] = await db
+      .update(articles)
+      .set({ published, updatedAt: new Date() })
+      .where(eq(articles.id, articleId))
+      .returning();
+
+    res.json({ article: updatedArticle, message: `Article ${published ? 'published' : 'unpublished'} successfully` });
+  } catch (error: any) {
+    console.error("Error updating article publish status:", error);
+    res.status(500).json({ message: "Failed to update article publish status" });
+  }
+});
+
 // ========================================
 // FLASHCARD DECKS MANAGEMENT
 // ========================================
@@ -1145,6 +1353,8 @@ router.get("/flashcard-decks", async (req: Request, res: Response) => {
       .limit(pageSize)
       .offset(offset);
 
+    // Prevent caching to ensure publish status changes are reflected immediately
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.json({
       decks: rows,
       ...buildPaginationMetadata(total, page, pageSize),
@@ -1189,6 +1399,8 @@ router.get("/flashcard-decks/:id", async (req: Request, res: Response) => {
       .where(eq(flashcards.deckId, deckId))
       .orderBy(flashcards.orderIndex);
 
+    // Prevent caching to ensure card updates are reflected immediately
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.json({ deck, cards });
   } catch (error: any) {
     console.error("Error fetching flashcard deck:", error);
@@ -1219,6 +1431,28 @@ router.post("/flashcard-decks", validateBody(insertFlashcardDeckSchema), async (
       .insert(flashcardDecks)
       .values(deckData)
       .returning();
+
+    // Create notification for organization members
+    try {
+      console.log(`Creating flashcard deck notification for org ${orgId}: "${newDeck.title}"`);
+      const notifications = await NotificationService.createOrganizationNotification({
+        organizationId: orgId,
+        type: 'flashcard',
+        title: 'New Flashcard Deck Created',
+        message: `A new flashcard deck "${newDeck.title}" has been added to your training library.`,
+        priority: 'medium',
+        actionUrl: '/employee/flashcards',
+        metadata: {
+          deckId: newDeck.id,
+          deckTitle: newDeck.title,
+          category: newDeck.category,
+        },
+      });
+      console.log(`✅ Created ${notifications?.length || 0} flashcard deck notifications`);
+    } catch (notifError) {
+      console.error('❌ Failed to create flashcard deck notification:', notifError);
+      // Don't fail the request if notification fails
+    }
 
     res.status(201).json({ deck: newDeck });
   } catch (error: any) {
@@ -1308,6 +1542,52 @@ router.delete("/flashcard-decks/:id", async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error deleting flashcard deck:", error);
     res.status(500).json({ message: "Failed to delete flashcard deck" });
+  }
+});
+
+/**
+ * PATCH /api/admin/flashcard-decks/:id/publish
+ * Toggle published status of a flashcard deck
+ */
+router.patch("/flashcard-decks/:id/publish", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const deckId = Number.parseInt(req.params.id);
+    const orgId = req.user.organizationId;
+    const { published } = req.body;
+
+    if (typeof published !== 'boolean') {
+      return res.status(400).json({ message: "published must be a boolean" });
+    }
+
+    const [existing] = await db
+      .select()
+      .from(flashcardDecks)
+      .where(
+        and(
+          eq(flashcardDecks.id, deckId),
+          eq(flashcardDecks.organizationId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ message: "Flashcard deck not found" });
+    }
+
+    const [updatedDeck] = await db
+      .update(flashcardDecks)
+      .set({ published })
+      .where(eq(flashcardDecks.id, deckId))
+      .returning();
+
+    res.json({ deck: updatedDeck, message: `Flashcard deck ${published ? 'published' : 'unpublished'} successfully` });
+  } catch (error: any) {
+    console.error("Error updating flashcard deck publish status:", error);
+    res.status(500).json({ message: "Failed to update flashcard deck publish status" });
   }
 });
 

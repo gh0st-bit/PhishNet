@@ -42,13 +42,19 @@ function injectOpenPixel(html: string, campaign: Campaign, target: Target): stri
   return html + pixelTag;
 }
 
-function renderTemplate(html: string, target: Target, template: EmailTemplate, campaign: Campaign) {
+function renderTemplate(html: string, target: Target, template: EmailTemplate, campaign: Campaign, landingId?: number) {
   const trackingUrl = `${BASE_URL}/l/${campaign.id}/${target.id}`;
+  
+  // Build credential capture link (localhost for local demo)
+  const captureLink = landingId ? `${BASE_URL}/c/login?cid=${campaign.id}&tid=${template.id}&lid=${landingId}&targetId=${target.id}` : '';
+  
   let out = html
     .replace(/{{\.?(FirstName)}}/g, target.firstName || '')
     .replace(/{{\.?(LastName)}}/g, target.lastName || '')
     .replace(/{{\.?(SenderName)}}/g, (template as any).sender_name || 'PhishNet Team')
-    .replace(/{{\.?(TrackingURL)}}/g, trackingUrl);
+    .replace(/{{\.?(TrackingURL)}}/g, trackingUrl)
+    .replace(/{{\.?(CredentialCaptureLink)}}/g, captureLink);
+  
   // Rewrite links for click tracking & inject open pixel
   out = rewriteLinks(out, campaign, target);
   out = injectOpenPixel(out, campaign, target);
@@ -88,6 +94,12 @@ export async function sendCampaignEmails(campaignId: number, organizationId: num
   const targets = await storage.listTargets(campaign.targetGroupId);
   const smtp = await storage.getSmtpProfile(campaign.smtpProfileId);
   const template = await storage.getEmailTemplate(campaign.emailTemplateId);
+  
+  // Load landing page for credential capture link generation
+  let landingId: number | undefined;
+  if ((campaign as any).landingPageId) {
+    landingId = (campaign as any).landingPageId;
+  }
 
   if (!smtp) throw new Error('SMTP profile missing');
   if (!template) throw new Error('Email template missing');
@@ -97,7 +109,7 @@ export async function sendCampaignEmails(campaignId: number, organizationId: num
   let sentCount = 0;
   for (const target of targets) {
     if (!target.email) continue;
-    const html = renderTemplate((template as any).html_content || (template as any).htmlContent || '', target, template, campaign);
+    const html = renderTemplate((template as any).html_content || (template as any).htmlContent || '', target, template, campaign, landingId);
     const subject = (template as any).subject || 'Security Awareness';
 
     try {

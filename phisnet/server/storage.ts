@@ -15,7 +15,8 @@ import {
   passwordResetTokens,
   userInvites
 } from "@shared/schema";
-import { eq, and, count, sql, gte } from "drizzle-orm";
+import { eq, and, count, sql, gte, desc } from "drizzle-orm";
+import crypto from "node:crypto";
 
 // Add missing type imports
 import type { 
@@ -127,6 +128,8 @@ export interface IStorage {
   findUserInviteByToken(token: string): Promise<UserInvite | undefined>;
   listUserInvites(organizationId: number): Promise<UserInvite[]>;
   markUserInviteAccepted(id: number): Promise<UserInvite | undefined>;
+  deleteUserInvite(id: number): Promise<boolean>;
+  resendUserInvite(id: number, newToken: string, newExpiry: Date): Promise<UserInvite | undefined>;
   
   // Dashboard stats
   getDashboardStats(organizationId: number): Promise<any>;
@@ -173,7 +176,11 @@ export class DatabaseStorage implements IStorage {
               last_failed_login,
               COALESCE(account_locked, false) AS account_locked,
               account_locked_until,
-              last_login
+              last_login,
+              COALESCE(two_factor_enabled, false) AS two_factor_enabled,
+              two_factor_secret,
+              two_factor_backup_codes,
+              two_factor_verified_at
          FROM users
         WHERE id = $1
         LIMIT 1`,
@@ -200,6 +207,10 @@ export class DatabaseStorage implements IStorage {
       isAdmin: r.is_admin ?? false,
       organizationId: r.organization_id,
       organizationName: r.organization_name ?? "None",
+      twoFactorEnabled: r.two_factor_enabled ?? false,
+      twoFactorSecret: r.two_factor_secret ?? null,
+      twoFactorBackupCodes: r.two_factor_backup_codes ?? [],
+      twoFactorVerifiedAt: r.two_factor_verified_at ?? null,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     } as unknown as User;
@@ -215,7 +226,11 @@ export class DatabaseStorage implements IStorage {
               last_failed_login,
               COALESCE(account_locked, false) AS account_locked,
               account_locked_until,
-              last_login
+              last_login,
+              COALESCE(two_factor_enabled, false) AS two_factor_enabled,
+              two_factor_secret,
+              two_factor_backup_codes,
+              two_factor_verified_at
          FROM users
         WHERE email = $1
         LIMIT 1`,
@@ -242,6 +257,10 @@ export class DatabaseStorage implements IStorage {
       isAdmin: r.is_admin ?? false,
       organizationId: r.organization_id,
       organizationName: r.organization_name ?? "None",
+      twoFactorEnabled: r.two_factor_enabled ?? false,
+      twoFactorSecret: r.two_factor_secret ?? null,
+      twoFactorBackupCodes: r.two_factor_backup_codes ?? [],
+      twoFactorVerifiedAt: r.two_factor_verified_at ?? null,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     } as unknown as User;
@@ -310,7 +329,11 @@ export class DatabaseStorage implements IStorage {
   }
   
   async listOrganizations(): Promise<Organization[]> {
-    return await db.select().from(organizations);
+    // Show newest organizations first for admin UX
+    return await db
+      .select()
+      .from(organizations)
+      .orderBy(desc(organizations.createdAt), desc(organizations.id));
   }
   
   // Group methods
@@ -363,6 +386,31 @@ export class DatabaseStorage implements IStorage {
     return groupsWithCounts;
   }
   
+  /**
+   * Helper to determine if a group is used by any campaigns.
+   * Returns counts and active campaign details so the API can
+   * block deletion with a helpful error message.
+   */
+  async getGroupUsage(groupId: number): Promise<{
+    isInUse: boolean;
+    totalCampaigns: number;
+    activeCampaigns: { id: number; name: string; status: string }[];
+  }> {
+    const campaignsForGroup = await db
+      .select({ id: campaigns.id, name: campaigns.name, status: campaigns.status })
+      .from(campaigns)
+      .where(eq(campaigns.targetGroupId, groupId));
+
+    const totalCampaigns = campaignsForGroup.length;
+    const activeCampaigns = campaignsForGroup.filter(c => (c.status || '').toString().toLowerCase() === 'active');
+
+    return {
+      isInUse: totalCampaigns > 0,
+      totalCampaigns,
+      activeCampaigns,
+    };
+  }
+  
   // Target methods
   async getTarget(id: number): Promise<Target | undefined> {
     const [target] = await db.select().from(targets).where(eq(targets.id, id));
@@ -404,7 +452,23 @@ export class DatabaseStorage implements IStorage {
   // SMTP Profile methods
   async getSmtpProfile(id: number): Promise<SmtpProfile | undefined> {
     const [profile] = await db.select().from(smtpProfiles).where(eq(smtpProfiles.id, id));
-    return profile;
+    if (!profile) {
+      return undefined;
+    }
+
+    try {
+      const SecretsService = (await import('./services/secrets.service')).default;
+      const decryptedPassword = (profile.password && SecretsService.isEncrypted(profile.password))
+        ? await SecretsService.decrypt(profile.organizationId, profile.password)
+        : profile.password;
+      return {
+        ...profile,
+        password: decryptedPassword,
+      };
+    } catch (error) {
+      console.error('[Storage] Failed to decrypt SMTP profile password:', error);
+      return profile;
+    }
   }
   
   async createSmtpProfile(organizationId: number, profile: InsertSmtpProfile): Promise<SmtpProfile> {
@@ -460,7 +524,9 @@ export class DatabaseStorage implements IStorage {
     const SecretsService = (await import('./services/secrets.service')).default;
     return Promise.all(profiles.map(async (profile) => ({
       ...profile,
-      password: await SecretsService.decrypt(organizationId, profile.password),
+      password: (profile.password && SecretsService.isEncrypted(profile.password))
+        ? await SecretsService.decrypt(organizationId, profile.password)
+        : profile.password,
     })));
   }
   
@@ -761,19 +827,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async findUserInviteByToken(token: string): Promise<UserInvite | undefined> {
-    // Since tokens are now hashed, we need to check all unexpired, unaccepted invites
-    const bcrypt = await import('bcryptjs');
+    // Tokens now stored as SHA-256 hex digests (see enrollment route)
+    const hashed = crypto.createHash('sha256').update(token).digest('hex');
     const candidates = await db.select()
       .from(userInvites)
       .where(
-        sql`${userInvites.acceptedAt} IS NULL AND ${userInvites.expiresAt} > NOW()`
+        and(
+          eq(userInvites.token, hashed),
+          sql`${userInvites.acceptedAt} IS NULL`,
+          sql`${userInvites.expiresAt} > NOW()`
+        )
       );
-    
-    for (const invite of candidates) {
-      const isMatch = await bcrypt.compare(token, invite.token);
-      if (isMatch) return invite;
-    }
-    return undefined;
+    return candidates[0] || undefined;
   }
 
   async listUserInvites(organizationId: number): Promise<UserInvite[]> {
@@ -786,6 +851,34 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userInvites.id, id))
       .returning();
     return row;
+  }
+
+  async deleteUserInvite(id: number): Promise<boolean> {
+    const result = await db.delete(userInvites)
+      .where(eq(userInvites.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  /**
+   * Delete all invites for a given email address.
+   * Used when an Org Admin user is removed so any leftover org-admin invites
+   * for that email no longer appear in the Invites tab.
+   */
+  async deleteUserInvitesByEmail(email: string): Promise<number> {
+    const result = await db
+      .delete(userInvites)
+      .where(eq(userInvites.email, email.toLowerCase()))
+      .returning({ id: userInvites.id });
+    return result.length;
+  }
+
+  async resendUserInvite(id: number, newToken: string, newExpiry: Date): Promise<UserInvite | undefined> {
+    const [invite] = await db.update(userInvites)
+      .set({ token: newToken, expiresAt: newExpiry })
+      .where(eq(userInvites.id, id))
+      .returning();
+    return invite;
   }
   
   // Dashboard stats

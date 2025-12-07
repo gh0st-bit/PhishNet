@@ -9,6 +9,18 @@ import { Loader2, Trophy, Award, Video, ListChecks, Star, Users, AlertCircle, Ex
 import { useTheme } from "next-themes";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { LearningTrendChart } from "@/components/dashboard/learning-trend-chart";
+import { SkillRadarChart } from "@/components/dashboard/skill-radar-chart";
+import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
+import { StreakCalendar } from "@/components/dashboard/streak-calendar";
+import { CompletionFunnel } from "@/components/dashboard/completion-funnel";
+import { QuizPerformanceLine } from "@/components/dashboard/quiz-performance-line";
+import { UpcomingDeadlines } from "@/components/dashboard/upcoming-deadlines";
+import { RecommendedContent } from "@/components/dashboard/recommended-content";
+import { DailyGoalWidget } from "@/components/dashboard/daily-goal-widget";
+import { AchievementHighlights } from "@/components/dashboard/achievement-highlights";
+import { LearningInsights } from "@/components/dashboard/learning-insights";
+import { LevelProgressWidget } from "@/components/dashboard/level-progress-widget";
 
 // Production-ready theme toggle using next-themes
 function ThemeToggle() {
@@ -128,7 +140,52 @@ export default function EmployeeDashboardPage() {
   const badgesQ = useEmployeeQuery<BadgesResponse>("badges","/api/employee/badges");
   const leaderboardQ = useEmployeeQuery<LeaderboardResponse>("leaderboard","/api/employee/leaderboard");
   
-  const hasError = trainingQ.isError || quizzesQ.isError || pointsQ.isError || badgesQ.isError || leaderboardQ.isError;
+  // New analytics query
+  const analyticsQ = useQuery({
+    queryKey: ["/api/employee/dashboard/analytics"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/employee/dashboard/analytics");
+      if (!res.ok) {
+        const error = await res.text().catch(() => 'Unknown error');
+        throw new Error(error || 'Failed fetching analytics');
+      }
+      return res.json();
+    },
+    retry: 2,
+    staleTime: 30000,
+  });
+
+  // Insights widgets query
+  const insightsQ = useQuery({
+    queryKey: ["/api/employee/dashboard/insights"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/employee/dashboard/insights");
+      if (!res.ok) {
+        const error = await res.text().catch(() => 'Unknown error');
+        throw new Error(error || 'Failed fetching insights');
+      }
+      return res.json();
+    },
+    retry: 2,
+    staleTime: 30000,
+  });
+
+  // Level query
+  const levelQ = useQuery({
+    queryKey: ["/api/employee/level"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/employee/level");
+      if (!res.ok) {
+        const error = await res.text().catch(() => 'Unknown error');
+        throw new Error(error || 'Failed fetching level');
+      }
+      return res.json();
+    },
+    retry: 2,
+    staleTime: 30000,
+  });
+  
+  const hasError = trainingQ.isError || quizzesQ.isError || pointsQ.isError || badgesQ.isError || leaderboardQ.isError || analyticsQ.isError || insightsQ.isError || levelQ.isError;
   
   // Filter training modules based on active tab
   const filteredModules = (trainingQ.data?.modules || []).filter(m => {
@@ -214,10 +271,10 @@ export default function EmployeeDashboardPage() {
           <Button 
             size="sm" 
             variant="outline" 
-            onClick={() => {trainingQ.refetch(); quizzesQ.refetch(); pointsQ.refetch(); badgesQ.refetch(); leaderboardQ.refetch();}} 
-            disabled={trainingQ.isLoading}
+            onClick={() => {trainingQ.refetch(); quizzesQ.refetch(); pointsQ.refetch(); badgesQ.refetch(); leaderboardQ.refetch(); analyticsQ.refetch(); insightsQ.refetch(); levelQ.refetch();}} 
+            disabled={trainingQ.isLoading || analyticsQ.isLoading}
           >
-            {trainingQ.isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh'}
+            {(trainingQ.isLoading || analyticsQ.isLoading) ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh'}
           </Button>
           <Button
             variant="outline"
@@ -241,8 +298,8 @@ export default function EmployeeDashboardPage() {
       )}
 
       {/* Metrics Overview */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="p-5 flex flex-col gap-2 hover:shadow-lg transition-shadow">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        <Card className="p-4 lg:p-5 flex flex-col gap-2 hover:shadow-lg transition-shadow">
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <Video className="h-4 w-4 text-blue-500" />
             Training Progress
@@ -297,9 +354,96 @@ export default function EmployeeDashboardPage() {
         </Card>
       </div>
 
+      {/* Smart Insights */}
+      {(insightsQ.data || levelQ.data) && (
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+          {insightsQ.data?.dailyGoal && (
+            <DailyGoalWidget 
+              target={insightsQ.data.dailyGoal.target}
+              completedToday={insightsQ.data.dailyGoal.completedToday}
+              progress={insightsQ.data.dailyGoal.progress}
+              suggestion={insightsQ.data.dailyGoal.suggestion}
+              dueSoon={insightsQ.data.dailyGoal.dueSoon}
+            />
+          )}
+          {levelQ.data?.levelProgress && (
+            <LevelProgressWidget 
+              level={levelQ.data.levelProgress.level}
+              currentLevelXP={levelQ.data.levelProgress.currentLevelXP}
+              nextLevelXP={levelQ.data.levelProgress.nextLevelXP}
+              progress={levelQ.data.levelProgress.progress}
+              totalPoints={levelQ.data.totalPoints}
+            />
+          )}
+          {insightsQ.data?.achievements && (
+            <AchievementHighlights 
+              recent={insightsQ.data.achievements.recent}
+              total={insightsQ.data.achievements.total}
+            />
+          )}
+          {insightsQ.data?.insights && (
+            <LearningInsights 
+              topCategory={insightsQ.data.insights.topCategory}
+              weakArea={insightsQ.data.insights.weakArea}
+              milestone={insightsQ.data.milestone}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Analytics Visualizations */}
+      {analyticsQ.data && (
+        <div className="space-y-6">
+          {/* Trends and Activity Row */}
+          <div className="grid gap-4 lg:gap-6 grid-cols-1 lg:grid-cols-2">
+            {analyticsQ.data.trends && analyticsQ.data.trends.length > 0 && (
+              <LearningTrendChart data={analyticsQ.data.trends} />
+            )}
+            {analyticsQ.data.heatmap && analyticsQ.data.heatmap.length > 0 && (
+              <ActivityHeatmap data={analyticsQ.data.heatmap} />
+            )}
+          </div>
+
+          {/* Skills and Performance Row */}
+          <div className="grid gap-4 lg:gap-6 grid-cols-1 lg:grid-cols-2">
+            {analyticsQ.data.skills && analyticsQ.data.skills.length > 0 && (
+              <SkillRadarChart data={analyticsQ.data.skills} />
+            )}
+            {analyticsQ.data.quizTrends && analyticsQ.data.quizTrends.length > 0 && (
+              <QuizPerformanceLine data={analyticsQ.data.quizTrends} />
+            )}
+          </div>
+
+          {/* Insights and Actions Row */}
+          <div className="grid gap-4 lg:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+            {analyticsQ.data.streakHistory && (
+              <StreakCalendar 
+                streakData={analyticsQ.data.streakHistory.streakData}
+                currentStreak={analyticsQ.data.streakHistory.currentStreak}
+                maxStreak={analyticsQ.data.streakHistory.maxStreak}
+              />
+            )}
+            {analyticsQ.data.funnel && (
+              <CompletionFunnel data={analyticsQ.data.funnel} />
+            )}
+            {analyticsQ.data.deadlines && (
+              <UpcomingDeadlines deadlines={analyticsQ.data.deadlines} />
+            )}
+          </div>
+
+          {/* Recommendations */}
+          {analyticsQ.data.recommendations && (
+            <RecommendedContent 
+              modules={analyticsQ.data.recommendations.modules || []}
+              articles={analyticsQ.data.recommendations.articles || []}
+            />
+          )}
+        </div>
+      )}
+
       {/* Main Content Sections */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+      <div className="grid gap-4 lg:gap-6 grid-cols-1 lg:grid-cols-3">
+        <div className="space-y-4 lg:space-y-6 lg:col-span-2">
           {/* Upcoming / Active Training */}
           <Card className="p-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -308,10 +452,10 @@ export default function EmployeeDashboardPage() {
                 Training Modules
               </h2>
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-auto">
-                <TabsList className="grid grid-cols-3 w-full sm:w-[280px]">
-                  <TabsTrigger value="all">All</TabsTrigger>
-                  <TabsTrigger value="active">Active</TabsTrigger>
-                  <TabsTrigger value="completed">Done</TabsTrigger>
+                <TabsList className="grid grid-cols-3 w-full max-w-[280px]">
+                  <TabsTrigger value="all" className="text-xs sm:text-sm">All</TabsTrigger>
+                  <TabsTrigger value="active" className="text-xs sm:text-sm">Active</TabsTrigger>
+                  <TabsTrigger value="completed" className="text-xs sm:text-sm">Done</TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>
@@ -320,9 +464,9 @@ export default function EmployeeDashboardPage() {
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground"/>
               </div>
             ) : (
-              <div className="grid md:grid-cols-2 gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 {filteredModules.slice(0,6).map(m => (
-                  <div key={m.id} className="group border rounded-lg p-4 bg-card hover:shadow-md hover:border-primary/50 transition-all cursor-pointer">
+                  <div key={m.id} className="group border rounded-lg p-3 sm:p-4 bg-card hover:shadow-md hover:border-primary/50 transition-all cursor-pointer">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold line-clamp-2 group-hover:text-primary transition">{m.title}</h3>
@@ -427,32 +571,48 @@ export default function EmployeeDashboardPage() {
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground"/>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-3">
-                {(badgesQ.data?.badges||[]).slice(0,9).map(b => {
-                  const rarityColor = b.rarity === 'legendary' ? 'text-yellow-500' : 
-                                     b.rarity === 'epic' ? 'text-purple-500' : 
-                                     b.rarity === 'rare' ? 'text-blue-500' : 'text-gray-500';
-                  return (
-                    <div 
-                      key={b.id} 
-                      className={`group relative flex flex-col items-center gap-2 text-center p-3 rounded-lg border transition-all ${
-                        b.earned 
-                          ? 'bg-gradient-to-br from-primary/10 to-primary/5 border-primary shadow-sm hover:shadow-md' 
-                          : 'bg-muted/20 border-muted hover:border-muted-foreground/30 opacity-60'
-                      }`}
-                      title={b.name}
-                    > 
-                      <Trophy className={`h-6 w-6 ${b.earned ? rarityColor : 'text-muted-foreground/50'} transition group-hover:scale-110`} />
-                      <span className="text-[10px] font-medium leading-tight line-clamp-2">{b.name}</span>
-                      {b.earned && <span className="absolute -top-1 -right-1 text-xs">✓</span>}
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  {(badgesQ.data?.badges||[])
+                    .sort((a, b) => {
+                      // Show earned first, then sort by rarity
+                      if (a.earned !== b.earned) return b.earned ? 1 : -1;
+                      const rarityOrder: Record<string, number> = { legendary: 4, epic: 3, rare: 2, common: 1 };
+                      return (rarityOrder[b.rarity] || 0) - (rarityOrder[a.rarity] || 0);
+                    })
+                    .slice(0,9).map(b => {
+                    const rarityColor = b.rarity === 'legendary' ? 'text-yellow-500' : 
+                                       b.rarity === 'epic' ? 'text-purple-500' : 
+                                       b.rarity === 'rare' ? 'text-blue-500' : 'text-gray-500';
+                    return (
+                      <div 
+                        key={b.id} 
+                        className={`group relative flex flex-col items-center gap-2 text-center p-3 rounded-lg border transition-all cursor-pointer ${
+                          b.earned 
+                            ? 'bg-gradient-to-br from-primary/10 to-primary/5 border-primary shadow-sm hover:shadow-md' 
+                            : 'bg-muted/20 border-muted hover:border-muted-foreground/30 opacity-60'
+                        }`}
+                        title={b.name}
+                      > 
+                        <Trophy className={`h-6 w-6 ${b.earned ? rarityColor : 'text-muted-foreground/50'} transition group-hover:scale-110`} />
+                        <span className="text-[10px] font-medium leading-tight line-clamp-2">{b.name}</span>
+                        {b.earned && <span className="absolute -top-1 -right-1 text-xs">✓</span>}
+                      </div>
+                    );
+                  })}
+                  {!(badgesQ.data?.badges||[]).length && (
+                    <div className="col-span-3 text-center py-8">
+                      <Award className="h-10 w-10 mx-auto text-muted-foreground/50 mb-2" />
+                      <p className="text-xs text-muted-foreground">No badges defined.</p>
                     </div>
-                  );
-                })}
-                {!(badgesQ.data?.badges||[]).length && (
-                  <div className="col-span-3 text-center py-8">
-                    <Award className="h-10 w-10 mx-auto text-muted-foreground/50 mb-2" />
-                    <p className="text-xs text-muted-foreground">No badges defined.</p>
-                  </div>
+                  )}
+                </div>
+                {(badgesQ.data?.badges||[]).length > 9 && (
+                  <Link href="/employee/badges">
+                    <Button variant="outline" size="sm" className="w-full">
+                      View All Badges
+                    </Button>
+                  </Link>
                 )}
               </div>
             )}
@@ -508,15 +668,15 @@ export default function EmployeeDashboardPage() {
       </div>
 
       {/* Quick Actions */}
-      <Card className="p-5">
-        <h2 className="text-xl font-bold mb-4">Quick Actions</h2>
-        <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-3">
+      <Card className="p-4 sm:p-5">
+        <h2 className="text-lg sm:text-xl font-bold mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
           <Link href="/employee/training">
-            <Button variant="outline" className="w-full justify-start gap-2 h-auto py-3">
-              <Video className="h-4 w-4" />
-              <div className="text-left">
-                <div className="font-medium text-sm">Browse Training</div>
-                <div className="text-xs text-muted-foreground">View all modules</div>
+            <Button variant="outline" className="w-full justify-start gap-2 h-auto py-2 sm:py-3">
+              <Video className="h-4 w-4 shrink-0" />
+              <div className="text-left min-w-0">
+                <div className="font-medium text-xs sm:text-sm truncate">Browse Training</div>
+                <div className="text-[10px] sm:text-xs text-muted-foreground truncate">View all modules</div>
               </div>
             </Button>
           </Link>

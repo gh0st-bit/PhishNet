@@ -6,6 +6,9 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { storage } from "./storage";
+import { db } from "./db";
+import { rolesSchema, userRolesSchema } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { User as SelectUser, userValidationSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/schema";
 import { z } from "zod";
 import { AuditService } from "./services/audit.service";
@@ -353,29 +356,30 @@ export function setupAuth(app: Express) {
 
   // Login endpoint (with rate limiter: 10 failed attempts per 15 minutes)
   app.post("/api/login", loginLimiter, (req, res, next) => {
-    passport.authenticate("local", (err: any, user: any, info: any) => {
-      if (err) {
-        return next(err);
+    passport.authenticate("local", async (err: any, user: any, info: any) => {
+      if (err) return next(err);
+      if (!user) return res.status(401).json({ message: info?.message || "Authentication failed" });
+
+      // Organization enforcement: if org requires 2FA but user not enabled, signal setup required
+      const org = await storage.getOrganization(user.organizationId);
+      if (org && (org as any).twoFactorRequired && !(user as any).twoFactorEnabled) {
+        (req.session as any).pendingTwoFactorUserId = user.id;
+        return res.status(200).json({ requiresTwoFactorSetup: true });
       }
-      
-      if (!user) {
-        return res.status(401).json({ message: info?.message || "Authentication failed" });
+      // If 2FA is enabled for this user, create a pending session and require second factor
+      if ((user as any).twoFactorEnabled) {
+        (req.session as any).pendingTwoFactorUserId = user.id;
+        // Do NOT establish login session yet
+        return res.status(200).json({ requiresTwoFactor: true });
       }
-      
+
       req.login(user, (loginErr) => {
-        if (loginErr) {
-          return next(loginErr);
-        }
-        
-        // Explicitly save the session before responding to ensure it's persisted
-        // This prevents race conditions where subsequent requests arrive before session is saved
-        req.session.save((saveErr) => {
+        if (loginErr) return next(loginErr);
+        req.session.save(async (saveErr) => {
           if (saveErr) {
             console.error("Session save error:", saveErr);
             return next(saveErr);
           }
-          
-          // Audit log the login
           AuditService.log({
             context: {
               userId: user.id,
@@ -388,11 +392,98 @@ export function setupAuth(app: Express) {
             metadata: { email: user.email },
           }).catch((err) => console.error("[Audit] Failed to log login:", err));
           
-          const { password, ...userWithoutPassword } = user;
-          return res.status(200).json(userWithoutPassword);
+          // Fetch roles before responding
+          try {
+            const rows = await db.select({ roleName: rolesSchema.name })
+              .from(userRolesSchema)
+              .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
+              .where(eq(userRolesSchema.userId, user.id));
+            const roles = rows.map((r) => r.roleName);
+            const { password, ...userWithoutPassword } = user;
+            return res.status(200).json({ ...userWithoutPassword, roles });
+          } catch (e) {
+            console.error("Failed to fetch roles on login:", e);
+            const { password, ...userWithoutPassword } = user;
+            return res.status(200).json({ ...userWithoutPassword, roles: [] });
+          }
         });
       });
     })(req, res, next);
+  });
+
+  // Complete 2FA login: verify TOTP or backup code then establish session
+  app.post('/api/login/2fa', authLimiter, async (req, res, next) => {
+    try {
+      const { token, backupCode } = req.body as { token?: string; backupCode?: string };
+      const pendingId = (req.session as any).pendingTwoFactorUserId;
+      if (!pendingId) return res.status(400).json({ message: 'No pending 2FA login' });
+      const user = await storage.getUser(pendingId);
+      if (!user) return res.status(404).json({ message: 'User not found' });
+      if (!(user as any).twoFactorEnabled || !(user as any).twoFactorSecret) {
+        return res.status(400).json({ message: '2FA not enabled' });
+      }
+
+      // Decrypt secret
+      const { SecretsService } = await import('./services/secrets.service');
+      const decrypted = await SecretsService.decrypt(user.organizationId, (user as any).twoFactorSecret);
+      let success = false;
+      let usedBackupIndex: number | null = null;
+
+      if (token && /^\d{6}$/.test(token)) {
+        const { TwoFactorService } = await import('./services/two-factor.service');
+        success = TwoFactorService.verifyToken(decrypted, token);
+      } else if (backupCode) {
+        const { TwoFactorService } = await import('./services/two-factor.service');
+        const codes: string[] = (user as any).twoFactorBackupCodes || [];
+        for (let i = 0; i < codes.length; i++) {
+          if (await TwoFactorService.verifyBackupCode(codes[i], backupCode)) {
+            success = true;
+            usedBackupIndex = i;
+            break;
+          }
+        }
+      } else {
+        return res.status(400).json({ message: 'Token or backupCode required' });
+      }
+
+      if (!success) return res.status(401).json({ message: 'Invalid 2FA credentials' });
+
+      // Consume backup code if used
+      if (usedBackupIndex !== null) {
+        const codes: string[] = (user as any).twoFactorBackupCodes || [];
+        codes.splice(usedBackupIndex, 1);
+        await storage.updateUser(user.id, { twoFactorBackupCodes: codes as any } as any);
+      }
+
+      await storage.updateUser(user.id, { twoFactorVerifiedAt: new Date() } as any);
+      delete (req.session as any).pendingTwoFactorUserId;
+
+      req.login(user, (loginErr) => {
+        if (loginErr) return next(loginErr);
+        req.session.save(async (saveErr) => {
+          if (saveErr) return next(saveErr);
+          await AuditService.log({
+            context: { userId: user.id, organizationId: user.organizationId, ip: req.ip || req.socket.remoteAddress, userAgent: req.get('user-agent') },
+            action: 'user.login.2fa', resource: 'auth', metadata: { email: user.email }
+          }).catch(()=>{});
+          const { password, ...userWithoutPassword } = user;
+          try {
+            const rows = await db.select({ roleName: rolesSchema.name })
+              .from(userRolesSchema)
+              .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
+              .where(eq(userRolesSchema.userId, user.id));
+            const roles = rows.map(r => r.roleName);
+            res.status(200).json({ ...userWithoutPassword, roles });
+          } catch (e) {
+            console.error('Failed to fetch roles on 2FA login:', e);
+            res.status(200).json({ ...userWithoutPassword, roles: [] });
+          }
+        });
+      });
+    } catch (e) {
+      console.error('2FA login error', e);
+      next(e);
+    }
   });
 
   app.post("/api/logout", (req, res, next) => {
@@ -420,11 +511,23 @@ export function setupAuth(app: Express) {
     });
   });
 
-  app.get("/api/user", (req, res) => {
+  app.get("/api/user", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
+    // Fetch user's roles from database
+    const userRoles = await db.select({
+      roleName: rolesSchema.name,
+      roleId: rolesSchema.id,
+    })
+    .from(userRolesSchema)
+    .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
+    .where(eq(userRolesSchema.userId, req.user.id));
+    
     const { password, ...userWithoutPassword } = req.user;
-    res.json(userWithoutPassword);
+    res.json({
+      ...userWithoutPassword,
+      roles: userRoles.map(r => r.roleName),
+    });
   });
 
   // Upload profile picture endpoint
@@ -779,6 +882,33 @@ export function isAdmin(req: Request, res: Response, next: NextFunction) {
     return res.status(403).json({ message: "Admin access required" });
   }
   next();
+}
+
+export async function isOrgAdminRequest(req: Request): Promise<boolean> {
+  if (!req.user || !req.user.organizationId) return false;
+  // Global admins are not treated as org admins here; they already have broader access
+  if (req.user.isAdmin) return false;
+
+  const rows = await db.select({ roleName: rolesSchema.name })
+    .from(userRolesSchema)
+    .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
+    .where(eq(userRolesSchema.userId, req.user.id));
+
+  return rows.some((r) => r.roleName === "OrgAdmin");
+}
+
+export async function isAdminOrOrgAdmin(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (req.user?.isAdmin) return next();
+    const orgAdmin = await isOrgAdminRequest(req);
+    if (!orgAdmin) {
+      return res.status(403).json({ message: "Admin or OrgAdmin access required" });
+    }
+    return next();
+  } catch (error) {
+    console.error("Role check failed:", error);
+    return res.status(500).json({ message: "Authorization check failed" });
+  }
 }
 
 export function isEmployee(req: Request, res: Response, next: NextFunction) {

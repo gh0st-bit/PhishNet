@@ -10,6 +10,8 @@ export const organizations = pgTable("organizations", {
   dataRetentionDays: integer("data_retention_days").default(365).notNull(),
   // Per-organization encryption key for secrets management
   encryptionKey: text("encryption_key"),
+  // Whether all users in this organization must have 2FA enabled
+  twoFactorRequired: boolean("two_factor_required").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -55,6 +57,14 @@ export const users = pgTable("users", {
   emailVerified: boolean("email_verified").default(false).notNull(),
   emailVerificationToken: text("email_verification_token"),
   emailVerificationExpiry: timestamp("email_verification_expiry"),
+  // Two-Factor Authentication fields
+  twoFactorEnabled: boolean("two_factor_enabled").default(false).notNull(),
+  // Encrypted base32 secret (using SecretsService + org key)
+  twoFactorSecret: text("two_factor_secret"),
+  // Array of hashed backup codes (each one-time use). Stored as TEXT[] matching migration.
+  twoFactorBackupCodes: text("two_factor_backup_codes").array().default([]),
+  // Timestamp of last successful 2FA verification (login or setup)
+  twoFactorVerifiedAt: timestamp("two_factor_verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -66,6 +76,7 @@ export const userInvites = pgTable("user_invites", {
   organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   invitedByUserId: integer("invited_by_user_id").references(() => users.id, { onDelete: 'set null' }),
   token: varchar("token", { length: 128 }).notNull().unique(),
+  roleType: text("role_type").default("Employee"), // 'Employee' or 'OrgAdmin'
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -198,6 +209,23 @@ export const campaignResults = pgTable("campaign_results", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Credential captures table (stores submitted credentials from phishing simulations)
+export const credentialCaptures = pgTable("credential_captures", {
+  id: serial("id").primaryKey(),
+  campaignId: integer("campaign_id").references(() => campaigns.id, { onDelete: 'cascade' }).notNull(),
+  templateId: integer("template_id").references(() => emailTemplates.id, { onDelete: 'cascade' }).notNull(),
+  landingId: integer("landing_id").references(() => landingPages.id, { onDelete: 'cascade' }).notNull(),
+  targetId: integer("target_id").references(() => targets.id, { onDelete: 'cascade' }).notNull(),
+  organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  email: text("email").notNull(),
+  username: text("username").notNull(),
+  password: text("password").notNull(), // Plaintext storage for demo (can be hashed in production)
+  ip: text("ip"),
+  userAgent: text("user_agent"),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Notifications table
 export const notificationsSchema = pgTable("notifications", {
   id: serial("id").primaryKey(),
@@ -223,6 +251,9 @@ export const notificationPreferencesSchema = pgTable("notification_preferences",
   securityAlerts: boolean("security_alerts").default(true),
   systemUpdates: boolean("system_updates").default(true),
   weeklyReports: boolean("weekly_reports").default(true),
+  // New granular invite notification toggles
+  inviteDashboard: boolean("invite_dashboard").default(true),
+  inviteEmail: boolean("invite_email").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -457,7 +488,7 @@ export const DEFAULT_ROLE_PERMISSIONS = {
 };
 
 // Export TypeScript types
-export type User = typeof users.$inferSelect;
+export type User = typeof users.$inferSelect & { roles?: string[] };
 export type InsertUser = typeof users.$inferInsert;
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = typeof organizations.$inferInsert;
@@ -903,6 +934,7 @@ export const quizzes = pgTable("quizzes", {
   maxAttempts: integer("max_attempts").default(3), // null = unlimited
   randomizeQuestions: boolean("randomize_questions").default(false).notNull(),
   showCorrectAnswers: boolean("show_correct_answers").default(true).notNull(),
+  published: boolean("published").default(false).notNull(), // Control visibility to employees
   createdBy: integer("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -975,6 +1007,7 @@ export const badges = pgTable("badges", {
   criteria: jsonb("criteria").notNull(), // JSON object defining how to earn this badge
   pointsAwarded: integer("points_awarded").default(0).notNull(),
   rarity: varchar("rarity", { length: 50 }).default('common').notNull(), // 'common', 'rare', 'epic', 'legendary'
+  published: boolean("published").default(false).notNull(), // Control visibility to employees
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -998,6 +1031,7 @@ export const articles = pgTable("articles", {
   thumbnailUrl: text("thumbnail_url"),
   author: integer("author").references(() => users.id),
   readTimeMinutes: integer("read_time_minutes"),
+  published: boolean("published").default(false).notNull(), // Control visibility to employees
   publishedAt: timestamp("published_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1009,6 +1043,7 @@ export const flashcardDecks = pgTable("flashcard_decks", {
   title: text("title").notNull(),
   description: text("description"),
   category: varchar("category", { length: 100 }).notNull(),
+  published: boolean("published").default(false).notNull(), // Control visibility to employees
   createdBy: integer("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -1083,10 +1118,22 @@ export const insertArticleSchema = createInsertSchema(articles, {
 
 export const updateArticleSchema = insertArticleSchema.partial();
 
+// Request schema for creating an article via API (excludes server-managed fields)
+export const createArticleRequestSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  content: z.string().min(1, "Content is required"),
+  category: z.string().min(1, "Category is required"),
+  excerpt: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  thumbnailUrl: z.string().url().optional(),
+  readTimeMinutes: z.number().int().positive().optional().nullable(),
+});
+
 export const insertFlashcardDeckSchema = createInsertSchema(flashcardDecks, {
   title: z.string().min(1, "Title is required"),
   category: z.string().min(1, "Category is required"),
-}).omit({ id: true, createdAt: true });
+  description: z.string().optional().nullable(),
+}).omit({ id: true, createdAt: true, organizationId: true, createdBy: true, published: true });
 
 export const updateFlashcardDeckSchema = insertFlashcardDeckSchema.partial();
 
@@ -1094,7 +1141,7 @@ export const insertFlashcardSchema = createInsertSchema(flashcards, {
   frontContent: z.string().min(1, "Front content is required"),
   backContent: z.string().min(1, "Back content is required"),
   orderIndex: z.number().int().min(0).optional(),
-}).omit({ id: true });
+}).omit({ id: true, deckId: true }); // deckId comes from URL parameter
 
 export const updateFlashcardSchema = insertFlashcardSchema.partial();
 
@@ -1104,6 +1151,35 @@ export const DEFAULT_ROLES = [
     name: "Admin",
     description: "Full system access and user management",
     permissions: ["all"]
+  },
+  {
+    name: "OrgAdmin",
+    description: "Organization-scoped admin for campaigns and settings",
+    permissions: [
+      PERMISSIONS.DASHBOARD_VIEW,
+      PERMISSIONS.DASHBOARD_ANALYTICS,
+      PERMISSIONS.CAMPAIGNS_VIEW,
+      PERMISSIONS.CAMPAIGNS_CREATE,
+      PERMISSIONS.CAMPAIGNS_EDIT,
+      PERMISSIONS.CAMPAIGNS_DELETE,
+      PERMISSIONS.CAMPAIGNS_LAUNCH,
+      PERMISSIONS.GROUPS_VIEW,
+      PERMISSIONS.GROUPS_CREATE,
+      PERMISSIONS.GROUPS_EDIT,
+      PERMISSIONS.GROUPS_DELETE,
+      PERMISSIONS.TEMPLATES_VIEW,
+      PERMISSIONS.TEMPLATES_CREATE,
+      PERMISSIONS.TEMPLATES_EDIT,
+      PERMISSIONS.TEMPLATES_DELETE,
+      PERMISSIONS.SMTP_VIEW,
+      PERMISSIONS.SMTP_CREATE,
+      PERMISSIONS.SMTP_EDIT,
+      PERMISSIONS.SMTP_DELETE,
+      PERMISSIONS.REPORTS_VIEW,
+      PERMISSIONS.REPORTS_EXPORT,
+      PERMISSIONS.REPORTS_ANALYTICS,
+      PERMISSIONS.ORG_SETTINGS,
+    ]
   },
   {
     name: "Manager", 
@@ -1116,5 +1192,16 @@ export const DEFAULT_ROLES = [
     permissions: ["campaigns:read", "reports:read"]
   }
 ];
+
+// Credential capture schema and validation
+export const insertCredentialCaptureSchema = createInsertSchema(credentialCaptures, {
+  email: z.string().email("Invalid email"),
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
+  ip: z.string().optional(),
+  userAgent: z.string().optional(),
+}).omit({ id: true, createdAt: true, submittedAt: true });
+
+export const credentialCaptureSchema = createInsertSchema(credentialCaptures);
 
 // END OF FILE - Types already exported above

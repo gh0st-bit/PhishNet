@@ -23,9 +23,11 @@ import {
   GraduationCap,
   Trophy,
   UserPlus,
+  Layers,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Logo } from "@/components/common/logo";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -35,17 +37,38 @@ interface NavigationItem {
   icon: React.ReactNode;
   children?: NavigationItem[];
   adminOnly?: boolean;
+  orgAdminOnly?: boolean;
   userOnly?: boolean;
 }
 
 export default function Sidebar() {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [expandedItems, setExpandedItems] = useState<string[]>(['Employee Portal']);
   const { user } = useAuth();
 
   const isAdmin = user?.isAdmin;
-  const isEmployee = !user?.isAdmin;
+  const isOrgAdmin = user?.roles?.includes("OrgAdmin");
+  // Treat org admins as distinct from employees so they cannot see
+  // or navigate to employee-only pages.
+  const isEmployee = !user?.isAdmin && !isOrgAdmin && user?.roles?.includes("User");
+
+  // Initialize expandedItems based on current location
+  const [expandedItems, setExpandedItems] = useState<string[]>(() => {
+    const initial: string[] = [];
+    const contentPaths = [
+      '/admin/content/articles',
+      '/admin/content/videos',
+      '/admin/content/flashcards',
+      '/admin/content/mcqs'
+    ];
+    
+    const isOnContentPage = contentPaths.some(path => location.startsWith(path));
+    if (isOnContentPage) {
+      initial.push('Content');
+    }
+    
+    return initial;
+  });
 
   const toggleExpanded = (name: string) => {
     setExpandedItems(prev => 
@@ -69,11 +92,23 @@ export default function Sidebar() {
       icon: <Mail className="h-5 w-5" />,
       adminOnly: true
     },
+    { 
+      name: "Credential Captures", 
+      href: "/admin/credential-captures", 
+      icon: <Shield className="h-5 w-5" />,
+      adminOnly: true
+    },
     // ...other admin items...
     { 
       name: "Enrollment", 
       href: "/enrollment", 
       icon: <UserPlus className="h-5 w-5" />,
+      adminOnly: true
+    },
+    { 
+      name: "Manage Organizations", 
+      href: "/organization-management", 
+      icon: <Building2 className="h-5 w-5" />,
       adminOnly: true
     },
     {
@@ -82,7 +117,6 @@ export default function Sidebar() {
       adminOnly: true,
       children: [
         { name: "Articles", href: "/admin/content/articles", icon: <FileText className="h-4 w-4" /> },
-        { name: "Blogs", href: "/admin/content/blogs", icon: <FileText className="h-4 w-4" /> },
         { name: "Videos", href: "/admin/content/videos", icon: <FolderOpen className="h-4 w-4" /> },
         { name: "Flashcards", href: "/admin/content/flashcards", icon: <BookOpen className="h-4 w-4" /> },
         { name: "MCQs", href: "/admin/content/mcqs", icon: <HelpCircle className="h-4 w-4" /> },
@@ -148,11 +182,61 @@ export default function Sidebar() {
       icon: <Shield className="h-5 w-5" />,
       adminOnly: true
     },
+    
+    // Org Admin navigation (limited to their organization)
+    { 
+      name: "Dashboard", 
+      href: "/org-admin", 
+      icon: <BarChart3 className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Campaigns", 
+      href: "/org-admin/campaigns", 
+      icon: <Mail className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Templates", 
+      href: "/org-admin/templates", 
+      icon: <FolderOpen className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Landing Pages", 
+      href: "/org-admin/landing-pages", 
+      icon: <Layout className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "SMTP Profiles", 
+      href: "/org-admin/smtp-profiles", 
+      icon: <Send className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
     { 
       name: "Enrollment", 
-      href: "/enrollment", 
+      href: "/org-admin/enrollment", 
       icon: <UserPlus className="h-5 w-5" />,
-      adminOnly: true
+      orgAdminOnly: true
+    },
+    { 
+      name: "Groups", 
+      href: "/org-admin/groups", 
+      icon: <Users className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Users", 
+      href: "/org-admin/users", 
+      icon: <Shield className="h-5 w-5" />,
+      orgAdminOnly: true
+    },
+    { 
+      name: "Reports", 
+      href: "/org-admin/reports", 
+      icon: <BarChart className="h-5 w-5" />,
+      orgAdminOnly: true
     },
     
     // Employee Portal (user-only)
@@ -172,6 +256,18 @@ export default function Sidebar() {
           name: "Quizzes", 
           href: "/employee/quizzes", 
           icon: <HelpCircle className="h-4 w-4" />,
+          userOnly: true
+        },
+        { 
+          name: "Articles", 
+          href: "/employee/articles", 
+          icon: <FileText className="h-4 w-4" />,
+          userOnly: true
+        },
+        { 
+          name: "Flashcards", 
+          href: "/employee/flashcards", 
+          icon: <Layers className="h-4 w-4" />,
           userOnly: true
         },
         { 
@@ -203,24 +299,32 @@ export default function Sidebar() {
 
   return (
     <>
-      {/* Mobile menu button */}
-      <div className="absolute top-4 left-4 z-40 md:hidden">
-        <Button variant="ghost" size="icon" onClick={toggleMobile}>
+      {/* Mobile menu button - improved touch target */}
+      <div className="fixed top-3 left-3 z-40 md:hidden">
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={toggleMobile}
+          className="h-11 w-11 touch-manipulation"
+          aria-label="Toggle navigation menu"
+        >
           <Menu className="h-6 w-6" />
         </Button>
       </div>
 
-      {/* Sidebar */}
+      {/* Sidebar - responsive width and smooth animations */}
       <aside className={cn(
-        "bg-card w-64 border-r border-border z-30 flex flex-col",
-        "transition-transform duration-200 ease-in-out transform",
+        "bg-card border-r border-border z-30 flex flex-col",
+        "w-[280px] sm:w-72 md:w-64",
+        "transition-transform duration-300 ease-out transform",
         "fixed inset-y-0 left-0 md:relative md:translate-x-0",
+        "shadow-2xl md:shadow-none",
         mobileOpen ? "translate-x-0" : "-translate-x-full"
       )}>
-        <div className="flex items-center justify-center h-16 border-b border-border shrink-0">
+        <div className="flex items-center justify-center h-16 sm:h-18 border-b border-border shrink-0">
           <div className="flex items-center space-x-2">
-            <Logo className="h-8 w-8" />
-            <span className="text-xl font-bold text-foreground">PhishNet</span>
+            <Logo className="h-8 w-8 sm:h-9 sm:w-9" />
+            <span className="text-xl sm:text-2xl font-bold text-foreground">PhishNet</span>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto mt-5 px-4 pb-4">
@@ -228,6 +332,7 @@ export default function Sidebar() {
             {navigation.map((item) => {
               // Filter based on role
               if (item.adminOnly && !isAdmin) return null;
+              if (item.orgAdminOnly && !isOrgAdmin) return null;
               if (item.userOnly && !isEmployee) return null;
 
               const isExpanded = expandedItems.includes(item.name);
@@ -242,10 +347,11 @@ export default function Sidebar() {
                       <button
                         type="button"
                         className={cn(
-                          "w-full group flex items-center justify-between px-2 py-2 text-base rounded-md cursor-pointer",
+                          "w-full group flex items-center justify-between px-3 py-2.5 text-base rounded-md cursor-pointer touch-manipulation",
+                          "min-h-[44px]",
                           isChildActive
                             ? "bg-secondary/50 text-foreground"
-                            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground active:bg-secondary/70"
                         )}
                         onClick={() => toggleExpanded(item.name)}
                       >
@@ -269,6 +375,7 @@ export default function Sidebar() {
                           {item.children?.map((child) => {
                             // Filter children based on role
                             if (child.adminOnly && !isAdmin) return null;
+                            if (child.orgAdminOnly && !isOrgAdmin) return null;
                             if (child.userOnly && !isEmployee) return null;
 
                             const isChildItemActive = location === child.href;
@@ -276,14 +383,14 @@ export default function Sidebar() {
                               <Link
                                 key={child.name}
                                 href={child.href!}
-                                onClick={() => setMobileOpen(false)}
                               >
                                 <div
                                   className={cn(
-                                    "group flex items-center px-2 py-1.5 text-sm rounded-md cursor-pointer",
+                                    "group flex items-center px-3 py-2 text-sm rounded-md cursor-pointer touch-manipulation",
+                                    "min-h-[40px]",
                                     isChildItemActive
                                       ? "bg-primary/10 text-primary font-medium"
-                                      : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                                      : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground active:bg-secondary/70"
                                   )}
                                 >
                                   <span className="mr-2">
@@ -304,10 +411,11 @@ export default function Sidebar() {
                     >
                       <div
                         className={cn(
-                          "group flex items-center px-2 py-2 text-base rounded-md cursor-pointer",
+                          "group flex items-center px-3 py-2.5 text-base rounded-md cursor-pointer touch-manipulation",
+                          "min-h-[44px]",
                           isActive
                             ? "bg-secondary text-foreground"
-                            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
+                            : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground active:bg-secondary/70"
                         )}
                       >
                         <span className={cn(
@@ -327,11 +435,11 @@ export default function Sidebar() {
         </nav>
       </aside>
 
-      {/* Backdrop for mobile */}
+      {/* Backdrop for mobile - animated */}
       {mobileOpen && (
         <button
           type="button"
-          className="fixed inset-0 bg-black/50 z-20 md:hidden"
+          className="fixed inset-0 bg-black/60 z-20 md:hidden animate-in fade-in duration-200"
           onClick={() => setMobileOpen(false)}
           aria-label="Close menu"
         />

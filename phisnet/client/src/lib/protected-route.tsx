@@ -24,24 +24,22 @@ export function ProtectedRoute({
   if (!user) {
     return (
       <Route path={path}>
-        <Redirect to="/auth" />
+        <Redirect to={path.startsWith("/org-admin") ? "/auth?mode=org-admin" : "/auth"} />
       </Route>
     );
   }
 
-  // Role-based redirect for root path
-  if (path === "/" && !user.isAdmin) {
-    return (
-      <Route path={path}>
-        <Redirect to="/employee" />
-      </Route>
-    );
-  }
+  const roles: string[] = Array.isArray((user as any).roles) ? (user as any).roles : [];
+  const isGlobalAdmin = user.isAdmin || roles.includes("Admin");
+  const isOrgAdmin = roles.includes("OrgAdmin") && !isGlobalAdmin;
+  const isEmployee = roles.includes("User") && !isGlobalAdmin && !isOrgAdmin;
 
-  // Prevent regular users from accessing admin routes
-  // Treat any route under /admin as admin-only and also explicit admin pages
-  const adminPrefixes = ["/admin"];
+  // Explicitly route each protected area by role
+
+  // 1) Global admin-only areas (root dashboard + classic admin pages)
+  const adminPrefixes = ["/admin"]; // keep for any future nested admin routes
   const adminRoutes = [
+    "/",
     "/campaigns",
     "/reconnaissance",
     "/templates",
@@ -52,26 +50,50 @@ export function ProtectedRoute({
     "/reports",
     "/report-schedules",
     "/audit-logs",
-    "/users"
+    "/users",
+    "/enrollment",
+    "/organization-management",
+    "/organization",
   ];
 
-  const isAdminPath = adminPrefixes.some(p => path.startsWith(p)) || adminRoutes.some(route => path.startsWith(route));
-  if (!user.isAdmin && isAdminPath) {
-    return (
-      <Route path={path}>
-        <Redirect to="/employee" />
-      </Route>
-    );
+  const isAdminPath = adminPrefixes.some((p) => path.startsWith(p)) || adminRoutes.some((route) => path === route);
+
+  if (isAdminPath) {
+    // Only global admins allowed here
+    if (!isGlobalAdmin) {
+      return (
+        <Route path={path}>
+          <Redirect to="/employee" />
+        </Route>
+      );
+    }
   }
 
-  // Prevent admins from accessing employee routes
-  const employeeRoutesPrefix = "/employee";
-  if (user.isAdmin && path.startsWith(employeeRoutesPrefix)) {
-    return (
-      <Route path={path}>
-        <Redirect to="/" />
-      </Route>
-    );
+  // 2) Org admin portal
+  const orgAdminPrefix = "/org-admin";
+  if (path.startsWith(orgAdminPrefix)) {
+    if (!isOrgAdmin && !isGlobalAdmin) {
+      // Only org admins and global admins allowed
+      return (
+        <Route path={path}>
+          <Redirect to="/employee" />
+        </Route>
+      );
+    }
+  }
+
+  // 3) Employee portal
+  const employeePrefix = "/employee";
+  if (path.startsWith(employeePrefix)) {
+    if (!isEmployee) {
+      // Only employees allowed; admins/org-admins redirect to their dashboard
+      const redirectTo = isGlobalAdmin ? "/" : isOrgAdmin ? "/org-admin" : "/";
+      return (
+        <Route path={path}>
+          <Redirect to={redirectTo} />
+        </Route>
+      );
+    }
   }
 
   return <Route path={path} component={Component} />;

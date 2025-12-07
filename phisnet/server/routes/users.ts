@@ -234,6 +234,20 @@ export function registerUserRoutes(app: Express) {
           userId: newUser.id,
           roleId: roleId
         });
+      } else {
+        // If no explicit role selected, default to "User" role for employees
+        const [userRole] = await db
+          .select({ id: rolesSchema.id })
+          .from(rolesSchema)
+          .where(eq(rolesSchema.name, 'User'))
+          .limit(1);
+
+        if (userRole) {
+          await db.insert(userRolesSchema).values({
+            userId: newUser.id,
+            roleId: userRole.id,
+          });
+        }
       }
       
       // Audit log user creation

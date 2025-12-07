@@ -97,17 +97,20 @@ export class NotificationService {
   static async createOrganizationNotification(notification: any) {
     // Create notification for all users in organization
     try {
+      console.log(`📢 Creating organization notification for org ${notification.organizationId}, type: ${notification.type}`);
       const usersResult = await pool.query(
         'SELECT id FROM users WHERE organization_id = $1',
         [notification.organizationId]
       );
+      
+      console.log(`👥 Found ${usersResult.rows.length} users in organization ${notification.organizationId}`);
       
       const notifications = [];
       for (const user of usersResult.rows) {
         // Check if the user has enabled this type of notification
         const shouldNotify = await this.shouldNotify(user.id, notification.type);
         if (!shouldNotify) {
-          console.log(`Organization notification of type ${notification.type} skipped for user ${user.id} based on preferences`);
+          console.log(`⏭️ Organization notification of type ${notification.type} skipped for user ${user.id} based on preferences`);
           continue;
         }
         
@@ -118,12 +121,14 @@ export class NotificationService {
         
         if (notif) {
           notifications.push(notif);
+          console.log(`✅ Created notification for user ${user.id}`);
         }
       }
       
+      console.log(`📬 Total notifications created: ${notifications.length}`);
       return notifications;
     } catch (error) {
-      console.error("Error creating organization notification:", error);
+      console.error("❌ Error creating organization notification:", error);
       throw error;
     }
   }
@@ -131,8 +136,8 @@ export class NotificationService {
   static async updatePreferences(userId: number, preferences: any) {
     try {
       const result = await pool.query(
-        `INSERT INTO notification_preferences (user_id, email_notifications, push_notifications, campaign_alerts, security_alerts, system_updates, weekly_reports)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO notification_preferences (user_id, email_notifications, push_notifications, campaign_alerts, security_alerts, system_updates, weekly_reports, invite_dashboard, invite_email)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (user_id) 
          DO UPDATE SET 
            email_notifications = $2,
@@ -141,6 +146,8 @@ export class NotificationService {
            security_alerts = $5,
            system_updates = $6,
            weekly_reports = $7,
+           invite_dashboard = $8,
+           invite_email = $9,
            updated_at = NOW()
          RETURNING *`,
         [
@@ -150,7 +157,9 @@ export class NotificationService {
           preferences.campaignAlerts !== undefined ? preferences.campaignAlerts : true,
           preferences.securityAlerts !== undefined ? preferences.securityAlerts : true,
           preferences.systemUpdates !== undefined ? preferences.systemUpdates : true,
-          preferences.weeklyReports !== undefined ? preferences.weeklyReports : true
+          preferences.weeklyReports !== undefined ? preferences.weeklyReports : true,
+          preferences.inviteDashboard !== undefined ? preferences.inviteDashboard : true,
+          preferences.inviteEmail !== undefined ? preferences.inviteEmail : true
         ]
       );
       
@@ -176,7 +185,9 @@ export class NotificationService {
           campaignAlerts: true,
           securityAlerts: true,
           systemUpdates: true,
-          weeklyReports: true
+          weeklyReports: true,
+          inviteDashboard: true,
+          inviteEmail: true
         };
       }
       
@@ -206,6 +217,7 @@ export class NotificationService {
       // Map notification type to corresponding preference setting
       switch (notificationType) {
         case 'campaign_complete':
+        case 'campaign_created':
         case 'email_opened':
         case 'link_clicked':
         case 'form_submitted':
@@ -223,6 +235,14 @@ export class NotificationService {
         case 'weekly_report':
         case 'monthly_report':
           return preferences.weeklyReports;
+
+        case 'invite_accepted':
+          return preferences.inviteDashboard !== false; // default true
+        
+        case 'flashcard':
+        case 'article':
+        case 'training':
+          return true; // Always show training content notifications
           
         default:
           return true; // Default to showing notifications

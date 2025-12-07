@@ -41,7 +41,10 @@ export default function CampaignForm({ onClose }: CampaignFormProps) {
   const { data: groups = [] } = useGroups();
   const { data: smtpProfiles = [] } = useSmtpProfiles();
   const { data: templatesResponse } = useTemplates();
-  const emailTemplates = templatesResponse?.templates || [];
+  // Extract templates array from response, fallback to empty array
+  const emailTemplates = Array.isArray(templatesResponse) 
+    ? templatesResponse 
+    : (templatesResponse?.templates || []);
   const { data: landingPages = [] } = useLandingPages();
   // Initialize the form with react-hook-form and zod validation
   const form = useForm<CampaignFormValues>({

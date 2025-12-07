@@ -13,17 +13,29 @@ import {
   UserPlus,
   Copy,
   RefreshCw,
+  MoreVertical,
+  Trash,
+  Upload,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { customToast } from "@/components/ui/custom-toast";
 import AppLayout from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const bulkInviteSchema = z.object({
   emails: z.string().min(1, "Please enter at least one email address"),
@@ -39,12 +51,15 @@ interface UserInvite {
   acceptedAt: string | null;
   createdAt: string;
   invitedByUserId: number;
+  inviteUrl?: string;
 }
 
 export default function EnrollmentPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showBulkDialog, setShowBulkDialog] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [parsedEmails, setParsedEmails] = useState<string[]>([]);
 
   const form = useForm<BulkInviteForm>({
     resolver: zodResolver(bulkInviteSchema),
@@ -66,15 +81,31 @@ export default function EnrollmentPage() {
         .map((email) => email.trim())
         .filter((email) => email.length > 0);
 
-      return apiRequest("POST", "/api/admin/enroll/invite", {
+      const response = await apiRequest("POST", "/api/admin/enroll/invite", {
         emails: emailList,
       });
+      return await response.json();
     },
     onSuccess: (data) => {
-      toast({
-        title: "Invites sent successfully",
-        description: `${data.success?.length || 0} invitation(s) sent. ${data.failed?.length || 0} failed.`,
-      });
+      console.log("Invite response:", data);
+      
+      const successCount = data.successCount ?? data.success?.length ?? 0;
+      const failedCount = data.failedCount ?? data.failed?.length ?? 0;
+      
+      console.log("Success count:", successCount, "Failed count:", failedCount);
+      
+      if (failedCount > 0) {
+        customToast.error({
+          title: "Invites partially sent",
+          description: `${successCount} invitation(s) sent successfully, ${failedCount} failed.`,
+        });
+      } else {
+        customToast.success({
+          title: "Invites sent successfully",
+          description: `${successCount} invitation(s) sent to employees.`,
+        });
+      }
+      
       queryClient.invalidateQueries({ queryKey: ["/api/admin/enroll/invites"] });
       setShowBulkDialog(false);
       form.reset();
@@ -88,17 +119,105 @@ export default function EnrollmentPage() {
     },
   });
 
+  // Delete invite mutation
+  const deleteInvite = useMutation({
+    mutationFn: async (inviteId: number) => {
+      return apiRequest("DELETE", `/api/admin/enroll/invites/${inviteId}`);
+    },
+    onSuccess: () => {
+      customToast.success({ title: "Invite deleted successfully", description: "The invitation has been revoked." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/enroll/invites"] });
+    },
+    onError: (error: Error) => {
+      customToast.error({ title: "Failed to delete invite", description: error.message });
+    },
+  });
+
+  // Resend invite mutation
+  const resendInvite = useMutation({
+    mutationFn: async (inviteId: number) => {
+      return apiRequest("POST", `/api/admin/enroll/invites/${inviteId}/resend`);
+    },
+    onSuccess: (data) => {
+      customToast.success({ title: "Invite resent successfully", description: "A new invitation email has been sent." });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/enroll/invites"] });
+      // Optionally copy new invite URL
+      if (data.inviteUrl) {
+        navigator.clipboard.writeText(data.inviteUrl);
+        customToast.info({ title: "New invite link copied to clipboard" });
+      }
+    },
+    onError: (error: Error) => {
+      customToast.error({ title: "Failed to resend invite", description: error.message });
+    },
+  });
+
   const onSubmit = (data: BulkInviteForm) => {
     sendInvites.mutate(data);
   };
 
-  const copyInviteLink = (token: string) => {
-    const inviteUrl = `${window.location.origin}/accept-invite/${token}`;
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+      customToast.error({ title: "Invalid file type", description: "Please upload a CSV file" });
+      return;
+    }
+
+    setCsvFile(file);
+    const reader = new FileReader();
+    
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const emails: string[] = [];
+      
+      // Parse CSV - handle both comma and newline separated
+      const lines = text.split(/\r?\n/);
+      
+      lines.forEach((line) => {
+        // Split by comma for CSV columns
+        const columns = line.split(',');
+        
+        columns.forEach((col) => {
+          const trimmed = col.trim().replace(/["']/g, '');
+          // Basic email validation regex
+          if (trimmed && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+            emails.push(trimmed.toLowerCase());
+          }
+        });
+      });
+      
+      // Remove duplicates
+      const uniqueEmails = Array.from(new Set(emails));
+      setParsedEmails(uniqueEmails);
+      
+      // Update form with parsed emails
+      form.setValue('emails', uniqueEmails.join('\n'));
+      
+      customToast.success({ 
+        title: "CSV parsed successfully", 
+        description: `Found ${uniqueEmails.length} unique email(s)` 
+      });
+    };
+    
+    reader.onerror = () => {
+      customToast.error({ title: "Failed to read file", description: "Could not parse the CSV file" });
+    };
+    
+    reader.readAsText(file);
+  };
+
+  const clearCsvUpload = () => {
+    setCsvFile(null);
+    setParsedEmails([]);
+    form.setValue('emails', '');
+  };
+
+  const copyInviteLink = (invite: UserInvite) => {
+    const inviteUrl = invite.inviteUrl || `${window.location.origin}/api/enroll/accept?token=${encodeURIComponent(invite.token)}`;
     navigator.clipboard.writeText(inviteUrl);
-    toast({
-      title: "Invite link copied",
-      description: "The invitation link has been copied to your clipboard.",
-    });
+    customToast.success({ title: "Invite link copied", description: "The invitation link has been copied to your clipboard." });
   };
 
   const getStatusBadge = (invite: UserInvite) => {
@@ -224,15 +343,47 @@ export default function EnrollmentPage() {
                           {invite.acceptedAt ? formatDate(invite.acceptedAt) : "-"}
                         </TableCell>
                         <TableCell className="text-right">
-                          {!invite.acceptedAt && new Date(invite.expiresAt) > new Date() && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => copyInviteLink(invite.token)}
-                            >
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {!invite.acceptedAt && new Date(invite.expiresAt) > new Date() && (
+                                <DropdownMenuItem onClick={() => copyInviteLink(invite)}>
+                                  <Copy className="mr-2 h-4 w-4" />
+                                  Copy Link
+                                </DropdownMenuItem>
+                              )}
+                              {!invite.acceptedAt && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() => resendInvite.mutate(invite.id)}
+                                    disabled={resendInvite.isPending}
+                                  >
+                                    <RefreshCw className="mr-2 h-4 w-4" />
+                                    Resend
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    onClick={() => deleteInvite.mutate(invite.id)}
+                                    disabled={deleteInvite.isPending}
+                                    className="text-destructive focus:text-destructive"
+                                  >
+                                    <Trash className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {invite.acceptedAt && (
+                                <DropdownMenuItem disabled>
+                                  <CheckCircle className="mr-2 h-4 w-4" />
+                                  Accepted
+                                </DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -264,6 +415,37 @@ export default function EnrollmentPage() {
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              {/* CSV Upload Section */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Upload CSV File (Optional)</label>
+                <div className="flex gap-2">
+                  <Input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileUpload}
+                    className="flex-1"
+                  />
+                  {csvFile && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={clearCsvUpload}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                {csvFile && parsedEmails.length > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    <Upload className="inline h-3 w-3 mr-1" />
+                    Loaded: {csvFile.name} ({parsedEmails.length} email(s))
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  CSV should contain email addresses. Supports multiple columns and rows.
+                </p>
+              </div>
               <FormField
                 control={form.control}
                 name="emails"

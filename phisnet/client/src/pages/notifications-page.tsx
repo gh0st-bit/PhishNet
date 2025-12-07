@@ -32,9 +32,36 @@ function getPriorityColor(priority: string) {
 
 function getTypeIcon(type: string) {
   switch (type) {
-    case 'security': return <Shield className="h-4 w-4 text-blue-500" />;
-    case 'threat_intel': return <AlertTriangle className="h-4 w-4 text-red-500" />;
-    default: return <BrainCircuit className="h-4 w-4 text-muted-foreground" />;
+    case 'campaign':
+    case 'campaign_complete':
+    case 'campaign_created':
+    case 'email_opened':
+    case 'link_clicked':
+    case 'form_submitted':
+      return <span className="text-2xl">📧</span>;
+    case 'security':
+    case 'security_alert':
+    case 'login_attempt':
+    case 'password_changed':
+      return <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400" />;
+    case 'system':
+    case 'system_update':
+    case 'maintenance':
+      return <span className="text-2xl">⚙️</span>;
+    case 'training':
+      return <span className="text-2xl">📚</span>;
+    case 'threat_intel':
+      return <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />;
+    case 'flashcard':
+      return <span className="text-2xl">🎴</span>;
+    case 'article':
+      return <span className="text-2xl">📰</span>;
+    case 'invite_accepted':
+      return <span className="text-2xl">👥</span>;
+    case 'weekly_report':
+    case 'monthly_report':
+      return <span className="text-2xl">📊</span>;
+    default: return <BrainCircuit className="h-5 w-5 text-muted-foreground" />;
   }
 }
 

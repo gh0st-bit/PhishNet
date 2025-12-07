@@ -31,15 +31,30 @@ import EmployeeBadgesPage from "@/pages/employee-badges-page";
 import EmployeeBadgeDetailPage from "@/pages/employee-badge-detail-page";
 import EmployeeLeaderboardPage from "@/pages/employee-leaderboard-page";
 import EmployeeProfilePage from "@/pages/employee-profile-page";
+import EmployeeArticlesPage from "@/pages/employee-articles-page";
+import EmployeeArticleDetailPage from "@/pages/employee-article-detail-page";
+import EmployeeFlashcardsPage from "@/pages/employee-flashcards-page";
 import AdminTrainingPage from "@/pages/admin-training-page";
 import AdminQuizPage from "@/pages/admin-quiz-page";
 import AdminBadgePage from "@/pages/admin-badge-page";
 import AdminArticlesPage from "@/pages/admin-articles-page";
-import AdminBlogsPage from "@/pages/admin-blogs-page";
+import AdminArticleCreatePage from "@/pages/admin-article-create-page";
 import AdminVideosPage from "@/pages/admin-videos-page";
 import AdminFlashcardsPage from "@/pages/admin-flashcards-page";
 import AdminMcqsPage from "@/pages/admin-mcqs-page";
+import CaptureLoginPage from "@/pages/capture-login";
+import AdminCredentialCapturesPage from "@/pages/admin-credential-captures-page";
+import OrgAdminDashboardPage from "@/pages/org-admin-dashboard-page";
+import OrgAdminCampaignsPage from "@/pages/org-admin-campaigns-page";
+import OrgAdminGroupsPage from "@/pages/org-admin-groups-page";
+import OrgAdminUsersPage from "@/pages/org-admin-users-page";
+import OrgAdminReportsPage from "@/pages/org-admin-reports-page";
+import OrgAdminEnrollmentPage from "@/pages/org-admin-enrollment-page";
+import OrgAdminTemplatesPage from "@/pages/org-admin-templates-page";
+import OrgAdminSmtpProfilesPage from "@/pages/org-admin-smtp-profiles-page";
+import OrgAdminLandingPagesPage from "@/pages/org-admin-landing-pages-page";
 import EnrollmentPage from "@/pages/enrollment-page";
+import OrganizationManagementPage from "@/pages/organization-management-page";
 import AcceptInvitePage from "@/pages/accept-invite-page";
 import SessionTimeoutWrapper from "@/components/session-timeout-wrapper";
 import { ProtectedRoute } from "./lib/protected-route";
@@ -53,9 +68,19 @@ function Router() {
   return (
     <Switch>
       <Route path="/auth" component={AuthPage} />
+      <Route path="/c/login" component={CaptureLoginPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password/:token" component={ResetPasswordPage} />
       <Route path="/accept-invite/:token" component={AcceptInvitePage} />
+      <ProtectedRoute path="/org-admin" component={OrgAdminDashboardPage} />
+      <ProtectedRoute path="/org-admin/campaigns" component={OrgAdminCampaignsPage} />
+      <ProtectedRoute path="/org-admin/groups" component={OrgAdminGroupsPage} />
+      <ProtectedRoute path="/org-admin/users" component={OrgAdminUsersPage} />
+      <ProtectedRoute path="/org-admin/reports" component={OrgAdminReportsPage} />
+      <ProtectedRoute path="/org-admin/enrollment" component={OrgAdminEnrollmentPage} />
+      <ProtectedRoute path="/org-admin/templates" component={OrgAdminTemplatesPage} />
+      <ProtectedRoute path="/org-admin/smtp-profiles" component={OrgAdminSmtpProfilesPage} />
+      <ProtectedRoute path="/org-admin/landing-pages" component={OrgAdminLandingPagesPage} />
       <ProtectedRoute path="/" component={DashboardPage} />
       <ProtectedRoute path="/campaigns" component={CampaignsPage} />
       <ProtectedRoute path="/reconnaissance" component={ReconnaissancePage} />
@@ -67,6 +92,7 @@ function Router() {
       <ProtectedRoute path="/report-schedules" component={ReportSchedulesPage} />
       <ProtectedRoute path="/users" component={UsersPage} />
       <ProtectedRoute path="/enrollment" component={EnrollmentPage} />
+      <ProtectedRoute path="/organization-management" component={OrganizationManagementPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/profile" component={ProfilePage} />
       <ProtectedRoute path="/organization" component={OrganizationPage} />
@@ -81,14 +107,18 @@ function Router() {
       <ProtectedRoute path="/employee/badges/:id" component={EmployeeBadgeDetailPage} />
       <ProtectedRoute path="/employee/leaderboard" component={EmployeeLeaderboardPage} />
       <ProtectedRoute path="/employee/profile" component={EmployeeProfilePage} />
+      <ProtectedRoute path="/employee/articles" component={EmployeeArticlesPage} />
+      <ProtectedRoute path="/employee/articles/:id" component={EmployeeArticleDetailPage} />
+      <ProtectedRoute path="/employee/flashcards" component={EmployeeFlashcardsPage} />
       <ProtectedRoute path="/admin/training" component={AdminTrainingPage} />
       <ProtectedRoute path="/admin/quizzes" component={AdminQuizPage} />
       <ProtectedRoute path="/admin/badges" component={AdminBadgePage} />
       <ProtectedRoute path="/admin/content/articles" component={AdminArticlesPage} />
-      <ProtectedRoute path="/admin/content/blogs" component={AdminBlogsPage} />
+      <ProtectedRoute path="/admin/content/articles/new" component={AdminArticleCreatePage} />
       <ProtectedRoute path="/admin/content/videos" component={AdminVideosPage} />
       <ProtectedRoute path="/admin/content/flashcards" component={AdminFlashcardsPage} />
       <ProtectedRoute path="/admin/content/mcqs" component={AdminMcqsPage} />
+      <ProtectedRoute path="/admin/credential-captures" component={AdminCredentialCapturesPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -132,6 +162,8 @@ function AppContent() {
         ) : (
           <Switch>
             <Route path="/auth" component={AuthPage} />
+            <Route path="/c/login" component={CaptureLoginPage} />
+            <Route path="/org-admin" component={AuthPage} />
             <Route path="/forgot-password" component={ForgotPasswordPage} />
             <Route path="/reset-password/:token" component={ResetPasswordPage} />
             <Route path="/accept-invite/:token" component={AcceptInvitePage} />

@@ -41,4 +41,41 @@ export function registerSmtpProfileRoutes(app: Express) {
       res.status(500).json({ message: "Error creating SMTP profile" });
     }
   });
+
+  // Delete an SMTP profile
+  app.delete("/api/smtp-profiles/:id", isAuthenticated, async (req, res) => {
+    try {
+      assertUser(req.user);
+      const profileId = Number.parseInt(req.params.id, 10);
+      if (Number.isNaN(profileId)) {
+        return res.status(400).json({ message: "Invalid SMTP profile id" });
+      }
+
+      const profile = await storage.getSmtpProfile(profileId);
+      if (!profile) {
+        return res.status(404).json({ message: "SMTP profile not found" });
+      }
+
+      if (profile.organizationId !== req.user.organizationId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      try {
+        const success = await storage.deleteSmtpProfile(profileId);
+        if (!success) {
+          return res.status(500).json({ message: "Failed to delete SMTP profile" });
+        }
+      } catch (dbError: any) {
+        if (dbError?.code === '23503') {
+          return res.status(409).json({ message: "Cannot delete SMTP profile while campaigns are using it" });
+        }
+        throw dbError;
+      }
+
+      return res.status(200).json({ message: "SMTP profile deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting SMTP profile:", error);
+      res.status(500).json({ message: "Error deleting SMTP profile" });
+    }
+  });
 }

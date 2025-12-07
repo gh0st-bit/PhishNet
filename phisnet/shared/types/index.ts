@@ -7,12 +7,15 @@
 export interface Campaign {
   id: number;
   name: string;
-  status: 'active' | 'draft' | 'completed' | 'paused';
+  status: 'active' | 'draft' | 'completed' | 'paused' | 'scheduled';
   created_at: string;
+  createdAt?: string;
   targets: number;
   opened: number;
   clicked: number;
   organizationId?: string;
+  scheduledAt?: string | Date | null;
+  endDate?: string | Date | null;
 }
 
 // Template Types

@@ -6,6 +6,9 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "../db";
 import { isAuthenticated, hasOrganization, isEmployee } from "../auth";
+import { dashboardAnalyticsService } from "../services/dashboard-analytics.service";
+import { dashboardInsightsService } from "../services/dashboard-insights.service";
+import { gamificationService } from "../services/gamification.service";
 import { 
   trainingModules, 
   trainingProgress, 
@@ -13,7 +16,7 @@ import {
   quizQuestions,
   quizAttempts,
   certificates,
-  userPoints,
+    userPoints, 
   badges,
   userBadges,
   articles,
@@ -30,6 +33,71 @@ const router = Router();
 router.use(isAuthenticated);
 router.use(hasOrganization);
 router.use(isEmployee);
+
+// ========================================
+// DASHBOARD ANALYTICS ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/employee/dashboard/analytics
+ * Get comprehensive dashboard analytics data
+ */
+router.get("/dashboard/analytics", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId;
+
+    const analytics = await dashboardAnalyticsService.getDashboardAnalytics(userId, organizationId);
+    
+    res.json(analytics);
+  } catch (error: any) {
+    console.error("Error fetching dashboard analytics:", error);
+    res.status(500).json({ message: "Failed to fetch dashboard analytics" });
+  }
+});
+
+/**
+ * GET /api/employee/dashboard/insights
+ * Lightweight personalized insights for widgets
+ */
+router.get("/dashboard/insights", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const userId = req.user.id;
+    const organizationId = req.user.organizationId;
+
+    const insights = await dashboardInsightsService.getInsights(userId, organizationId);
+    res.json(insights);
+  } catch (error: any) {
+    console.error("Error fetching dashboard insights:", error);
+    res.status(500).json({ message: "Failed to fetch dashboard insights" });
+  }
+});
+
+/**
+ * GET /api/employee/level
+ * Get user's current level and XP progress
+ */
+router.get("/level", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const status = await gamificationService.getUserStatus(req.user.id);
+    res.json(status);
+  } catch (error: any) {
+    console.error("Error fetching level:", error);
+    res.status(500).json({ message: "Failed to fetch level" });
+  }
+});
 
 // ========================================
 // TRAINING MODULES ENDPOINTS
@@ -165,8 +233,8 @@ router.post("/training/:id/progress", async (req: Request, res: Response) => {
         updateData.completedAt = new Date();
         updateData.status = "completed";
 
-        // Award points for completion
-        await awardPoints(userId, 50, "training_completion");
+        // Award XP for completion
+        await gamificationService.awardXP(userId, 50, "training_completion");
       }
 
       await db
@@ -231,7 +299,12 @@ router.get("/quizzes", async (req: Request, res: Response) => {
           eq(quizAttempts.userId, userId)
         )
       )
-      .where(eq(quizzes.organizationId, orgId))
+      .where(
+        and(
+          eq(quizzes.organizationId, orgId),
+          eq(quizzes.published, true) // Only published quizzes
+        )
+      )
       .groupBy(quizzes.id);
 
     res.json({ quizzes: quizzesWithAttempts });
@@ -256,11 +329,16 @@ router.get("/quizzes/:id", async (req: Request, res: Response) => {
     const [quiz] = await db
       .select()
       .from(quizzes)
-      .where(eq(quizzes.id, quizId))
+      .where(
+        and(
+          eq(quizzes.id, quizId),
+          eq(quizzes.published, true) // Only published quizzes
+        )
+      )
       .limit(1);
 
     if (!quiz) {
-      return res.status(404).json({ message: "Quiz not found" });
+      return res.status(404).json({ message: "Quiz not found or not published" });
     }
 
     // Get all questions (without correct answers for initial load)
@@ -372,13 +450,23 @@ router.post("/quizzes/:id/submit", async (req: Request, res: Response) => {
       })
       .returning();
 
-    // Award points
+    // Award XP and capture gamification data
+    let gamificationData = null;
     if (passed) {
-      const points = score === 100 ? 100 : 50; // Bonus for perfect score
-      await awardPoints(userId, points, "quiz_completion");
-
-      // Check if this unlocks any badges
-      await checkBadgeUnlocks(userId);
+      const xp = score === 100 ? 100 : 50; // Bonus for perfect score
+      const gamificationResult = await gamificationService.awardXP(userId, xp, "quiz_completion");
+      gamificationData = {
+        xpGained: xp,
+        leveledUp: gamificationResult.leveledUp,
+        oldLevel: gamificationResult.oldLevel,
+        newLevel: gamificationResult.newLevel,
+        newBadges: gamificationResult.newBadges?.map((badge: any) => ({
+          id: badge.id,
+          name: badge.name,
+          description: badge.description,
+          rarity: badge.rarity,
+        })),
+      };
     }
 
     res.json({
@@ -388,6 +476,7 @@ router.post("/quizzes/:id/submit", async (req: Request, res: Response) => {
       correctAnswers,
       totalQuestions: questions.length,
       results,
+      gamification: gamificationData,
     });
   } catch (error: any) {
     console.error("Error submitting quiz:", error);
@@ -503,8 +592,11 @@ router.get("/badges", async (req: Request, res: Response) => {
 
     const userId = req.user.id;
 
-    // Get all badges
-    const allBadges = await db.select().from(badges);
+    // Get all badges (only published ones)
+    const allBadges = await db
+      .select()
+      .from(badges)
+      .where(eq(badges.published, true));
 
     // Get user's earned badges
     const earnedBadgeIds = await db
@@ -547,14 +639,19 @@ router.get("/badges/:id", async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid badge ID" });
     }
 
-    // Get badge details
+    // Get badge details (only if published)
     const [badge] = await db
       .select()
       .from(badges)
-      .where(eq(badges.id, badgeId));
+      .where(
+        and(
+          eq(badges.id, badgeId),
+          eq(badges.published, true)
+        )
+      );
 
     if (!badge) {
-      return res.status(404).json({ message: "Badge not found" });
+      return res.status(404).json({ message: "Badge not found or not published" });
     }
 
     // Check if user has earned this badge
@@ -589,9 +686,9 @@ router.get("/badges/:id", async (req: Request, res: Response) => {
       // Calculate progress based on criteria type
       if (criteria.type === 'points' && criteria.requiredPoints) {
         const [userStats] = await db
-          .select({ totalPoints: users.totalPoints })
-          .from(users)
-          .where(eq(users.id, userId));
+          .select({ totalPoints: userPoints.totalPoints })
+          .from(userPoints)
+          .where(eq(userPoints.userId, userId));
         
         if (userStats) {
           progress = Math.min(100, (userStats.totalPoints / criteria.requiredPoints) * 100);
@@ -608,7 +705,7 @@ router.get("/badges/:id", async (req: Request, res: Response) => {
           .where(
             and(
               eq(quizAttempts.userId, userId),
-              gte(quizAttempts.score, sql`(SELECT passing_score FROM quizzes WHERE id = quiz_attempts.quiz_id)`)
+              sql`${quizAttempts.score} >= (SELECT passing_score FROM quizzes WHERE id = ${quizAttempts.quizId})`
             )
           );
         
@@ -703,125 +800,191 @@ router.get("/leaderboard", async (req: Request, res: Response) => {
 });
 
 // ========================================
-// HELPER FUNCTIONS
+// ARTICLES ENDPOINTS
+// ========================================
+
+// ========================================
+// FLASHCARDS ENDPOINTS
 // ========================================
 
 /**
- * Award points to a user and update their streak
+ * GET /api/employee/flashcard-decks
+ * Get all published flashcard decks with card counts
  */
-async function awardPoints(userId: number, points: number, activity: string) {
+router.get("/flashcard-decks", async (req: Request, res: Response) => {
   try {
-    const [userPoint] = await db
-      .select()
-      .from(userPoints)
-      .where(eq(userPoints.userId, userId))
-      .limit(1);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (userPoint) {
-      const lastActivity = userPoint.lastActivityDate
-        ? new Date(userPoint.lastActivityDate)
-        : null;
-      
-      let newStreak = userPoint.currentStreak;
-
-      if (lastActivity) {
-        lastActivity.setHours(0, 0, 0, 0);
-        const daysDiff = Math.floor(
-          (today.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        if (daysDiff === 1) {
-          // Consecutive day
-          newStreak = userPoint.currentStreak + 1;
-        } else if (daysDiff > 1) {
-          // Streak broken
-          newStreak = 1;
-        }
-        // Same day, keep streak
-      } else {
-        newStreak = 1;
-      }
-
-      await db
-        .update(userPoints)
-        .set({
-          totalPoints: userPoint.totalPoints + points,
-          currentStreak: newStreak,
-          longestStreak: Math.max(newStreak, userPoint.longestStreak),
-          lastActivityDate: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(userPoints.userId, userId));
-    } else {
-      await db.insert(userPoints).values({
-        userId,
-        totalPoints: points,
-        currentStreak: 1,
-        longestStreak: 1,
-        lastActivityDate: new Date(),
-      });
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
-  } catch (error) {
-    console.error("Error awarding points:", error);
+
+    const orgId = req.user.organizationId;
+
+    // Get published decks with card counts
+    const decks = await db
+      .select({
+        id: flashcardDecks.id,
+        title: flashcardDecks.title,
+        description: flashcardDecks.description,
+        category: flashcardDecks.category,
+        cardCount: sql<number>`cast(count(${flashcards.id}) as integer)`,
+      })
+      .from(flashcardDecks)
+      .leftJoin(flashcards, eq(flashcards.deckId, flashcardDecks.id))
+      .where(
+        and(
+          eq(flashcardDecks.organizationId, orgId),
+          eq(flashcardDecks.published, true)
+        )
+      )
+      .groupBy(
+        flashcardDecks.id,
+        flashcardDecks.title,
+        flashcardDecks.description,
+        flashcardDecks.category
+      )
+      .orderBy(flashcardDecks.title);
+
+    // Prevent caching to ensure published status changes are reflected immediately
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.json(decks);
+  } catch (error: any) {
+    console.error("Error fetching flashcard decks:", error);
+    res.status(500).json({ message: "Failed to fetch flashcard decks" });
   }
-}
+});
 
 /**
- * Check if user has unlocked any new badges
+ * GET /api/employee/flashcard-decks/:id/cards
+ * Get all cards for a specific published deck
  */
-async function checkBadgeUnlocks(userId: number) {
+router.get("/flashcard-decks/:id/cards", async (req: Request, res: Response) => {
   try {
-    // Get user's points and achievements
-    const [points] = await db
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+    const deckId = Number.parseInt(req.params.id);
+
+    if (isNaN(deckId)) {
+      return res.status(400).json({ message: "Invalid deck ID" });
+    }
+
+    // Verify deck exists and is published
+    const [deck] = await db
       .select()
-      .from(userPoints)
-      .where(eq(userPoints.userId, userId))
+      .from(flashcardDecks)
+      .where(
+        and(
+          eq(flashcardDecks.id, deckId),
+          eq(flashcardDecks.organizationId, orgId),
+          eq(flashcardDecks.published, true)
+        )
+      )
       .limit(1);
 
-    if (!points) return;
-
-    // Get all badges the user hasn't earned yet
-    const allBadges = await db.select().from(badges);
-    const earnedBadges = await db
-      .select()
-      .from(userBadges)
-      .where(eq(userBadges.userId, userId));
-
-    const earnedBadgeIds = new Set(earnedBadges.map(b => b.badgeId));
-    const unearnedBadges = allBadges.filter(b => !earnedBadgeIds.has(b.id));
-
-    // Check each badge's criteria
-    for (const badge of unearnedBadges) {
-      const criteria = badge.criteria as any;
-      let earned = false;
-
-      switch (criteria.type) {
-        case "total_points":
-          earned = points.totalPoints >= criteria.amount;
-          break;
-        case "streak":
-          earned = points.currentStreak >= criteria.days;
-          break;
-        // Add more criteria checks as needed
-      }
-
-      if (earned) {
-        await db.insert(userBadges).values({
-          userId,
-          badgeId: badge.id,
-        });
-
-        // Award bonus points for badge
-        await awardPoints(userId, badge.pointsAwarded, "badge_earned");
-      }
+    if (!deck) {
+      return res.status(404).json({ message: "Deck not found or not published" });
     }
-  } catch (error) {
-    console.error("Error checking badge unlocks:", error);
+
+    // Get all cards for this deck, ordered by orderIndex
+    const cards = await db
+      .select()
+      .from(flashcards)
+      .where(eq(flashcards.deckId, deckId))
+      .orderBy(flashcards.orderIndex);
+
+    console.log(`[FLASHCARDS] Deck ${deckId}: Found ${cards.length} cards`);
+    console.log('[FLASHCARDS] Cards data:', JSON.stringify(cards, null, 2));
+
+    // Prevent caching to ensure card updates are reflected immediately
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.json(cards);
+  } catch (error: any) {
+    console.error("Error fetching flashcards:", error);
+    res.status(500).json({ message: "Failed to fetch flashcards" });
   }
-}
+});
+
+// ========================================
+// ARTICLES ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/employee/articles
+ * Get all published articles for the employee's organization
+ */
+router.get("/articles", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+
+    // Only return published articles
+    const publishedArticles = await db
+      .select()
+      .from(articles)
+      .where(
+        and(
+          eq(articles.organizationId, orgId),
+          eq(articles.published, true)
+        )
+      )
+      .orderBy(desc(articles.publishedAt));
+
+    res.json(publishedArticles);
+  } catch (error: any) {
+    console.error("Error fetching articles:", error);
+    res.status(500).json({ message: "Failed to fetch articles" });
+  }
+});
+
+/**
+ * GET /api/employee/articles/:id
+ * Get a specific published article
+ */
+router.get("/articles/:id", async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+    const articleId = Number.parseInt(req.params.id);
+
+    if (isNaN(articleId)) {
+      return res.status(400).json({ message: "Invalid article ID" });
+    }
+
+    const [article] = await db
+      .select()
+      .from(articles)
+      .where(
+        and(
+          eq(articles.id, articleId),
+          eq(articles.organizationId, orgId),
+          eq(articles.published, true) // Only published articles
+        )
+      )
+      .limit(1);
+
+    if (!article) {
+      return res.status(404).json({ message: "Article not found or not published" });
+    }
+
+    res.json(article);
+  } catch (error: any) {
+    console.error("Error fetching article:", error);
+    res.status(500).json({ message: "Failed to fetch article" });
+  }
+});
+
+// ========================================
+// HELPER FUNCTIONS
+// ========================================
+// Note: Points/XP and badge unlocks now handled by gamificationService
 
 export function registerEmployeePortalRoutes(app: any) {
   app.use("/api/employee", router);

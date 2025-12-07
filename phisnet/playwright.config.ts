@@ -8,6 +8,7 @@ export default defineConfig({
   },
   fullyParallel: true,
   reporter: 'html',
+  globalSetup: './tests/e2e/global-setup.ts',
   use: {
     trace: 'on-first-retry',
     ...devices['Desktop Chrome'],

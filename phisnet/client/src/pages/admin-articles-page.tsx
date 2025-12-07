@@ -6,13 +6,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Edit, Trash2, Search, FileText } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { articleFormSchema } from "@/validation/adminSchemas";
+import { Loader2, Edit, Trash2, Search, FileText, PenLine, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 
 interface Article {
   id: number;
@@ -25,18 +23,9 @@ interface Article {
   author: number | null;
   authorName?: string | null;
   readTimeMinutes: number | null;
+  published: boolean;
   publishedAt: string;
   updatedAt: string;
-}
-
-interface ArticleFormData {
-  title: string;
-  content: string;
-  excerpt: string;
-  category: string;
-  tags: string; // comma-separated in form
-  thumbnailUrl: string;
-  readTimeMinutes: number;
 }
 
 interface PaginatedArticlesResponse {
@@ -49,23 +38,14 @@ interface PaginatedArticlesResponse {
 
 export default function AdminArticlesPage() {
   const { user } = useAuth();
+  const isAdmin = !!user?.isAdmin;
+  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingArticle, setEditingArticle] = useState<Article | null>(null);
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 12;
-  const [formData, setFormData] = useState<ArticleFormData>({
-    title: "",
-    content: "",
-    excerpt: "",
-    category: "general",
-    tags: "",
-    thumbnailUrl: "",
-    readTimeMinutes: 5,
-  });
-  const [articleFormErrors, setArticleFormErrors] = useState<string[]>([]);
 
   // Fetch articles with pagination
   const { data, isLoading, error } = useQuery<PaginatedArticlesResponse>({
@@ -83,42 +63,6 @@ export default function AdminArticlesPage() {
     },
   });
 
-  // Create mutation
-  const createMutation = useMutation({
-    mutationFn: async (fd: ArticleFormData) => {
-      const res = await apiRequest("POST", "/api/admin/articles", {
-        ...fd,
-        tags: fd.tags.split(",").map(t => t.trim()).filter(Boolean),
-      });
-      if (!res.ok) throw new Error("Failed to create article");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/articles"] });
-      setIsDialogOpen(false);
-      resetForm();
-      setPage(1);
-    },
-  });
-
-  // Update mutation
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: ArticleFormData }) => {
-      const res = await apiRequest("PUT", `/api/admin/articles/${id}`, {
-        ...data,
-        tags: data.tags.split(",").map(t => t.trim()).filter(Boolean),
-      });
-      if (!res.ok) throw new Error("Failed to update article");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/articles"] });
-      setIsDialogOpen(false);
-      setEditingArticle(null);
-      resetForm();
-    },
-  });
-
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -131,54 +75,30 @@ export default function AdminArticlesPage() {
     },
   });
 
-  const resetForm = () => {
-    setFormData({
-      title: "",
-      content: "",
-      excerpt: "",
-      category: "general",
-      tags: "",
-      thumbnailUrl: "",
-      readTimeMinutes: 5,
-    });
-  };
-
-  const handleEdit = (article: Article) => {
-    setEditingArticle(article);
-    setFormData({
-      title: article.title,
-      content: article.content,
-      excerpt: article.excerpt || "",
-      category: article.category,
-      tags: article.tags.join(", "),
-      thumbnailUrl: article.thumbnailUrl || "",
-      readTimeMinutes: article.readTimeMinutes || 5,
-    });
-    setArticleFormErrors([]);
-    setIsDialogOpen(true);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setArticleFormErrors([]);
-    const parsed = articleFormSchema.safeParse({
-      title: formData.title,
-      content: formData.content,
-      excerpt: formData.excerpt || undefined,
-      category: formData.category,
-      tags: formData.tags.split(",").map(t => t.trim()).filter(Boolean),
-      readTimeMinutes: formData.readTimeMinutes || 0,
-    });
-    if (!parsed.success) {
-      setArticleFormErrors(parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`));
-      return;
-    }
-    if (editingArticle) {
-      updateMutation.mutate({ id: editingArticle.id, data: formData });
-    } else {
-      createMutation.mutate(formData);
-    }
-  };
+  // Publish toggle mutation
+  const publishMutation = useMutation({
+    mutationFn: async ({ id, published }: { id: number; published: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/admin/articles/${id}/publish`, { published });
+      if (!res.ok) throw new Error("Failed to update publish status");
+      return res.json();
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/articles"] });
+      toast({
+        title: variables.published ? "✓ Article Published" : "✓ Article Unpublished",
+        description: variables.published 
+          ? "Article is now visible to employees." 
+          : "Article is now hidden from employees.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update article status. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleDelete = (id: number, title: string) => {
     if (confirm(`Delete article "${title}"? This action cannot be undone.`)) {
@@ -187,10 +107,9 @@ export default function AdminArticlesPage() {
   };
 
   const articles = data?.articles || [];
-  const isAdmin = !!user?.isAdmin;
 
   return (
-    <AppLayout title="Content: Articles">
+    <AppLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
@@ -201,67 +120,11 @@ export default function AdminArticlesPage() {
             </div>
           </div>
           {isAdmin && (
-            <Dialog open={isDialogOpen} onOpenChange={o => { if (!o) { setIsDialogOpen(false); setEditingArticle(null); setArticleFormErrors([]); } }}>
-              <DialogTrigger asChild>
-                <Button onClick={() => { resetForm(); setEditingArticle(null); setIsDialogOpen(true); }}>
-                  <Plus className="h-4 w-4 mr-2" /> New Article
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>{editingArticle ? "Edit Article" : "Create Article"}</DialogTitle>
-                  <DialogDescription>Provide structured awareness content for employees.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {articleFormErrors.length > 0 && (
-                    <Alert variant="destructive">
-                      <AlertDescription className="space-y-1">
-                        {articleFormErrors.map(err => <div key={err}>{err}</div>)}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="title">Title</Label>
-                      <Input id="title" value={formData.title} onChange={e => setFormData(f => ({ ...f, title: e.target.value }))} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="category">Category</Label>
-                      <Input id="category" placeholder="e.g. phishing" value={formData.category} onChange={e => setFormData(f => ({ ...f, category: e.target.value }))} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="tags">Tags (comma separated)</Label>
-                      <Input id="tags" value={formData.tags} onChange={e => setFormData(f => ({ ...f, tags: e.target.value }))} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="readTime">Read Time (minutes)</Label>
-                      <Input id="readTime" type="number" min={1} value={formData.readTimeMinutes} onChange={e => setFormData(f => ({ ...f, readTimeMinutes: Number(e.target.value) }))} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="thumbnail">Thumbnail URL</Label>
-                      <Input id="thumbnail" value={formData.thumbnailUrl} onChange={e => setFormData(f => ({ ...f, thumbnailUrl: e.target.value }))} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="excerpt">Excerpt</Label>
-                      <Textarea id="excerpt" rows={2} value={formData.excerpt} onChange={e => setFormData(f => ({ ...f, excerpt: e.target.value }))} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="content">Content (Markdown)</Label>
-                      <Textarea id="content" rows={10} value={formData.content} onChange={e => setFormData(f => ({ ...f, content: e.target.value }))} required />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => { setIsDialogOpen(false); setEditingArticle(null); }}>
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending}>
-                      {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                      {editingArticle ? "Save Changes" : "Create"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
+            <div className="flex items-center gap-2">
+              <Button onClick={() => navigate("/admin/content/articles/new")} size="lg" className="gap-2">
+                <PenLine className="h-4 w-4" /> Create Article
+              </Button>
+            </div>
           )}
         </div>
 
@@ -293,27 +156,23 @@ export default function AdminArticlesPage() {
           {!isLoading && articles.length === 0 && (
             <div className="border rounded-md p-8 flex flex-col items-center justify-center gap-2">
               <span className="text-muted-foreground">No articles found.</span>
-              {isAdmin && <Button onClick={() => { resetForm(); setEditingArticle(null); setIsDialogOpen(true); }} size="sm"><Plus className="h-4 w-4 mr-2" /> New Article</Button>}
             </div>
           )}
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {articles.map(article => (
               <div key={article.id} className="border rounded-lg p-4 flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold line-clamp-2">{article.title}</h3>
-                    <div className="flex flex-wrap gap-1 mt-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold line-clamp-2 mb-2">{article.title}</h3>
+                    <div className="flex flex-wrap gap-1">
+                      <Badge variant={article.published ? "default" : "secondary"} className="text-xs">
+                        {article.published ? "Published" : "Draft"}
+                      </Badge>
                       <Badge variant="secondary" className="text-xs">{article.category}</Badge>
-                      {article.tags.slice(0,3).map(t => <Badge key={t} variant="outline" className="text-xs">{t}</Badge>)}
+                      {article.tags.slice(0,2).map(t => <Badge key={t} variant="outline" className="text-xs">{t}</Badge>)}
                     </div>
                   </div>
-                  {isAdmin && (
-                    <div className="flex gap-1">
-                      <Button size="icon" variant="ghost" onClick={() => handleEdit(article)}><Edit className="h-4 w-4" /></Button>
-                      <Button size="icon" variant="ghost" onClick={() => handleDelete(article.id, article.title)}><Trash2 className="h-4 w-4" /></Button>
-                    </div>
-                  )}
                 </div>
                 {article.thumbnailUrl && (
                   <img src={article.thumbnailUrl} alt="thumb" className="h-32 w-full object-cover rounded-md" />
@@ -323,6 +182,35 @@ export default function AdminArticlesPage() {
                   <span>{article.readTimeMinutes ? `${article.readTimeMinutes} min read` : ""}</span>
                   <span>{new Date(article.publishedAt).toLocaleDateString()}</span>
                 </div>
+                {isAdmin && (
+                  <div className="flex gap-2 pt-2 border-t">
+                    {article.published ? (
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        className="gap-1 flex-1"
+                        disabled={publishMutation.isPending}
+                        onClick={() => publishMutation.mutate({ id: article.id, published: false })}
+                      >
+                        {publishMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <EyeOff className="h-4 w-4" />}
+                        Unpublish
+                      </Button>
+                    ) : (
+                      <Button 
+                        size="sm" 
+                        variant="default"
+                        className="gap-1 flex-1"
+                        disabled={publishMutation.isPending}
+                        onClick={() => publishMutation.mutate({ id: article.id, published: true })}
+                      >
+                        {publishMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                        Publish
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => navigate(`/admin/content/articles/edit/${article.id}`)}><Edit className="h-4 w-4" /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => handleDelete(article.id, article.title)}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

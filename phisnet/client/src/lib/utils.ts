@@ -45,6 +45,36 @@ export const safeExtractObject = <T extends Record<string, any>>(
   return fallback as T;
 };
 
+// Calculate display status based on campaign schedule and current time
+export const getDisplayStatus = (campaign: Partial<Campaign>): "active" | "draft" | "completed" | "scheduled" | "paused" => {
+  const baseStatus = (campaign.status?.toLowerCase() || 'draft') as "active" | "draft" | "completed" | "scheduled" | "paused";
+  
+  if (!campaign.scheduledAt || !campaign.endDate) {
+    return baseStatus;
+  }
+  
+  try {
+    const startDate = new Date(campaign.scheduledAt);
+    const endDate = new Date(campaign.endDate);
+    const now = new Date();
+    
+    // If we're past the end date, it's completed
+    if (now >= endDate) {
+      return 'completed';
+    }
+    
+    // If we're between start and end date, it's active
+    if (now >= startDate) {
+      return 'active';
+    }
+    
+    // Otherwise keep the original status (likely 'scheduled' or 'draft')
+    return baseStatus;
+  } catch {
+    return baseStatus;
+  }
+};
+
 // Badge variant helper
 export const getBadgeVariant = (status: string): "default" | "destructive" | "outline" | "secondary" | "success" | "info" => {
   const variants: Record<string, "default" | "destructive" | "outline" | "secondary" | "success" | "info"> = {
