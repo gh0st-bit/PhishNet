@@ -54,6 +54,7 @@ export default function AdminCredentialCapturesPage() {
   });
 
   const captures = capturesData?.data || [];
+  const campaigns = campaignsData?.data || [];
   const pagination = capturesData?.pagination || { page: 1, limit: 20, total: 0, pages: 1 };
 
   const toggleReveal = (id: number) => {
@@ -91,13 +92,13 @@ export default function AdminCredentialCapturesPage() {
           <div className="grid gap-4 md:grid-cols-3">
             <div>
               <label className="text-sm font-medium mb-1 block">Campaign</label>
-              <Select value={campaignFilter} onValueChange={setCampaignFilter}>
+              <Select value={campaignFilter || "all"} onValueChange={(value) => setCampaignFilter(value === "all" ? "" : value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="All campaigns" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All campaigns</SelectItem>
-                  {campaignsData?.map((campaign: any) => (
+                  <SelectItem value="all">All campaigns</SelectItem>
+                  {campaigns.map((campaign: any) => (
                     <SelectItem key={campaign.id} value={campaign.id.toString()}>
                       {campaign.name}
                     </SelectItem>
