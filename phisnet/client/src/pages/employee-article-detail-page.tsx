@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Clock, Calendar, Tag } from "lucide-react";
 import { useLocation, useRoute } from "wouter";
 import { format } from "date-fns";
+import AppLayout from '@/components/layout/app-layout';
 
 interface Article {
   id: number;
@@ -21,6 +22,10 @@ interface Article {
 }
 
 export default function EmployeeArticleDetailPage() {
+  return <AppLayout><EmployeeArticleContent /></AppLayout>;
+}
+
+function EmployeeArticleContent() {
   const [, navigate] = useLocation();
   const [, params] = useRoute("/employee/articles/:id");
   const articleId = params?.id;

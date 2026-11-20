@@ -17,6 +17,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { customToast } from "@/components/ui/custom-toast";
 import { Logo } from "@/components/common/logo";
 import { queryClient } from "@/lib/queryClient";
+import GlassBackdrop from "@/components/layout/glass-backdrop";
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -85,8 +86,8 @@ export default function AuthPage() {
     },
   });
 
-  const [twoFactorPending, setTwoFactorPending] = useState(false);
-  const [twoFactorSetupRequired, setTwoFactorSetupRequired] = useState(false);
+  const [twoFactorPending, setTwoFactorPending] = useState(new URLSearchParams(window.location.search).get('mfa')==='verify');
+  const [twoFactorSetupRequired, setTwoFactorSetupRequired] = useState(new URLSearchParams(window.location.search).get('mfa')==='setup');
   
   async function onLoginSubmit(data: LoginFormValues) {
     loginMutation.mutate(
@@ -176,7 +177,8 @@ export default function AuthPage() {
   const isOrgAdminLogin = location.startsWith("/auth") && search.includes("mode=org-admin");
 
   return (
-    <div className="min-h-screen flex bg-background">
+    <div className="min-h-screen flex bg-transparent">
+      <GlassBackdrop />
       {/* Left column: Auth forms */}
       <div className="flex flex-1 items-center justify-center p-5">
         <div className="w-full max-w-md">
@@ -196,7 +198,11 @@ export default function AuthPage() {
             )}
 
             <TabsContent value="login">
-              <Card>
+              <Card className="glass relative">
+                {/* Decorative floating glass bubble (reference design); hidden from assistive tech. */}
+                <span className="pn-bubble glass" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v11a5 5 0 0 1-10 0M12 3a2 2 0 1 1 0 .1M2 14l3-2" /></svg>
+                </span>
                 <CardContent className="pt-6">
                   <Form {...loginForm}>
                     <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-6">
@@ -207,7 +213,7 @@ export default function AuthPage() {
                           <FormItem>
                             <FormLabel>Email</FormLabel>
                             <FormControl>
-                              <Input 
+                              <Input className="glass-input" 
                                 placeholder="email@company.com" 
                                 {...field}
                                 onBlur={(e) => {
@@ -229,7 +235,7 @@ export default function AuthPage() {
                             <FormLabel>Password</FormLabel>
                             <div className="relative">
                               <FormControl>
-                                <Input 
+                                <Input className="glass-input" 
                                   type={showLoginPassword ? "text" : "password"} 
                                   placeholder="•••••••" 
                                   {...field} 
@@ -277,7 +283,7 @@ export default function AuthPage() {
                         />
 
                         <Link href="/forgot-password">
-                          <Button variant="link" size="sm" className="px-0">
+                          <Button type="button" variant="link" size="sm" className="px-0">
                             Forgot password?
                           </Button>
                         </Link>
@@ -292,7 +298,7 @@ export default function AuthPage() {
                               <span className="w-full border-t" />
                             </div>
                             <div className="relative flex justify-center text-xs uppercase">
-                              <span className="bg-background px-2 text-muted-foreground">
+                              <span className="bg-background px-2 text-muted-foreground glass-chip">
                                 Or continue with
                               </span>
                             </div>
@@ -300,7 +306,7 @@ export default function AuthPage() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="w-full"
+                            className="w-full glass-shine"
                             onClick={handleSsoLogin}
                             disabled={checkingSso}
                           >
@@ -312,7 +318,7 @@ export default function AuthPage() {
                       
                       <Button 
                         type="submit" 
-                        className="w-full" 
+                        className="w-full glass-shine" 
                         disabled={twoFactorPending}
                       >
                         {twoFactorPending ? "Awaiting 2FA..." : "Sign in"}
@@ -325,7 +331,7 @@ export default function AuthPage() {
 
             {!isOrgAdminLogin && (
             <TabsContent value="register">
-              <Card>
+              <Card className="glass">
                 <CardContent className="pt-6">
                   <Form {...registerForm}>
                     <form onSubmit={registerForm.handleSubmit(onRegisterSubmit)} className="space-y-6">
@@ -337,7 +343,7 @@ export default function AuthPage() {
                             <FormItem>
                               <FormLabel>First Name</FormLabel>
                               <FormControl>
-                                <Input placeholder="John" {...field} />
+                                <Input className="glass-input" placeholder="John" {...field} />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -351,7 +357,7 @@ export default function AuthPage() {
                             <FormItem>
                               <FormLabel>Last Name</FormLabel>
                               <FormControl>
-                                <Input placeholder="Smith" {...field} />
+                                <Input className="glass-input" placeholder="Smith" {...field} />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -366,7 +372,7 @@ export default function AuthPage() {
                           <FormItem>
                             <FormLabel>Email</FormLabel>
                             <FormControl>
-                              <Input placeholder="email@company.com" {...field} />
+                              <Input className="glass-input" placeholder="email@company.com" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -381,7 +387,7 @@ export default function AuthPage() {
                             <FormLabel>Password</FormLabel>
                             <div className="relative">
                               <FormControl>
-                                <Input 
+                                <Input className="glass-input" 
                                   type={showRegisterPassword ? "text" : "password"} 
                                   placeholder="•••••••" 
                                   {...field} 
@@ -417,7 +423,7 @@ export default function AuthPage() {
                             <FormLabel>Confirm Password</FormLabel>
                             <div className="relative">
                               <FormControl>
-                                <Input 
+                                <Input className="glass-input" 
                                   type={showRegisterPassword ? "text" : "password"} 
                                   placeholder="•••••••" 
                                   {...field} 
@@ -444,7 +450,7 @@ export default function AuthPage() {
                           <FormItem>
                             <FormLabel>Organization Name (Optional)</FormLabel>
                             <FormControl>
-                              <Input placeholder="Acme Inc. (leave empty for no organization)" {...field} />
+                              <Input className="glass-input" placeholder="Acme Inc. (leave empty for no organization)" {...field} />
                             </FormControl>
                             <FormDescription className="text-xs">
                               Organization is optional. Creating or joining an organization gives you access to team features.
@@ -457,7 +463,7 @@ export default function AuthPage() {
 
                       <Button 
                         type="submit" 
-                        className="w-full" 
+                        className="w-full glass-shine" 
                         disabled={registerMutation.isPending}
                       >
                         {registerMutation.isPending ? "Creating account..." : "Create account"}
@@ -489,7 +495,7 @@ export default function AuthPage() {
       </div>
 
       {/* Right column: Hero section */}
-      <div className="hidden lg:flex lg:flex-1 flex-col justify-center bg-card p-12">
+      <div className="hidden lg:flex lg:flex-1 flex-col justify-center bg-card p-12 glass">
         <div className="max-w-md">
           <h1 className="text-4xl font-bold mb-6 text-foreground">
             Strengthen Your Security Defenses with PhishNet

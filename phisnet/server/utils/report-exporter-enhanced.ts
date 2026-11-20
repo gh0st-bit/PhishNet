@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { pool } from '../db';
+import { putPrivateObject,deletePrivateObject } from '../services/object-store';
 import { format } from 'date-fns';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -11,6 +15,8 @@ export interface ReportData {
   results?: any[];
   type: 'campaigns' | 'users' | 'results' | 'comprehensive';
   organizationName?: string;
+  provenance?:string;
+  dataset?:string;
   dateRange?: {
     start: Date;
     end: Date;
@@ -29,9 +35,11 @@ export type ExportFormat = 'pdf' | 'xlsx' | 'json' | 'csv';
 
 export async function exportReport(
   data: ReportData,
-  exportFormat: ExportFormat = 'pdf'
+  exportFormat: ExportFormat = 'pdf',
+  owner:{organizationId:number;userId:number}
 ): Promise<string> {
-  const timestamp = format(new Date(), 'yyyy-MM-dd_HH-mm-ss');
+  data=redactReport(data);
+  const id=randomUUID();
   
   let extension: string;
   if (exportFormat === 'xlsx') {
@@ -44,16 +52,10 @@ export async function exportReport(
     extension = 'pdf';
   }
   
-  const filename = `${data.type}_report_${timestamp}.${extension}`;
-
-  // Ensure uploads directory exists
-  const uploadsDir = path.join(process.cwd(), 'uploads');
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
-
-  const filepath = path.join(uploadsDir, filename);
-
+  const filename=`${id}.${extension}`;
+  const uploadsDir=await fs.promises.mkdtemp(path.join(tmpdir(),'phishnet-export-'));
+  const filepath=path.join(uploadsDir,filename);
+  try {
   switch (exportFormat) {
     case 'pdf':
       await exportToPDF(data, filepath);
@@ -72,7 +74,23 @@ export async function exportReport(
       throw new Error(`Unsupported format: ${exportFormat}`);
   }
 
+  const objectKey=`reports/${owner.organizationId}/${filename}`;
+  const mime={pdf:'application/pdf',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',json:'application/json',csv:'text/csv'}[exportFormat];
+  await putPrivateObject(objectKey,await fs.promises.readFile(filepath),mime);
+  try{await pool.query('INSERT INTO report_exports(id,organization_id,owner_user_id,object_key,filename,mime_type) VALUES($1,$2,$3,$4,$5,$6)',[id,owner.organizationId,owner.userId,objectKey,filename,mime]);}
+  catch(error){await deletePrivateObject(objectKey);throw error;}
   return filename;
+  }finally{await fs.promises.unlink(filepath).catch(()=>{});await fs.promises.rmdir(uploadsDir);}
+}
+
+export function redactReport(data:ReportData):ReportData {
+  const pick=(row:any,keys:string[])=>Object.fromEntries(keys.filter(k=>k in row).map(k=>[k,row[k]]));
+  const result=(row:any)=>pick(row,['id','campaignId','targetId','sent','sentAt','opened','openedAt','clicked','clickedAt','submitted','submittedAt']);
+  return {...data,users:data.users?.map(row=>pick(row,['id','firstName','lastName','email','role','isActive','createdAt'])),results:data.results?.map(row=>row.campaign_results?{campaign_results:result(row.campaign_results),campaigns:row.campaigns}:result(row))};
+}
+export function csvCell(value:unknown) {
+  let text=String(value??'');if(/^[\s]*[=+@-]/.test(text))text="'"+text;
+  return '"'+text.replaceAll('"','""')+'"';
 }
 
 // ============================================
@@ -453,6 +471,8 @@ async function exportToJSON(data: ReportData, filepath: string) {
   const jsonData = {
     metadata: {
       reportType: data.type,
+      provenance:data.provenance,
+      dataset:data.dataset,
       organizationName: data.organizationName || 'Unknown',
       generatedAt: new Date().toISOString(),
       dateRange: data.dateRange
@@ -476,36 +496,11 @@ async function exportToJSON(data: ReportData, filepath: string) {
 // CSV EXPORT - Legacy Support
 // ============================================
 async function exportToCSV(data: ReportData, filepath: string) {
-  // Simple CSV implementation for backward compatibility
-  let csvContent = '';
-
-  if (data.campaigns && data.campaigns.length > 0) {
-    csvContent += 'Campaign Name,Status,Created Date,Scheduled Date\n';
-    data.campaigns.forEach((campaign) => {
-      csvContent += `"${campaign.name || 'Unknown'}","${campaign.status || 'Unknown'}","${
-        campaign.createdAt
-          ? format(new Date(campaign.createdAt), 'yyyy-MM-dd HH:mm:ss')
-          : 'N/A'
-      }","${
-        campaign.scheduledAt
-          ? format(new Date(campaign.scheduledAt), 'yyyy-MM-dd HH:mm:ss')
-          : 'Not Scheduled'
-      }"\n`;
-    });
-  } else if (data.users && data.users.length > 0) {
-    csvContent += 'Name,Email,Role,Created Date\n';
-    data.users.forEach((user) => {
-      csvContent += `"${
-        `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Unknown'
-      }","${user.email || 'N/A'}","${user.role || 'User'}","${
-        user.createdAt
-          ? format(new Date(user.createdAt), 'yyyy-MM-dd HH:mm:ss')
-          : 'N/A'
-      }"\n`;
-    });
-  }
-
-  await fs.promises.writeFile(filepath, csvContent, 'utf-8');
+  const rows:unknown[][]=[];
+  if(data.campaigns?.length){rows.push(['Campaign Name','Status','Created Date','Scheduled Date']);for(const row of data.campaigns)rows.push([row.name,row.status,row.createdAt,row.scheduledAt]);}
+  else if(data.users?.length){rows.push(['Name','Email','Role','Created Date']);for(const row of data.users)rows.push([`${row.firstName||''} ${row.lastName||''}`.trim(),row.email,row.role||'User',row.createdAt]);}
+  else if(data.results?.length){rows.push(['Campaign','Target','Sent','Opened','Clicked','Submitted']);for(const entry of data.results){const row=entry.campaign_results||entry;rows.push([row.campaignId,row.targetId,row.sent,row.opened,row.clicked,row.submitted]);}}
+  await fs.promises.writeFile(filepath,rows.map(row=>row.map(csvCell).join(',')).join('\r\n'),'utf8');
 }
 
 // ============================================

@@ -1,0 +1,10 @@
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import path from 'node:path';
+const originArg=process.argv.indexOf('--origin'),outputArg=process.argv.indexOf('--output');
+if(originArg<0)throw new Error('Provide --origin https://your-phishnet-host');
+const url=new URL(process.argv[originArg+1]);
+if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw new Error('Use a plain HTTPS origin');
+const target=path.resolve(outputArg<0?'deployment/outlook/manifest.xml':process.argv[outputArg+1]);
+if(!target.startsWith(process.cwd()+path.sep))throw new Error('Manifest output must remain inside the project');
+await mkdir(path.dirname(target),{recursive:true});await writeFile(target,(await readFile('deployment/outlook/manifest.xml.in','utf8')).replaceAll('__ORIGIN__',url.origin));
+console.log('Rendered '+target+'. Sideload and validate in a designated Microsoft 365 test tenant before deployment.');

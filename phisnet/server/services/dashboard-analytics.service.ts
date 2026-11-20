@@ -1,3 +1,4 @@
+import {pool} from '../db';
 import { db } from "../db";
 import { 
   users, 
@@ -55,27 +56,14 @@ export class DashboardAnalyticsService {
       )
       .groupBy(sql`DATE(${quizAttempts.completedAt})`);
 
-    // Get daily points earned
-    const pointsHistory = await db
-      .select({
-        date: sql<string>`DATE(${userPoints.updatedAt})`,
-        points: sql<number>`0::int` // userPoints doesn't track individual point events
-      })
-      .from(userPoints)
-      .where(
-        and(
-          eq(userPoints.userId, userId),
-          gte(userPoints.updatedAt, startDate)
-        )
-      )
-      .groupBy(sql`DATE(${userPoints.updatedAt})`);
-
+    const pointsHistory=(await pool.query(`SELECT to_char(occurred_at AT TIME ZONE 'UTC','YYYY-MM-DD') AS date,sum(points)::int AS points FROM points_events WHERE user_id=$1 AND NOT historical_balance AND occurred_at>=$2 GROUP BY 1`,[userId,startDate])).rows;
+    const historyStarted=(await pool.query("SELECT min(occurred_at)::date::text AS date FROM points_events WHERE historical_balance")).rows[0]?.date;
     // Merge data by date
-    const trendsMap = new Map<string, { date: string; modulesCompleted: number; quizzesPassed: number; pointsEarned: number }>();
+    const trendsMap = new Map<string, { date: string; modulesCompleted: number; quizzesPassed: number; pointsEarned: number|null }>();
     
     for (let i = 0; i < days; i++) {
       const date = format(subDays(new Date(), i), 'yyyy-MM-dd');
-      trendsMap.set(date, { date, modulesCompleted: 0, quizzesPassed: 0, pointsEarned: 0 });
+      trendsMap.set(date, { date, modulesCompleted: 0, quizzesPassed: 0, pointsEarned:historyStarted&&date>=historyStarted?0:null });
     }
 
     moduleCompletions.forEach(m => {

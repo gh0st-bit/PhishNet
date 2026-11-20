@@ -4,8 +4,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 // Use dynamic import to be compatible across Vite major versions
 import { type Server } from "node:http";
-import viteConfig from "../vite.config";
-import { nanoid } from "nanoid";
+
+import { randomUUID } from "node:crypto";
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
@@ -25,6 +25,8 @@ export async function setupVite(app: Express, server: Server) {
     allowedHosts: true as const,
   };
 
+  const configUrl = pathToFileURL(path.resolve(import.meta.dirname, '../vite.config.ts')).href;
+  const { default: viteConfig } = await import(configUrl);
   const resolvedConfig =
     typeof viteConfig === "function" ? await viteConfig() : viteConfig;
 
@@ -67,7 +69,7 @@ export async function setupVite(app: Express, server: Server) {
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,
-        `src="/src/main.tsx?v=${nanoid()}"`,
+        `src="/src/main.tsx?v=${randomUUID()}"`,
       );
       const page = await vite.transformIndexHtml(url, template);
       res.status(200).set({ "Content-Type": "text/html" }).end(page);

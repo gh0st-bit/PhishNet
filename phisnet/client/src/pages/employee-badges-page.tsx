@@ -15,6 +15,9 @@ interface Badge {
   earned?: boolean;
   earnedAt?: string | null;
   criteria?: Record<string, any>;
+  category?:string;
+  progress?:number;
+  progressDetails?:{current:number;required:number;type:string};
 }
 
 interface BadgesResponse {
@@ -62,21 +65,7 @@ export default function EmployeeBadgesPage() {
 
   const categorizedBadges = useMemo(() => {
     const badges = badgesQ.data?.badges || [];
-    return {
-      milestone: badges.filter(b => 
-        b.criteria?.type === 'total_points' || b.criteria?.type === 'points'
-      ),
-      streak: badges.filter(b => 
-        b.criteria?.type === 'streak'
-      ),
-      mastery: badges.filter(b => 
-        b.criteria?.type === 'quiz_completion' || b.criteria?.type === 'perfect_score'
-      ),
-      special: badges.filter(b => 
-        b.criteria?.type === 'special' || 
-        (!b.criteria?.type && !['total_points', 'points', 'streak', 'quiz_completion', 'perfect_score'].includes(b.criteria?.type))
-      ),
-    };
+    return {milestone:badges.filter(b=>b.category==='milestone'),streak:badges.filter(b=>b.category==='streak'),mastery:badges.filter(b=>b.category==='mastery'),special:badges.filter(b=>b.category==='special')};
   }, [badgesQ.data]);
 
   const displayedBadges = useMemo(() => {
@@ -98,29 +87,7 @@ export default function EmployeeBadgesPage() {
       .slice(0, 3);
   }, [badgesQ.data]);
 
-  const calculateProgress = (badge: Badge): { progress: number; label: string } | null => {
-    if (badge.earned || !badge.criteria || !levelQ.data) return null;
-
-    const { type } = badge.criteria;
-    const userStats = levelQ.data;
-
-    if (type === 'total_points' || type === 'points') {
-      const required = badge.criteria.points || badge.criteria.requiredPoints || 0;
-      const current = userStats.totalPoints;
-      const progress = Math.min((current / required) * 100, 100);
-      return { progress, label: `${current}/${required} XP` };
-    }
-
-    if (type === 'streak') {
-      const required = badge.criteria.days || badge.criteria.requiredDays || 0;
-      const current = userStats.currentStreak;
-      const progress = Math.min((current / required) * 100, 100);
-      return { progress, label: `${current}/${required} days` };
-    }
-
-    // For quiz/mastery badges, we can't calculate progress without quiz data
-    return null;
-  };
+  const calculateProgress=(badge:Badge):{progress:number;label:string}|null=>badge.earned||!badge.progressDetails?.required?null:{progress:badge.progress||0,label:badge.progressDetails.type==='custom'?'Manual review required':`${badge.progressDetails.current}/${badge.progressDetails.required}`};
 
   const getRarityColor = (rarity?: string) => {
     switch (rarity) {

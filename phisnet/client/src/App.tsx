@@ -1,61 +1,10 @@
+import { lazy, Suspense } from 'react';
 import { Switch, Route } from "wouter";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/not-found";
-import DashboardPage from "@/pages/dashboard-page";
-import AuthPage from "@/pages/auth-page";
-import CampaignsPage from "@/pages/campaigns-page";
-import ReconnaissancePage from "@/pages/reconnaissance-page";
-import TemplatesPage from "@/pages/templates-page";
-import GroupsPage from "@/pages/groups-page";
-import LandingPagesPage from "@/pages/landing-pages-page";
-import SmtpProfilesPage from "@/pages/smtp-profiles-page";
-import ReportsPage from "@/pages/reports-page";
-import ReportSchedulesPage from "@/pages/report-schedules-page";
-import UsersPage from "@/pages/users-page";
-import SettingsPage from "@/pages/settings-page";
-import ProfilePage from "@/pages/profile-page";
-import OrganizationPage from "@/pages/organization-page";
-import ForgotPasswordPage from "@/pages/forgot-password-page";
-import ResetPasswordPage from "@/pages/reset-password-page";
-import ThreatLandscapePage from "@/pages/threat-landscape-page";
 import NotificationsPage from "./pages/notifications-page";
-import AuditLogsPage from "@/pages/audit-logs-page";
-import EmployeeDashboardPage from "@/pages/employee-dashboard-page";
-import EmployeeTrainingPage from "@/pages/employee-training-page";
-import EmployeeQuizzesPage from "@/pages/employee-quizzes-page";
-import EmployeeQuizTakePage from "@/pages/employee-quiz-take-page";
-import EmployeeBadgesPage from "@/pages/employee-badges-page";
-import EmployeeBadgeDetailPage from "@/pages/employee-badge-detail-page";
-import EmployeeLeaderboardPage from "@/pages/employee-leaderboard-page";
-import EmployeeProfilePage from "@/pages/employee-profile-page";
-import EmployeeArticlesPage from "@/pages/employee-articles-page";
-import EmployeeArticleDetailPage from "@/pages/employee-article-detail-page";
-import EmployeeFlashcardsPage from "@/pages/employee-flashcards-page";
-import AdminTrainingPage from "@/pages/admin-training-page";
-import AdminQuizPage from "@/pages/admin-quiz-page";
-import AdminBadgePage from "@/pages/admin-badge-page";
-import AdminArticlesPage from "@/pages/admin-articles-page";
-import AdminArticleCreatePage from "@/pages/admin-article-create-page";
-import AdminVideosPage from "@/pages/admin-videos-page";
-import AdminFlashcardsPage from "@/pages/admin-flashcards-page";
-import AdminMcqsPage from "@/pages/admin-mcqs-page";
-import CaptureLoginPage from "@/pages/capture-login";
-import AdminCredentialCapturesPage from "@/pages/admin-credential-captures-page";
-import OrgAdminDashboardPage from "@/pages/org-admin-dashboard-page";
-import OrgAdminCampaignsPage from "@/pages/org-admin-campaigns-page";
-import OrgAdminGroupsPage from "@/pages/org-admin-groups-page";
-import OrgAdminUsersPage from "@/pages/org-admin-users-page";
-import OrgAdminReportsPage from "@/pages/org-admin-reports-page";
-import OrgAdminEnrollmentPage from "@/pages/org-admin-enrollment-page";
-import OrgAdminTemplatesPage from "@/pages/org-admin-templates-page";
-import OrgAdminSmtpProfilesPage from "@/pages/org-admin-smtp-profiles-page";
-import OrgAdminLandingPagesPage from "@/pages/org-admin-landing-pages-page";
-import EnrollmentPage from "@/pages/enrollment-page";
-import OrganizationManagementPage from "@/pages/organization-management-page";
-import AcceptInvitePage from "@/pages/accept-invite-page";
 import SessionTimeoutWrapper from "@/components/session-timeout-wrapper";
 import { ProtectedRoute } from "./lib/protected-route";
 import { ThemeProvider } from "next-themes";
@@ -64,6 +13,71 @@ import { useAuth } from "@/hooks/use-auth";
 import { useEffect } from "react";
 import { initSessionManager, cleanupSessionManager } from "@/lib/session-manager";
 
+
+const ContentLibraryPage=lazy(()=>import('@/pages/content-library-page'));
+const DemonstrationPage=lazy(()=>import('@/pages/demonstration-page'));
+const EmployeeLearningPathsPage=lazy(()=>import('@/pages/employee-learning-paths-page'));
+const EmployeeReportPage=lazy(()=>import('@/pages/employee-report-page'));
+const EmployeeTrainingDetailPage=lazy(()=>import('@/pages/employee-training-detail-page'));
+const PilotSetupPage=lazy(()=>import('@/pages/pilot-setup-page'));
+const TenantSettingsPage=lazy(()=>import('@/pages/tenant-settings-page'));
+const OperationsPage=lazy(()=>import('@/pages/operations-page'));
+const DeliverySettingsPage = lazy(() => import('@/pages/delivery-settings-page'));
+const TrainingAssignmentsPage = lazy(() => import('@/pages/training-assignments-page'));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const DashboardPage = lazy(() => import("@/pages/dashboard-page"));
+const AuthPage = lazy(() => import("@/pages/auth-page"));
+const CampaignsPage = lazy(() => import("@/pages/campaigns-page"));
+const ReconnaissancePage = lazy(() => import("@/pages/reconnaissance-page"));
+const TemplatesPage = lazy(() => import("@/pages/templates-page"));
+const GroupsPage = lazy(() => import("@/pages/groups-page"));
+const LandingPagesPage = lazy(() => import("@/pages/landing-pages-page"));
+const SmtpProfilesPage = lazy(() => import("@/pages/smtp-profiles-page"));
+const ReportsPage = lazy(() => import("@/pages/reports-page"));
+const ReportSchedulesPage = lazy(() => import("@/pages/report-schedules-page"));
+const UsersPage = lazy(() => import("@/pages/users-page"));
+const SettingsPage = lazy(() => import("@/pages/settings-page"));
+const ProfilePage = lazy(() => import("@/pages/profile-page"));
+const OrganizationPage = lazy(() => import("@/pages/organization-page"));
+const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password-page"));
+const ResetPasswordPage = lazy(() => import("@/pages/reset-password-page"));
+const ThreatLandscapePage = lazy(() => import("@/pages/threat-landscape-page"));
+const AuditLogsPage = lazy(() => import("@/pages/audit-logs-page"));
+const EmployeeDashboardPage = lazy(() => import("@/pages/employee-dashboard-page"));
+const EmployeeTrainingPage = lazy(() => import("@/pages/employee-training-page"));
+const EmployeeQuizzesPage = lazy(() => import("@/pages/employee-quizzes-page"));
+const EmployeeQuizTakePage = lazy(() => import("@/pages/employee-quiz-take-page"));
+const EmployeeBadgesPage = lazy(() => import("@/pages/employee-badges-page"));
+const EmployeeBadgeDetailPage = lazy(() => import("@/pages/employee-badge-detail-page"));
+const EmployeeLeaderboardPage = lazy(() => import("@/pages/employee-leaderboard-page"));
+const EmployeeProfilePage = lazy(() => import("@/pages/employee-profile-page"));
+const EmployeeArticlesPage = lazy(() => import("@/pages/employee-articles-page"));
+const EmployeeArticleDetailPage = lazy(() => import("@/pages/employee-article-detail-page"));
+const EmployeeFlashcardsPage = lazy(() => import("@/pages/employee-flashcards-page"));
+const AdminTrainingPage = lazy(() => import("@/pages/admin-training-page"));
+const AdminQuizPage = lazy(() => import("@/pages/admin-quiz-page"));
+const AdminBadgePage = lazy(() => import("@/pages/admin-badge-page"));
+const AdminArticlesPage = lazy(() => import("@/pages/admin-articles-page"));
+const AdminArticleCreatePage = lazy(() => import("@/pages/admin-article-create-page"));
+const ManagerDashboardPage = lazy(()=>import('@/pages/manager-dashboard-page'));
+const LocalInboxPage = lazy(()=>import('@/pages/local-inbox-page'));
+const AdminVideosPage = lazy(() => import("@/pages/admin-videos-page"));
+const AdminFlashcardsPage = lazy(() => import("@/pages/admin-flashcards-page"));
+const AdminMcqsPage = lazy(() => import("@/pages/admin-mcqs-page"));
+const CaptureLoginPage = lazy(() => import("@/pages/capture-login"));
+const AdminCredentialCapturesPage = lazy(() => import("@/pages/admin-credential-captures-page"));
+const OrgAdminDashboardPage = lazy(() => import("@/pages/org-admin-dashboard-page"));
+const OrgAdminCampaignsPage = lazy(() => import("@/pages/org-admin-campaigns-page"));
+const OrgAdminGroupsPage = lazy(() => import("@/pages/org-admin-groups-page"));
+const OrgAdminUsersPage = lazy(() => import("@/pages/org-admin-users-page"));
+const OrgAdminReportsPage = lazy(() => import("@/pages/org-admin-reports-page"));
+const OrgAdminEnrollmentPage = lazy(() => import("@/pages/org-admin-enrollment-page"));
+const OrgAdminTemplatesPage = lazy(() => import("@/pages/org-admin-templates-page"));
+const OrgAdminSmtpProfilesPage = lazy(() => import("@/pages/org-admin-smtp-profiles-page"));
+const OrgAdminLandingPagesPage = lazy(() => import("@/pages/org-admin-landing-pages-page"));
+const EnrollmentPage = lazy(() => import("@/pages/enrollment-page"));
+const OrganizationManagementPage = lazy(() => import("@/pages/organization-management-page"));
+const AcceptInvitePage = lazy(() => import("@/pages/accept-invite-page"));
 function Router() {
   return (
     <Switch>
@@ -72,7 +86,16 @@ function Router() {
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password/:token" component={ResetPasswordPage} />
       <Route path="/accept-invite/:token" component={AcceptInvitePage} />
+      <ProtectedRoute path="/org-admin/content-library" component={ContentLibraryPage} />
+      <ProtectedRoute path="/walkthrough" component={DemonstrationPage} />
+      <ProtectedRoute path="/admin/operations" component={OperationsPage} />
       <ProtectedRoute path="/org-admin" component={OrgAdminDashboardPage} />
+      <ProtectedRoute path="/manager" component={ManagerDashboardPage} />
+      <ProtectedRoute path="/local-inbox" component={LocalInboxPage} />
+      <ProtectedRoute path="/org-admin/setup" component={PilotSetupPage} />
+      <ProtectedRoute path="/org-admin/settings" component={TenantSettingsPage} />
+      <ProtectedRoute path="/org-admin/delivery" component={DeliverySettingsPage} />
+      <ProtectedRoute path="/org-admin/training-assignments" component={TrainingAssignmentsPage} />
       <ProtectedRoute path="/org-admin/campaigns" component={OrgAdminCampaignsPage} />
       <ProtectedRoute path="/org-admin/groups" component={OrgAdminGroupsPage} />
       <ProtectedRoute path="/org-admin/users" component={OrgAdminUsersPage} />
@@ -100,7 +123,11 @@ function Router() {
   <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <ProtectedRoute path="/audit-logs" component={AuditLogsPage} />
       <ProtectedRoute path="/employee" component={EmployeeDashboardPage} />
+      <ProtectedRoute path="/employee/learning-paths" component={EmployeeLearningPathsPage} />
+      <ProtectedRoute path="/employee/report" component={EmployeeReportPage} />
+      <ProtectedRoute path="/employee/inbox" component={LocalInboxPage} />
       <ProtectedRoute path="/employee/training" component={EmployeeTrainingPage} />
+      <ProtectedRoute path="/employee/training/:id" component={EmployeeTrainingDetailPage} />
       <ProtectedRoute path="/employee/quizzes" component={EmployeeQuizzesPage} />
       <ProtectedRoute path="/employee/quizzes/:id" component={EmployeeQuizTakePage} />
       <ProtectedRoute path="/employee/badges" component={EmployeeBadgesPage} />
@@ -115,6 +142,7 @@ function Router() {
       <ProtectedRoute path="/admin/badges" component={AdminBadgePage} />
       <ProtectedRoute path="/admin/content/articles" component={AdminArticlesPage} />
       <ProtectedRoute path="/admin/content/articles/new" component={AdminArticleCreatePage} />
+      <ProtectedRoute path="/admin/content/articles/edit/:id" component={AdminArticleCreatePage} />
       <ProtectedRoute path="/admin/content/videos" component={AdminVideosPage} />
       <ProtectedRoute path="/admin/content/flashcards" component={AdminFlashcardsPage} />
       <ProtectedRoute path="/admin/content/mcqs" component={AdminMcqsPage} />
@@ -181,7 +209,7 @@ function App() {
       <TooltipProvider>
         <Toaster />
         <AuthProvider>
-          <AppContent />
+          <Suspense fallback={<div role="status" className="p-6">Loading page...</div>}><AppContent /></Suspense>
         </AuthProvider>
       </TooltipProvider>
     </ThemeProvider>

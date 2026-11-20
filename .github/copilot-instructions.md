@@ -40,9 +40,10 @@ This repo hosts PhishNet, a full-stack phishing simulation platform. Use this as
 - Threat ingestion and campaign events emit per-user notifications (see `threat-intelligence.service.ts` and event routes in `server/routes.ts`).
 
 ## Developer Workflows
-- Quick start (Windows PowerShell):
-  - `phisnet\universal-setup.bat` (handles policy + setup) or `Set-ExecutionPolicy Bypass -Scope Process -Force`
-  - `phisnet\deploy.ps1`; then `phisnet\start.ps1`
+- Quick start (from `phisnet/`):
+  - `npm ci`; copy `.env.example` to `.env` and configure PostgreSQL.
+  - For a fresh database, `npm run db:push`; then `npm run dev` (port `5000`).
+  - See the root `README.md` for database migration and restore guidance. Docker/devcontainer setup has been removed.
 - Dev servers:
   - Backend only: `npm run backend:dev` (port `5000`)
   - Frontend only: `npm run frontend:dev` (port `5173`)

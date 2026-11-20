@@ -20,7 +20,7 @@ export function registerOrganizationManagementRoutes(app: Express) {
   app.get("/api/admin/organizations", isAuthenticated, isAdmin, async (req: Request, res: Response) => {
     try {
       const orgs = await storage.listOrganizations();
-      res.json(orgs);
+      res.json(orgs.map(({encryptionKey: _key,...org})=>org));
     } catch (error) {
       console.error("Error listing organizations:", error);
       res.status(500).json({ message: "Failed to list organizations" });
@@ -44,7 +44,8 @@ export function registerOrganizationManagementRoutes(app: Express) {
         updatedAt: new Date(),
       } as any);
 
-      res.status(201).json(newOrg);
+      const {encryptionKey: _key,...safeOrg}=newOrg;
+      res.status(201).json(safeOrg);
     } catch (error) {
       console.error("Error creating organization:", error);
       res.status(500).json({ message: "Failed to create organization" });
@@ -256,13 +257,13 @@ export function registerOrganizationManagementRoutes(app: Express) {
       .where(eq(rolesSchema.name, 'OrgAdmin'));
 
       // Fetch full user details
-      const userIds = orgAdmins.map(oa => oa.userId);
+      const userIds = orgAdmins.map(oa => oa.userId).filter((id): id is number => id !== null);
       const users = await Promise.all(
         userIds.map(id => storage.getUser(id))
       );
 
       // Filter out null and return user details
-      const validUsers = users.filter(u => u !== null).map(u => ({
+      const validUsers = users.filter((u): u is NonNullable<typeof u> => u != null).map(u => ({
         id: u.id,
         email: u.email,
         firstName: u.firstName,

@@ -1,0 +1,48 @@
+name: Production foundation checks
+on:
+  pull_request:
+    paths: ['phisnet/**', '.github/workflows/production-foundation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: phisnet
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: phishnet
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:ci-only-password@localhost:5432/phishnet
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: phisnet/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: node scripts/verify-schema.mjs
+      - run: npm run audit:setup && npm run audit:seed
+      - name: Start isolated application
+        run: |
+          npm run dev:audit > /tmp/phishnet-audit.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:5000/health/ready; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/phishnet-audit.log
+          exit 1
+      - run: npm run test:foundation
+      - run: npm audit --omit=dev --audit-level=high

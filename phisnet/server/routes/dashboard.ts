@@ -1,3 +1,4 @@
+import {pool} from '../db';
 import type { Express } from 'express';
 import { isAuthenticated, hasOrganization } from '../auth';
 import { db } from '../db';
@@ -132,12 +133,9 @@ export function registerDashboardRoutes(app: Express) {
     }
   });
 
-  // Trainings (placeholder)
-  app.get("/api/dashboard/trainings", isAuthenticated, (req, res) => {
-    res.json({ 
-      completed: 0, 
-      pending: 0, 
-      trainings: [] 
-    });
+  app.get('/api/dashboard/trainings',isAuthenticated,hasOrganization,async(req,res)=>{
+    const {rows:[totals]}=await pool.query(`SELECT count(*) FILTER(WHERE p.status='completed')::int AS completed,count(*) FILTER(WHERE p.status<>'completed')::int AS pending FROM training_progress p JOIN training_modules m ON m.id=p.module_id WHERE m.organization_id=$1`,[req.user!.organizationId]);
+    const {rows:trainings}=await pool.query(`SELECT m.id,m.title,count(p.id)::int AS assigned,count(p.id) FILTER(WHERE p.status='completed')::int AS completed FROM training_modules m LEFT JOIN training_progress p ON p.module_id=m.id WHERE m.organization_id=$1 GROUP BY m.id,m.title ORDER BY m.title`,[req.user!.organizationId]);
+    res.json({...totals,trainings});
   });
 }

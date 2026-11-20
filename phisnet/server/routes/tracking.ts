@@ -1,355 +1,87 @@
-import type { Express } from 'express';
+import { saveTrackingEvent } from '../services/tracking-events';
+import {campaignLanding,trainingFeedback} from '../services/campaign-content';
+import { queueRemediation } from '../services/training-automation';
+import type { Express, Request } from 'express';
+import { pool } from '../db';
 import { storage } from '../storage';
-import { NotificationService } from '../services/notification-service';
+import { validTrackingToken } from '../services/tracking-token';
+import { trackingLimiter } from '../middleware/rate-limit';
+import sanitizeHtml from 'sanitize-html';
+import { SecretsService } from '../services/secrets.service';
 
+async function context(req: Request, fromBody = false) {
+  const campaignId = Number(fromBody ? req.body.campaignId : req.params.campaignId);
+  const targetId = Number(fromBody ? req.body.targetId : req.params.targetId);
+  const token = fromBody ? req.body.token : req.query.token;
+  if (!validTrackingToken(token, campaignId, targetId)) return null;
+  const campaign = await storage.getCampaign(campaignId);
+  const target = await storage.getTarget(targetId);
+  if (!campaign || !target || campaign.organizationId !== target.organizationId ||
+      campaign.status !== 'Active' || (campaign.endDate && campaign.endDate < new Date())) return null;
+  const found = await pool.query('SELECT 1 FROM campaign_dispatch WHERE campaign_id=$1 AND target_id=$2 AND organization_id=$3', [campaignId,targetId,campaign.organizationId]);
+  return found.rowCount ? { campaign, target, token: String(token) } : null;
+}
+async function record(req:Request,campaignId: number, targetId: number, event: 'opened' | 'clicked' | 'submitted') {
+  if(await saveTrackingEvent(req,campaignId,targetId,event))return;
+  if(event!=='opened') await queueRemediation(campaignId,targetId,event);
+  // Column names come exclusively from this union, never request input.
+  const column = event === 'opened' ? 'opened' : event === 'clicked' ? 'clicked' : 'submitted';
+  await pool.query(`UPDATE campaign_results SET ${column}=true,${column}_at=COALESCE(${column}_at,now()),
+    status=CASE WHEN submitted OR $3='submitted' THEN 'submitted' WHEN clicked OR $3='clicked' THEN 'clicked' ELSE 'opened' END,
+    updated_at=now() WHERE campaign_id=$1 AND target_id=$2`, [campaignId,targetId,event]);
+}
 export function registerTrackingRoutes(app: Express) {
-  // Legacy tracking route redirect
-  app.get('/track', async (req, res) => {
-    const cParam = req.query.c;
-    const tParam = req.query.t;
-    let cStr = '';
-    let tStr = '';
-    if (typeof cParam === 'string') cStr = cParam;
-    else if (Array.isArray(cParam) && typeof cParam[0] === 'string') cStr = cParam[0];
-    if (typeof tParam === 'string') tStr = tParam;
-    else if (Array.isArray(tParam) && typeof tParam[0] === 'string') tStr = tParam[0];
-    const c = Number.parseInt(cStr, 10);
-    const t = Number.parseInt(tStr, 10);
-    if (!Number.isFinite(c) || !Number.isFinite(t)) {
-      return res.status(400).send('Bad Request');
-    }
-    return res.redirect(302, `/l/${c}/${t}`);
-  });
-
-  // Open tracking pixel (1x1 transparent gif)
-  app.get('/o/:campaignId/:targetId.gif', async (req, res) => {
+  app.get('/track', (_req,res) => res.status(410).send('Use the original simulation link'));
+  app.get('/o/:campaignId/:targetId.gif', trackingLimiter, async (req,res) => {
     try {
-      const campaignId = Number.parseInt(req.params.campaignId, 10);
-      const targetId = Number.parseInt(req.params.targetId, 10);
-      if (!Number.isFinite(campaignId) || !Number.isFinite(targetId)) {
-        return res.status(400).end();
-      }
-      const campaign = await storage.getCampaign(campaignId);
-      const target = await storage.getTarget(targetId);
-      if (!campaign || !target || campaign.organizationId !== target.organizationId) {
-        return res.status(404).end();
-      }
-      
-      // Idempotent update: only set opened if not already opened
-      try {
-        const existing = await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, {} as any);
-        let wasOpened = false;
-        
-        if (existing) {
-          const newData: any = {};
-          if (!existing.opened) {
-            newData.opened = true;
-            newData.openedAt = new Date();
-            wasOpened = true;
-          }
-          // Only set status to opened if current status is pending or sent
-          if (['pending', 'sent'].includes(existing.status)) {
-            newData.status = 'opened';
-          }
-          if (Object.keys(newData).length > 0) {
-            await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, newData);
-          }
-        } else {
-          await storage.createCampaignResult({
-            campaignId, targetId, organizationId: campaign.organizationId,
-            sent: false, opened: true, openedAt: new Date(), clicked: false, submitted: false,
-            status: 'opened'
-          } as any);
-          wasOpened = true;
-        }
-        
-        // If this is a new open event, create a notification
-        if (wasOpened) {
-          try {
-            const target = await storage.getTarget(targetId);
-            const users = await storage.listUsers(campaign.organizationId);
-            
-            if (users && users.length > 0) {
-              for (const user of users) {
-                if (user.isAdmin) {
-                  await NotificationService.createNotification({
-                    userId: user.id,
-                    organizationId: campaign.organizationId,
-                    type: 'campaign',
-                    title: 'Email Opened',
-                    message: `${target?.firstName ?? ''} ${target?.lastName ?? ''} (${target?.email ?? ''}) opened the email from campaign "${campaign.name}".`,
-                    priority: 'medium',
-                    actionUrl: `/campaigns/${campaignId}`,
-                    metadata: {
-                      campaignId,
-                      targetId,
-                      targetEmail: target?.email ?? '',
-                      eventType: 'opened'
-                    }
-                  });
-                }
-              }
-            }
-          } catch (notifError) {
-            console.error('Error creating open notification:', notifError);
-          }
-        }
-      } catch (e) {
-        console.error('Open pixel record error:', e);
-      }
-
-      // 1x1 transparent GIF bytes
-      const gif = Buffer.from('R0lGODlhAQABAIAAAP///////yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
-      res.setHeader('Content-Type', 'image/gif');
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
-      return res.status(200).end(gif);
-    } catch (e) {
-      console.error('Open pixel error:', e);
-      return res.status(500).end();
-    }
+      const ctx = await context(req);
+      if (!ctx) return res.status(404).end();
+      await record(req,ctx.campaign.id,ctx.target.id,'opened');
+      res.setHeader('Cache-Control','no-store');
+      res.type('gif').send(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7','base64'));
+    } catch { res.status(500).end(); }
   });
-
-  // Click tracking redirect
-  app.get('/c/:campaignId/:targetId', async (req, res) => {
+  app.get('/c/:campaignId/:targetId', trackingLimiter, async (req,res) => {
     try {
-      const campaignId = Number.parseInt(req.params.campaignId, 10);
-      const targetId = Number.parseInt(req.params.targetId, 10);
-      const encoded = String((req.query.u as string) ?? '');
-      if (!Number.isFinite(campaignId) || !Number.isFinite(targetId) || !encoded) {
-        return res.status(400).send('Bad Request');
-      }
-      const campaign = await storage.getCampaign(campaignId);
-      const target = await storage.getTarget(targetId);
-      if (!campaign || !target || campaign.organizationId !== target.organizationId) {
-        return res.status(404).send('Not Found');
-      }
-      
-      let url: string | undefined;
-      try {
-        const decoded = Buffer.from(decodeURIComponent(encoded), 'base64').toString('utf8');
-        if (/^https?:\/\//i.test(decoded)) url = decoded;
-      } catch {}
-      if (!url) return res.status(400).send('Invalid URL');
-      
-      try {
-        const existing = await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, {} as any);
-        let wasClicked = false;
-        
-        if (existing) {
-          const newData: any = {};
-          if (!existing.clicked) {
-            newData.clicked = true;
-            newData.clickedAt = new Date();
-            wasClicked = true;
-          }
-          // Do not downgrade submitted
-          if (existing.status !== 'submitted') {
-            if (['pending', 'sent', 'opened'].includes(existing.status)) {
-              newData.status = 'clicked';
-            }
-          }
-          if (Object.keys(newData).length > 0) {
-            await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, newData);
-          }
-        } else {
-          await storage.createCampaignResult({
-            campaignId, targetId, organizationId: campaign.organizationId,
-            sent: false, opened: false, clicked: true, clickedAt: new Date(), submitted: false,
-            status: 'clicked'
-          } as any);
-          wasClicked = true;
-        }
-        
-        // If this is a new click event, create a notification
-        if (wasClicked) {
-          try {
-            const target = await storage.getTarget(targetId);
-            const users = await storage.listUsers(campaign.organizationId);
-            
-            if (users && users.length > 0) {
-              for (const user of users) {
-                if (user.isAdmin) {
-                  await NotificationService.createNotification({
-                    userId: user.id,
-                    organizationId: campaign.organizationId,
-                    type: 'campaign',
-                    title: 'Link Clicked',
-                    message: `${target?.firstName ?? ''} ${target?.lastName ?? ''} (${target?.email ?? ''}) clicked a link in the email from campaign "${campaign.name}".`,
-                    priority: 'high',
-                    actionUrl: `/campaigns/${campaignId}`,
-                    metadata: {
-                      campaignId,
-                      targetId,
-                      targetEmail: target?.email ?? '',
-                      eventType: 'clicked',
-                      url: url
-                    }
-                  });
-                }
-              }
-            }
-          } catch (notifError) {
-            console.error('Error creating click notification:', notifError);
-          }
-        }
-      } catch (e) {
-        console.error('Click record error:', e);
-      }
-      return res.redirect(302, url);
-    } catch (e) {
-      console.error('Click redirect error:', e);
-      return res.status(500).send('Server Error');
-    }
+      const ctx = await context(req);
+      if (!ctx) return res.status(404).send('Simulation not found');
+      await record(req,ctx.campaign.id,ctx.target.id,'clicked');
+      // Always use the campaign's landing page; query parameters cannot redirect externally.
+      res.redirect(`/l/${ctx.campaign.id}/${ctx.target.id}?token=${encodeURIComponent(ctx.token)}`);
+    } catch { res.status(500).send('Unable to load simulation'); }
   });
-
-  // Public Landing Page rendering with form capture injection
-  app.get('/l/:campaignId/:targetId', async (req, res) => {
+  app.get('/l/:campaignId/:targetId', trackingLimiter, async (req,res) => {
     try {
-      const campaignId = Number.parseInt(req.params.campaignId, 10);
-      const targetId = Number.parseInt(req.params.targetId, 10);
-      if (!Number.isFinite(campaignId) || !Number.isFinite(targetId)) {
-        return res.status(400).send('Bad Request');
-      }
-      const campaign = await storage.getCampaign(campaignId);
-      if (!campaign) return res.status(404).send('Not Found');
-      const target = await storage.getTarget(targetId);
-      if (!target) return res.status(404).send('Not Found');
-      if (target.organizationId !== campaign.organizationId) return res.status(403).send('Forbidden');
-      const page = await storage.getLandingPage(campaign.landingPageId);
-      if (!page) return res.status(404).send('Not Found');
-      
-      const injection = `\n<script>(function(){try{var cid=${campaignId},tid=${targetId};document.querySelectorAll('form').forEach(function(f){try{f.method='POST';f.action='/l/submit?c='+cid+'&t='+tid;}catch(e){}});}catch(e){}})();</script>`;
-      const html = (page.htmlContent || '<!doctype html><html><body></body></html>');
-      const out = /<\/body\s*>/i.test(html) ? html.replace(/<\/body\s*>/i, injection + '</body>') : html + injection;
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      return res.status(200).send(out);
-    } catch (e) {
-      console.error('Landing page render error:', e);
-      return res.status(500).send('Server Error');
-    }
+      const ctx = await context(req);
+      if (!ctx) return res.status(404).send('Simulation not found');
+      const page = await campaignLanding(ctx.campaign);
+      if (!page || page.organizationId !== ctx.campaign.organizationId) return res.status(404).send('Page not found');
+      await record(req,ctx.campaign.id,ctx.target.id,'clicked');
+      const hidden = `<input type="hidden" name="campaignId" value="${ctx.campaign.id}"><input type="hidden" name="targetId" value="${ctx.target.id}"><input type="hidden" name="token" value="${ctx.token}">`;
+      let html = sanitizeHtml(page.htmlContent, {
+        allowedTags: sanitizeHtml.defaults.allowedTags.concat(['html','head','body','style','form','input','button','label','img','meta']),
+        allowedAttributes: { '*': ['class','style','id'], input: ['type','name','placeholder','required','value'], form: ['method'], img: ['src','alt','width','height'], a: ['href'] },
+      });
+      html = html.replace(/<form[^>]*>/gi, `<form method="post" action="/l/submit">${hidden}`);
+      res.setHeader('Content-Security-Policy', "sandbox allow-forms allow-same-origin; default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'");
+      res.setHeader('Cache-Control','no-store');
+      res.type('html').send(html);
+    } catch { res.status(500).send('Unable to load simulation'); }
   });
-
-  // Public form submission capture
-  app.post('/l/submit', async (req, res) => {
+  app.post('/l/submit', trackingLimiter, async (req,res) => {
     try {
-      const cParam = req.query.c;
-      const tParam = req.query.t;
-      let cStr = '';
-      let tStr = '';
-      if (typeof cParam === 'string') cStr = cParam;
-      else if (Array.isArray(cParam) && typeof cParam[0] === 'string') cStr = cParam[0];
-      if (typeof tParam === 'string') tStr = tParam;
-      else if (Array.isArray(tParam) && typeof tParam[0] === 'string') tStr = tParam[0];
-      const campaignId = Number.parseInt(cStr, 10);
-      const targetId = Number.parseInt(tStr, 10);
-      if (!Number.isFinite(campaignId) || !Number.isFinite(targetId)) {
-        return res.status(400).send('Bad Request');
+      const ctx = await context(req,true);
+      if (!ctx) return res.status(404).send('Simulation not found');
+      const page = await campaignLanding(ctx.campaign);
+      if (!page?.captureData || page.organizationId !== ctx.campaign.organizationId) return res.status(400).send('Capture disabled');
+      const evidence: Record<string,unknown> = { submitted: true };
+      if (page.capturePasswords) {
+        const password = Object.entries(req.body).find(([key]) => /pass(word)?/i.test(key))?.[1];
+        if (typeof password === 'string' && password.length <= 1024) evidence.encryptedPassword = await SecretsService.encrypt(ctx.campaign.organizationId,password);
       }
-      const campaign = await storage.getCampaign(campaignId);
-      if (!campaign) return res.status(404).send('Not Found');
-      const target = await storage.getTarget(targetId);
-      if (!target) return res.status(404).send('Not Found');
-      if (target.organizationId !== campaign.organizationId) return res.status(403).send('Forbidden');
-      
-      // Load landing page to honor capture flags
-      const page = await storage.getLandingPage(campaign.landingPageId);
-      const captureData = page?.captureData !== false;
-      const capturePasswords = page?.capturePasswords === true;
-
-      // Prepare submitted data according to flags
-      const body: Record<string, any> = req.body || {};
-      let submittedData: Record<string, any> | null = null;
-      if (captureData) {
-        if (capturePasswords) {
-          submittedData = { ...body };
-        } else {
-          const filtered: Record<string, any> = {};
-          for (const [k, v] of Object.entries(body)) {
-            if (/passw|pwd/i.test(k)) continue;
-            filtered[k] = v;
-          }
-          submittedData = filtered;
-        }
-      }
-
-      // Update or create result row
-      try {
-        let wasSubmitted = false;
-        const existing = await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, {} as any);
-        
-        if ((existing && !existing.submitted) || !existing) {
-          wasSubmitted = true;
-        }
-        
-        const updated = await storage.updateCampaignResultByCampaignAndTarget(campaignId, targetId, {
-          submitted: true,
-          submittedAt: new Date(),
-          submittedData: submittedData as any,
-          status: 'submitted',
-        } as any);
-        
-        if (!updated) {
-          await storage.createCampaignResult({
-            campaignId,
-            targetId,
-            organizationId: campaign.organizationId,
-            sent: false,
-            opened: false,
-            clicked: false,
-            submitted: true,
-            submittedAt: new Date(),
-            submittedData: submittedData as any,
-            status: 'submitted',
-          } as any);
-        }
-        
-        // If this is a new submission event, create a notification
-        if (wasSubmitted) {
-          try {
-            const target = await storage.getTarget(targetId);
-            const users = await storage.listUsers(campaign.organizationId);
-            
-            if (users && users.length > 0) {
-              for (const user of users) {
-                if (user.isAdmin) {
-                  await NotificationService.createNotification({
-                    userId: user.id,
-                    organizationId: campaign.organizationId,
-                    type: 'campaign',
-                    title: 'Form Submitted',
-                    message: `${target?.firstName ?? ''} ${target?.lastName ?? ''} (${target?.email ?? ''}) submitted information on the landing page from campaign "${campaign.name}".`,
-                    priority: 'urgent',
-                    actionUrl: `/campaigns/${campaignId}`,
-                    metadata: {
-                      campaignId,
-                      targetId,
-                      targetEmail: target?.email ?? '',
-                      eventType: 'submitted'
-                    }
-                  });
-                }
-              }
-            }
-          } catch (notifError) {
-            console.error('Error creating form submission notification:', notifError);
-          }
-        }
-      } catch (err) {
-        console.error('Error recording submission:', err);
-      }
-
-      // Redirect if landing page has redirectUrl
-      const page2 = page || (await storage.getLandingPage(campaign.landingPageId));
-      if (page2?.redirectUrl) {
-        return res.redirect(302, page2.redirectUrl);
-      }
-      
-      return res.status(200).send('Thank you for your submission.');
-    } catch (e) {
-      console.error('Form submission error:', e);
-      return res.status(500).send('Server Error');
-    }
+      await record(req,ctx.campaign.id,ctx.target.id,'submitted');
+      await pool.query('UPDATE campaign_results SET submitted_data=$3 WHERE campaign_id=$1 AND target_id=$2', [ctx.campaign.id,ctx.target.id,JSON.stringify(evidence)]);
+      res.type('html').send(trainingFeedback(page));
+    } catch { res.status(500).send('Unable to record submission'); }
   });
 }

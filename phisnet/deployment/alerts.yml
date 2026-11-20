@@ -1,0 +1,23 @@
+groups:
+  - name: phishnet-pilot
+    rules:
+      - alert: PhishNetWorkerUnavailable
+        expr: phishnet_workers_active == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: 'No active PhishNet delivery worker'}
+      - alert: PhishNetQueueDelayed
+        expr: phishnet_queue_oldest_seconds > 600
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Queued messages require operator review'}
+      - alert: PhishNetAmbiguousDelivery
+        expr: phishnet_dispatch_ambiguous > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: 'Do not retry uncertain sends without reconciliation'}
+      - alert: PhishNetReportsNeedAttention
+        expr: phishnet_report_attention > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: 'Scheduled report runs need review'}

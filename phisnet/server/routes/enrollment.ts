@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import crypto from "node:crypto";
-import { isAdmin, isAuthenticated, hashPassword } from "../auth";
+import { isAdminOrOrgAdmin, isAuthenticated, hashPassword } from "../auth";
 import { storage } from "../storage";
 import { db } from "../db";
 import { acceptInviteSchema, rolesSchema, userRolesSchema } from "@shared/schema";
@@ -42,7 +42,7 @@ function checkRateLimit(identifier: string): boolean {
 
 export function registerEnrollmentRoutes(app: Express) {
   // Admin: create one or more invites
-  app.post("/api/admin/enroll/invite", isAuthenticated, isAdmin, async (req: Request, res: Response) => {
+  app.post("/api/admin/enroll/invite", isAuthenticated, isAdminOrOrgAdmin, async (req: Request, res: Response) => {
     try {
       const emailsRaw = (req.body?.emails || req.body?.email) as string[] | string | undefined;
       if (!emailsRaw) return res.status(400).json({ message: "Provide email or emails[]" });
@@ -72,7 +72,7 @@ export function registerEnrollmentRoutes(app: Express) {
           } as any);
 
           // Send invitation email with unhashed token
-          const baseUrl = process.env.BASE_URL || `http://localhost:5000`;
+          const baseUrl = process.env.APP_BASE_URL || `http://localhost:5000`;
           const inviteUrl = `${baseUrl}/api/enroll/accept?token=${encodeURIComponent(token)}`;
           await sendEnrollmentInviteEmail({
             toEmail: invite.email,
@@ -102,7 +102,7 @@ export function registerEnrollmentRoutes(app: Express) {
   });
 
   // Admin: list invites
-  app.get("/api/admin/enroll/invites", isAuthenticated, isAdmin, async (req: Request, res: Response) => {
+  app.get("/api/admin/enroll/invites", isAuthenticated, isAdminOrOrgAdmin, async (req: Request, res: Response) => {
     try {
       if (!req.user?.organizationId) return res.status(400).json({ message: "Missing organization context" });
       const invites = await storage.listUserInvites(req.user.organizationId);
@@ -114,7 +114,7 @@ export function registerEnrollmentRoutes(app: Express) {
   });
 
   // Admin: delete/revoke invite
-  app.delete("/api/admin/enroll/invites/:id", isAuthenticated, isAdmin, async (req: Request, res: Response) => {
+  app.delete("/api/admin/enroll/invites/:id", isAuthenticated, isAdminOrOrgAdmin, async (req: Request, res: Response) => {
     try {
       if (!req.user?.organizationId) return res.status(400).json({ message: "Missing organization context" });
       const inviteId = Number(req.params.id);
@@ -141,7 +141,7 @@ export function registerEnrollmentRoutes(app: Express) {
   });
 
   // Admin: resend invite (regenerate token and extend expiry)
-  app.post("/api/admin/enroll/invites/:id/resend", isAuthenticated, isAdmin, async (req: Request, res: Response) => {
+  app.post("/api/admin/enroll/invites/:id/resend", isAuthenticated, isAdminOrOrgAdmin, async (req: Request, res: Response) => {
     try {
       if (!req.user?.organizationId) return res.status(400).json({ message: "Missing organization context" });
       const inviteId = Number(req.params.id);
@@ -166,7 +166,7 @@ export function registerEnrollmentRoutes(app: Express) {
       if (!updatedInvite) return res.status(500).json({ message: "Failed to resend invite" });
 
       // Send new invitation email
-      const baseUrl = process.env.BASE_URL || `http://localhost:5000`;
+      const baseUrl = process.env.APP_BASE_URL || `http://localhost:5000`;
       const inviteUrl = `${baseUrl}/api/enroll/accept?token=${encodeURIComponent(newToken)}`;
       await sendEnrollmentInviteEmail({
         toEmail: updatedInvite.email,
@@ -374,7 +374,7 @@ export function registerEnrollmentRoutes(app: Express) {
         acceptInviteSchema.parse(body);
       } catch (e) {
         if (e instanceof z.ZodError) {
-          return res.status(400).json({ message: "Validation failed", errors: e.errors });
+          return res.status(400).json({ message: "Validation failed", errors: e.issues });
         }
         throw e;
       }

@@ -62,21 +62,22 @@ export const useTrainings = () => {
 };
 
 // Campaigns Hooks
-export const useCampaigns = () => {
+export const useCampaigns = (page=1) => {
   const query = useQuery<CampaignsResponse, Error>({
-    queryKey: ['campaigns'],
-    queryFn: () => apiClient.getCampaigns(),
+    queryKey: ['/api/campaigns',{page}],
+    queryFn: () => apiClient.getCampaigns(page),
   });
   
   return {
     ...query,
+    pagination:query.data?.pagination,
     data: query.data?.campaigns || []  // Extract campaigns array
   };
 };
 
 export const useCampaign = (id: number | string | undefined) => {
   return useQuery<CampaignWithDetails, Error>({
-    queryKey: ['campaigns', id],
+    queryKey: ['/api/campaigns', id],
     queryFn: () => apiClient.getCampaign(Number(id)),
     enabled: !!id,
   });
@@ -84,7 +85,8 @@ export const useCampaign = (id: number | string | undefined) => {
 
 export const useCampaignResults = (id: number | string | undefined) => {
   return useQuery<CampaignResultsResponse, Error>({
-    queryKey: ['campaigns', id, 'results'],
+    refetchInterval:5000,
+    queryKey: ['/api/campaigns', id, 'results'],
     queryFn: () => apiClient.getCampaignResults(Number(id)),
     enabled: !!id,
   });
@@ -101,7 +103,7 @@ export const useTemplates = () => {
 // Groups and Targets Hooks
 export const useGroups = () => {
   return useQuery<GroupsResponse, Error>({
-    queryKey: ['groups'],
+    queryKey: ['/api/groups'],
     queryFn: () => apiClient.getGroups(),
   });
 };
@@ -131,7 +133,7 @@ export const useRoles = () => {
 // SMTP Profiles Hook
 export const useSmtpProfiles = () => {
   return useQuery<SmtpProfilesResponse, Error>({
-    queryKey: ['smtp-profiles'],
+    queryKey: ['/api/smtp-profiles'],
     queryFn: () => apiClient.getSmtpProfiles(),
   });
 };
@@ -139,7 +141,7 @@ export const useSmtpProfiles = () => {
 // Landing Pages Hook
 export const useLandingPages = () => {
   return useQuery<LandingPagesResponse, Error>({
-    queryKey: ['landing-pages'],
+    queryKey: ['/api/landing-pages'],
     queryFn: () => apiClient.getLandingPages(),
   });
 };

@@ -1,3 +1,6 @@
+import { requestDatabaseScope } from './database-context';
+import { publicUser } from './public-user';
+import { organizations, users } from '@shared/schema';
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { Express, Request, Response, NextFunction } from "express";
@@ -6,11 +9,12 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { storage } from "./storage";
-import { db } from "./db";
+import { db,pool,controlPool } from "./db";
 import { rolesSchema, userRolesSchema } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { User as SelectUser, userValidationSchema, forgotPasswordSchema, resetPasswordSchema } from "@shared/schema";
 import { z } from "zod";
+import { appRole } from '@shared/access-control';
 import { AuditService } from "./services/audit.service";
 import { authLimiter, loginLimiter } from "./middleware/rate-limit";
 import multer from "multer";
@@ -33,39 +37,26 @@ declare global {
 
 const scryptAsync = promisify(scrypt);
 
-// Configure multer storage for profile pictures
-const storage_config = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(process.cwd(), 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const extension = path.extname(file.originalname);
-    cb(null, 'profile-' + uniqueSuffix + extension);
-  }
-});
+const INVALID_CREDENTIALS = "Invalid email or password";
+const APP_ORIGIN = new URL(process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 5000}`).origin;
 
-const upload = multer({ 
-  storage: storage_config,
-  limits: {
-    fileSize: 10 * 1024 * 1024,
-  },
-  fileFilter: (req, file, cb) => {
-    const filetypes = /jpeg|jpg|png|gif|webp/;
-    const mimetype = filetypes.test(file.mimetype);
-    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-    
-    if (mimetype && extname) {
-      return cb(null, true);
-    }
-    
-    cb(new Error("Only image files (JPEG, PNG, GIF, WebP) are allowed!"));
-  }
-});
+/** Removes a user's stored sessions (optionally keeping one), e.g. after a password change. */
+export async function destroyUserSessions(userId: number, exceptSessionId?: string) {
+  await controlPool.query(
+    "DELETE FROM session WHERE (sess->'passport'->>'user')=$1::text AND ($2::text IS NULL OR sid<>$2::text)",
+    [String(userId), exceptSessionId ?? null]
+  );
+}
+// A well-formed hash of a random value, compared against when the email is unknown.
+const DUMMY_PASSWORD_HASH = `${randomBytes(64).toString("hex")}.${randomBytes(32).toString("hex")}`;
+
+async function authenticatedIdentity(user: SelectUser) {
+  const rows = await db.select({ name: rolesSchema.name }).from(userRolesSchema)
+    .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
+    .where(eq(userRolesSchema.userId, user.id));
+  const roles = rows.map(row => row.name);
+  return { ...user, roles, isAdmin: Boolean(user.isAdmin || roles.includes('Admin')) };
+}
 
 export async function hashPassword(password: string) {
   const salt = randomBytes(32).toString("hex");
@@ -182,29 +173,28 @@ export function setupAuth(app: Express) {
   };
 
   app.set("trust proxy", 1);
-  app.use(session(sessionSettings));
+  const sessionMiddleware = session(sessionSettings);
+  app.use(sessionMiddleware);
+  app.set("sessionMiddleware", sessionMiddleware);
   app.use(passport.initialize());
   app.use(passport.session());
+  app.use(requestDatabaseScope);
 
   // Configure static routes for uploaded files
-  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
 
   passport.use(
     new LocalStrategy(
       { usernameField: "email" },
       async (email, password, done) => {
         try {
-          console.log('Attempting login for:', email);
-          const user = await storage.getUserByEmail(email);
-          
-          if (!user) {
-            console.log('User not found:', email);
-            return done(null, false, { message: "Invalid email or password" });
-          }
 
-          // Enforce enrollment/activation for non-admin accounts
-          if (!user.isAdmin && user.isActive === false) {
-            return done(null, false, { message: "Account inactive. Please accept your invitation or contact your admin." });
+          const user = await storage.getUserByEmail(email);
+
+          if (!user) {
+            // Spend the same hashing time as a real check so response timing does not reveal accounts.
+            await comparePasswords(password, DUMMY_PASSWORD_HASH);
+            return done(null, false, { message: INVALID_CREDENTIALS });
           }
 
           // Check if account is locked
@@ -214,30 +204,22 @@ export function setupAuth(app: Express) {
           }
 
           const isValid = await comparePasswords(password, user.password);
-          console.log('Password validation result:', isValid);
+
 
           if (!isValid) {
-            const newAttemptCount = (user.failedLoginAttempts || 0) + 1;
-            console.log(`Failed login attempt ${newAttemptCount} for user:`, email);
-            
-            const isLocked = await recordFailedLoginAttempt(user);
-            if (isLocked) {
-              return done(null, false, { 
-                message: "Too many failed attempts. Account locked for 30 minutes." 
-              });
-            }
-            return done(null, false, { 
-              message: `Invalid email or password. ${MAX_LOGIN_ATTEMPTS - newAttemptCount} attempts remaining.` 
-            });
+            // Same message as an unknown email: attempt counts would confirm the account exists.
+            await recordFailedLoginAttempt(user);
+            return done(null, false, { message: INVALID_CREDENTIALS });
           }
 
-          // Enforce enrollment: only active employees can login (admins bypass)
-          if (!user.isAdmin && (user as any).isActive === false) {
+          // Inactive status is only disclosed after the password is proven.
+          // Disabled accounts cannot sign in, including administrators.
+          if ((user as any).isActive === false) {
             return done(null, false, { message: "Account inactive. Please accept your invitation or contact your admin." });
           }
 
           await resetFailedLoginAttempts(user.id);
-          return done(null, user);
+          return done(null, await authenticatedIdentity(user));
         } catch (error) {
           console.error('Login error:', error);
           return done(error instanceof Error ? error : new Error("Unknown error"));
@@ -250,106 +232,41 @@ export function setupAuth(app: Express) {
   passport.deserializeUser(async (id: number, done) => {
     try {
       const user = await storage.getUser(id);
-      done(null, user);
+      done(null, user?.isActive ? await authenticatedIdentity(user) : false);
     } catch (error) {
       done(error);
     }
   });
 
-  // Registration endpoint (no rate limit - allow unlimited registration attempts)
-  app.post("/api/register", async (req, res, next) => {
+  // Tenant creation and owner assignment are atomic. Existing tenants require invitations.
+  app.post('/api/register', authLimiter, async (req, res, next) => {
     try {
-      try {
-        userValidationSchema.parse(req.body);
-      } catch (validationError) {
-        if (validationError instanceof z.ZodError) {
-          return res.status(400).json({
-            message: "Validation failed",
-            errors: validationError.errors
-          });
-        }
-      }
-
-      const sanitizedEmail = sanitizeInput(req.body.email);
-      let sanitizedOrgName = "";
-      let orgId = 0;
-      
-      if (req.body.organizationName && req.body.organizationName.trim() !== '') {
-        sanitizedOrgName = sanitizeInput(req.body.organizationName);
-      } else {
-        sanitizedOrgName = "None";
-      }
-
-      const existingUser = await storage.getUserByEmail(sanitizedEmail);
-      if (existingUser) {
-        return res.status(400).json({ message: "Email already exists" });
-      }
-      
-      if (sanitizedOrgName === "None") {
-        let noneOrg = await storage.getOrganizationByName("None");
-        
-        if (!noneOrg) {
-          noneOrg = await storage.createOrganization({ name: "None" });
-        }
-        
-        orgId = noneOrg.id;
-      } else if (sanitizedOrgName) {
-        const organization = await storage.getOrganizationByName(sanitizedOrgName);
-        
-        if (!organization) {
-          const newOrg = await storage.createOrganization({ name: sanitizedOrgName });
-          orgId = newOrg.id;
-        } else {
-          orgId = organization.id;
-        }
-      }
-
-      let isFirstUser = false;
-      if (orgId > 0) {
-        const existingUsers = await storage.listUsers(orgId);
-        isFirstUser = existingUsers.length === 0;
-      }
-      
-      const isAdmin = isFirstUser && sanitizedOrgName !== "None" && sanitizedOrgName.length > 0;
-      
-      // Generate email verification token
-      const verificationToken = generateEmailVerificationToken({
-        id: 0, // Temporary, will be replaced after user creation
-        email: sanitizedEmail,
-      } as any);
-      
-      const user = await storage.createUser({
-        ...req.body,
-        email: sanitizedEmail,
-        organizationName: sanitizedOrgName || "None",
-        password: await hashPassword(req.body.password),
-        organizationId: orgId,
-        isAdmin: isAdmin,
-        emailVerified: false,
-        emailVerificationToken: verificationToken,
-        emailVerificationExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+      const input = userValidationSchema.parse(req.body);
+      const email = input.email.trim().toLowerCase();
+      const name = input.organizationName?.trim();
+      if (!name || name === 'None' || name.length > 200) return res.status(400).json({ message: 'Organization name is required' });
+      const hashed = await hashPassword(input.password);
+      const token = generateEmailVerificationToken({ id: 0, email } as SelectUser);
+      const user = await db.transaction(async tx => {
+        // Serialize equivalent organization registrations, including case variants.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${name.toLowerCase()}))`);
+        const existing = await tx.select().from(organizations).where(sql`lower(${organizations.name}) = ${name.toLowerCase()}`);
+        if (existing.length) throw Object.assign(new Error('Organization already exists. Request an invitation.'), { status: 409 });
+        const [role] = await tx.select().from(rolesSchema).where(eq(rolesSchema.name,'OrgAdmin'));
+        if (!role) throw new Error('Default roles require migration');
+        const [org] = await tx.insert(organizations).values({ name, encryptionKey: randomBytes(32).toString('base64') }).returning();
+        const [created] = await tx.insert(users).values({ email, firstName: input.firstName, lastName: input.lastName,
+          password: hashed, organizationId: org.id, organizationName: name, isAdmin: false,
+          emailVerified: false, emailVerificationToken: token, emailVerificationExpiry: new Date(Date.now()+86400000) }).returning();
+        await tx.insert(userRolesSchema).values({ userId: created.id, roleId: role.id });
+        return created;
       });
-
-      // Send verification email
-      const baseUrl = process.env.BASE_URL || `http://localhost:5000`;
-      const verificationUrl = `${baseUrl}/api/verify-email?token=${verificationToken}`;
-      
-      try {
-        await sendEmailVerificationEmail(user, verificationUrl);
-        console.log('Verification email sent to:', user.email);
-      } catch (emailError) {
-        console.error('Failed to send verification email:', emailError);
-        // Continue with registration even if email fails
-      }
-
-      const { password, emailVerificationToken: _, emailVerificationExpiry: __, ...userWithoutPassword } = user;
-
-      res.status(201).json({ 
-        ...userWithoutPassword,
-        message: "User registered successfully. Please check your email to verify your account."
-      });
-    } catch (error) {
-      console.error("Registration error:", error);
+      await sendEmailVerificationEmail(user, `${process.env.APP_BASE_URL || 'http://localhost:5000'}/api/verify-email?token=${token}`);
+      return res.status(201).json({ ...publicUser(user), message: 'Please verify your email before signing in.' });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) return res.status(400).json({ message: 'Validation failed', errors: error.issues });
+      if (error.code === '23505') return res.status(409).json({ message: 'Email already exists' });
+      if (error.status) return res.status(error.status).json({ message: error.message });
       next(error);
     }
   });
@@ -360,9 +277,13 @@ export function setupAuth(app: Express) {
       if (err) return next(err);
       if (!user) return res.status(401).json({ message: info?.message || "Authentication failed" });
 
+      if(process.env.NODE_ENV==='production' && !user.emailVerified)return res.status(403).json({message:'Verify your email before signing in'});
+      (req.session as any).pendingTwoFactorExpiresAt=Date.now()+5*60*1000;
       // Organization enforcement: if org requires 2FA but user not enabled, signal setup required
       const org = await storage.getOrganization(user.organizationId);
-      if (org && (org as any).twoFactorRequired && !(user as any).twoFactorEnabled) {
+      const privilegedRoles=await db.select({name:rolesSchema.name}).from(userRolesSchema).innerJoin(rolesSchema,eq(userRolesSchema.roleId,rolesSchema.id)).where(eq(userRolesSchema.userId,user.id));
+      const mandatoryMfa=Boolean(org?.twoFactorRequired)||(process.env.NODE_ENV==='production' && (user.isAdmin||privilegedRoles.some(role=>role.name==='OrgAdmin')));
+      if (mandatoryMfa && !(user as any).twoFactorEnabled) {
         (req.session as any).pendingTwoFactorUserId = user.id;
         return res.status(200).json({ requiresTwoFactorSetup: true });
       }
@@ -399,11 +320,11 @@ export function setupAuth(app: Express) {
               .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
               .where(eq(userRolesSchema.userId, user.id));
             const roles = rows.map((r) => r.roleName);
-            const { password, ...userWithoutPassword } = user;
+            const userWithoutPassword = publicUser(user);
             return res.status(200).json({ ...userWithoutPassword, roles });
           } catch (e) {
             console.error("Failed to fetch roles on login:", e);
-            const { password, ...userWithoutPassword } = user;
+            const userWithoutPassword = publicUser(user);
             return res.status(200).json({ ...userWithoutPassword, roles: [] });
           }
         });
@@ -416,9 +337,11 @@ export function setupAuth(app: Express) {
     try {
       const { token, backupCode } = req.body as { token?: string; backupCode?: string };
       const pendingId = (req.session as any).pendingTwoFactorUserId;
-      if (!pendingId) return res.status(400).json({ message: 'No pending 2FA login' });
-      const user = await storage.getUser(pendingId);
+      if (!pendingId || !Number.isFinite(Number((req.session as any).pendingTwoFactorExpiresAt)) || Number((req.session as any).pendingTwoFactorExpiresAt)<Date.now()) return res.status(400).json({ message: 'No pending 2FA login. Sign in again.' });
+      const storedUser = await storage.getUser(pendingId);
+      const user = storedUser ? await authenticatedIdentity(storedUser) : undefined;
       if (!user) return res.status(404).json({ message: 'User not found' });
+      if (!user.isActive) return res.status(403).json({ message: 'Account inactive' });
       if (!(user as any).twoFactorEnabled || !(user as any).twoFactorSecret) {
         return res.status(400).json({ message: '2FA not enabled' });
       }
@@ -431,7 +354,14 @@ export function setupAuth(app: Express) {
 
       if (token && /^\d{6}$/.test(token)) {
         const { TwoFactorService } = await import('./services/two-factor.service');
-        success = TwoFactorService.verifyToken(decrypted, token);
+        const step = TwoFactorService.verifyTokenStep(decrypted, token);
+        if (step !== null) {
+          // Record the step atomically; a code from this step or earlier cannot be replayed.
+          // The column is timestamp-without-zone holding UTC (as Drizzle writes it), so compare in UTC.
+          const claimed = await pool.query("UPDATE users SET two_factor_verified_at=(to_timestamp($2::float8*30) AT TIME ZONE 'UTC') WHERE id=$1 AND (two_factor_verified_at IS NULL OR two_factor_verified_at<(to_timestamp($2::float8*30) AT TIME ZONE 'UTC')) RETURNING id", [user.id, step]);
+          if (!claimed.rowCount) return res.status(401).json({ message: 'This code was already used. Wait for the next code.' });
+          success = true;
+        }
       } else if (backupCode) {
         const { TwoFactorService } = await import('./services/two-factor.service');
         const codes: string[] = (user as any).twoFactorBackupCodes || [];
@@ -451,8 +381,8 @@ export function setupAuth(app: Express) {
       // Consume backup code if used
       if (usedBackupIndex !== null) {
         const codes: string[] = (user as any).twoFactorBackupCodes || [];
-        codes.splice(usedBackupIndex, 1);
-        await storage.updateUser(user.id, { twoFactorBackupCodes: codes as any } as any);
+        const consumed=await pool.query("UPDATE users SET two_factor_backup_codes=array_remove(two_factor_backup_codes,$2) WHERE id=$1 AND $2=ANY(two_factor_backup_codes) RETURNING id",[user.id,codes[usedBackupIndex]]);
+        if(!consumed.rowCount)return res.status(401).json({message:'Backup code has already been used'});
       }
 
       await storage.updateUser(user.id, { twoFactorVerifiedAt: new Date() } as any);
@@ -466,7 +396,7 @@ export function setupAuth(app: Express) {
             context: { userId: user.id, organizationId: user.organizationId, ip: req.ip || req.socket.remoteAddress, userAgent: req.get('user-agent') },
             action: 'user.login.2fa', resource: 'auth', metadata: { email: user.email }
           }).catch(()=>{});
-          const { password, ...userWithoutPassword } = user;
+          const userWithoutPassword = publicUser(user);
           try {
             const rows = await db.select({ roleName: rolesSchema.name })
               .from(userRolesSchema)
@@ -523,7 +453,7 @@ export function setupAuth(app: Express) {
     .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
     .where(eq(userRolesSchema.userId, req.user.id));
     
-    const { password, ...userWithoutPassword } = req.user;
+    const userWithoutPassword = publicUser(req.user);
     res.json({
       ...userWithoutPassword,
       roles: userRoles.map(r => r.roleName),
@@ -531,79 +461,10 @@ export function setupAuth(app: Express) {
   });
 
   // Upload profile picture endpoint
-  app.post("/api/user/profile-picture", isAuthenticated, upload.single('profilePicture'), async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
-      }
 
-      const filePath = `/uploads/${req.file.filename}`;
-      
-      // Update user profile with the new picture path
-  if (!req.user) throw new Error("User not authenticated");
-  await storage.updateUser(req.user.id, {
-        profilePicture: filePath
-      });
-
-      res.status(200).json({ 
-        message: "Profile picture updated",
-        profilePicture: filePath
-      });
-    } catch (error) {
-      console.error("Error uploading profile picture:", error);
-      
-      // Handle multer errors specifically
-  if (typeof error === 'object' && error !== null && 'code' in error && (error as any).code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ 
-          message: "File too large. Maximum size is 10MB." 
-        });
-      }
-      
-  if (typeof error === 'object' && error !== null && 'code' in error && (error as any).code === 'LIMIT_FILE_COUNT') {
-        return res.status(400).json({ 
-          message: "Too many files. Only one file allowed." 
-        });
-      }
-      
-  if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as any).message === 'string' && (error as any).message.includes('Only image files')) {
-        return res.status(400).json({ 
-          message: "Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed." 
-        });
-      }
-      
-      res.status(500).json({ message: "Failed to upload profile picture" });
-    }
-  });
   
   // Update user profile endpoint
-  app.put("/api/user/profile", isAuthenticated, async (req, res) => {
-    try {
-      const allowedFields = ['firstName', 'lastName', 'position', 'bio'];
-      const updates: Partial<SelectUser> = {};
-      
-      // Only include allowed fields to prevent mass assignment vulnerabilities
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-      (updates as any)[field] = sanitizeInput(req.body[field]);
-        }
-      }
-      
-      // Update the user profile
-  if (!req.user) throw new Error("User not authenticated");
-  const updatedUser = await storage.updateUser(req.user.id, updates);
-      
-      if (!updatedUser) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      
-      // Return sanitized user data
-      const { password, ...userWithoutPassword } = updatedUser;
-      res.status(200).json(userWithoutPassword);
-    } catch (error) {
-      console.error("Error updating user profile:", error);
-      res.status(500).json({ message: "Failed to update user profile" });
-    }
-  });
+
   
   // Forgot password endpoint - initiates password reset flow
   app.post("/api/forgot-password", authLimiter, async (req, res) => {
@@ -615,22 +476,21 @@ export function setupAuth(app: Express) {
         if (validationError instanceof z.ZodError) {
           return res.status(400).json({
             message: "Validation failed",
-            errors: validationError.errors
+            errors: validationError.issues
           });
         }
       }
       
       // Sanitize email input
       const sanitizedEmail = sanitizeInput(req.body.email);
-      
+
       // Find user by email
       const user = await storage.getUserByEmail(sanitizedEmail);
-      
-      // Always return success even if user not found (security best practice)
+
+      // Identical response whether or not the account exists, and whether or not mail succeeds.
+      const genericResponse = { message: "If an account exists with this email, a password reset link has been sent." };
       if (!user) {
-        return res.status(200).json({ 
-          message: "If an account exists with this email, a password reset link has been sent." 
-        });
+        return res.status(200).json(genericResponse);
       }
       
       // Generate JWT token
@@ -640,19 +500,18 @@ export function setupAuth(app: Express) {
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
   await storage.createPasswordResetToken({ userId: user.id, token, expiresAt } as any);
       
-      // Generate reset URL for the email
-      const resetUrl = `${req.protocol}://${req.get('host')}/reset-password/${token}`;
-      
+      // Build the link from configuration, never from the request Host header, which an
+      // attacker controls and could use to send a victim's reset token to their own domain.
+      const resetUrl = `${APP_ORIGIN}/reset-password/${token}`;
+
       // Send password reset email
       const emailSent = await sendPasswordResetEmail(user, resetUrl);
-      
+
       if (!emailSent) {
-        return res.status(500).json({ message: "Failed to send password reset email" });
+        console.error("Password reset email could not be sent", { userId: user.id });
       }
-      
-      res.status(200).json({ 
-        message: "Password reset link has been sent to your email." 
-      });
+
+      res.status(200).json(genericResponse);
     } catch (error) {
       console.error("Error in forgot password flow:", error);
       res.status(500).json({ message: "An error occurred processing your request" });
@@ -669,7 +528,7 @@ export function setupAuth(app: Express) {
         if (validationError instanceof z.ZodError) {
           return res.status(400).json({
             message: "Validation failed",
-            errors: validationError.errors
+            errors: validationError.issues
           });
         }
       }
@@ -699,12 +558,14 @@ export function setupAuth(app: Express) {
         return res.status(404).json({ message: "User not found" });
       }
       
-      // Update user password
+      // Update user password and clear any lockout from the attempts that prompted the reset
       const hashedPassword = await hashPassword(password);
-      await storage.updateUser(user.id, { password: hashedPassword });
-      
+      await storage.updateUser(user.id, { password: hashedPassword, failedLoginAttempts: 0, lastFailedLogin: null, accountLocked: false, accountLockedUntil: null });
+
   // Invalidate token after successful reset
   await storage.deletePasswordResetToken(token);
+      // A reset usually means the old password may be known to someone else: end every session.
+      await destroyUserSessions(user.id);
       
       res.status(200).json({ message: "Password has been reset successfully" });
     } catch (error) {
@@ -738,11 +599,13 @@ export function setupAuth(app: Express) {
       
       // Update with new password
       const hashedPassword = await hashPassword(newPassword);
-      await storage.updateUser(user.id, { 
+      await storage.updateUser(user.id, {
         password: hashedPassword,
         updatedAt: new Date()
       });
-      
+      // Sign out every other session; the current one stays signed in.
+      await destroyUserSessions(user.id, req.sessionID);
+
       res.status(200).json({ message: "Password changed successfully" });
     } catch (error) {
       console.error("Error changing password:", error);
@@ -912,7 +775,7 @@ export async function isAdminOrOrgAdmin(req: Request, res: Response, next: NextF
 }
 
 export function isEmployee(req: Request, res: Response, next: NextFunction) {
-  if (req.user?.isAdmin) {
+  if (req.user && appRole(req.user) !== 'User') {
     return res.status(403).json({ message: "This endpoint is for employees only" });
   }
   if (!req.user) {

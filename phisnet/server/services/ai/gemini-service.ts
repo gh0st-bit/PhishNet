@@ -35,17 +35,18 @@ export interface GeneratedPretext {
 }
 
 class GeminiService {
-  private genAI: GoogleGenerativeAI;
-  private model: any;
+  private client: any = null;
 
-  constructor() {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY environment variable is required');
+  // Created on first use so the server can start without the optional AI integration configured.
+  private get model(): any {
+    if (!this.client) {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error('GEMINI_API_KEY environment variable is required');
+      }
+      this.client = new GoogleGenerativeAI(apiKey).getGenerativeModel({ model: 'gemini-pro' });
     }
-    
-    this.genAI = new GoogleGenerativeAI(apiKey);
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
+    return this.client;
   }
 
   /**

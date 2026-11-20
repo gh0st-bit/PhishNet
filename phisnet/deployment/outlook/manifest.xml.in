@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0" xsi:type="MailApp">
+ <Id>c39c3f8d-2e89-4de7-a934-3bc06112bf48</Id><Version>1.0.0.0</Version><ProviderName>PhishNet</ProviderName><DefaultLocale>en-US</DefaultLocale>
+ <DisplayName DefaultValue="PhishNet Report"/><Description DefaultValue="Review a suspicious-message report in your authenticated PhishNet workspace."/>
+ <IconUrl DefaultValue="__ORIGIN__/outlook/icon.png"/><HighResolutionIconUrl DefaultValue="__ORIGIN__/outlook/icon.png"/><SupportUrl DefaultValue="__ORIGIN__/employee/report"/>
+ <AppDomains><AppDomain>__ORIGIN__</AppDomain></AppDomains><Hosts><Host Name="Mailbox"/></Hosts><Requirements><Sets><Set Name="Mailbox" MinVersion="1.3"/></Sets></Requirements>
+ <FormSettings><Form xsi:type="ItemRead"><DesktopSettings><SourceLocation DefaultValue="__ORIGIN__/outlook/report.html"/><RequestedHeight>300</RequestedHeight></DesktopSettings></Form></FormSettings>
+ <Permissions>ReadItem</Permissions><Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/><DisableEntityHighlighting>false</DisableEntityHighlighting>
+ <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
+  <Requirements><bt:Sets DefaultMinVersion="1.3"><bt:Set Name="Mailbox"/></bt:Sets></Requirements>
+  <Hosts><Host xsi:type="MailHost"><DesktopFormFactor><FunctionFile resid="Taskpane.Url"/><ExtensionPoint xsi:type="MessageReadCommandSurface"><OfficeTab id="TabDefault"><Group id="PhishNet.Group"><Label resid="Group.Label"/><Control xsi:type="Button" id="PhishNet.Report"><Label resid="Button.Label"/><Supertip><Title resid="Button.Label"/><Description resid="Button.Description"/></Supertip><Icon><bt:Image size="16" resid="Icon.Url"/><bt:Image size="32" resid="Icon.Url"/><bt:Image size="80" resid="Icon.Url"/></Icon><Action xsi:type="ShowTaskpane"><SourceLocation resid="Taskpane.Url"/></Action></Control></Group></OfficeTab></ExtensionPoint></DesktopFormFactor></Host></Hosts>
+  <Resources><bt:Images><bt:Image id="Icon.Url" DefaultValue="__ORIGIN__/outlook/icon.png"/></bt:Images><bt:Urls><bt:Url id="Taskpane.Url" DefaultValue="__ORIGIN__/outlook/report.html"/></bt:Urls><bt:ShortStrings><bt:String id="Group.Label" DefaultValue="PhishNet"/><bt:String id="Button.Label" DefaultValue="Report message"/></bt:ShortStrings><bt:LongStrings><bt:String id="Button.Description" DefaultValue="Review and confirm this suspicious-message report in PhishNet."/></bt:LongStrings></Resources>
+ </VersionOverrides>
+</OfficeApp>

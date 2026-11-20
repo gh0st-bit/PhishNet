@@ -55,7 +55,7 @@ export default function AtRiskUsers({ users }: AtRiskUsersProps) {
   };
 
   return (
-    <Card>
+    <Card className="glass glass-tile">
       <CardHeader>
         <CardTitle>At-Risk Users</CardTitle>
       </CardHeader>

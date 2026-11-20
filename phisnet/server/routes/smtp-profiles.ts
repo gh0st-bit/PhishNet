@@ -16,7 +16,7 @@ export function registerSmtpProfileRoutes(app: Express) {
     try {
       assertUser(req.user);
       const profiles = await storage.listSmtpProfiles(req.user.organizationId);
-      res.json(profiles);
+      res.json(profiles.map(({ password: _password, ...profile }) => ({ ...profile, password: "" })));
     } catch (error) {
       console.error("Error fetching SMTP profiles:", error);
       res.status(500).json({ message: "Error fetching SMTP profiles" });
@@ -33,12 +33,28 @@ export function registerSmtpProfileRoutes(app: Express) {
         organizationId: req.user.organizationId
       };
       const profile = await storage.createSmtpProfile(req.user.organizationId, profileData);
-      res.status(201).json(profile);
+      const { password: _password, ...safeProfile } = profile;
+      res.status(201).json({ ...safeProfile, password: "" });
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
+        return res.status(400).json({ message: "Validation error", errors: error.issues });
       }
       res.status(500).json({ message: "Error creating SMTP profile" });
+    }
+  });
+
+  app.put('/api/smtp-profiles/:id', isAuthenticated, async (req, res) => {
+    try {
+      const existing = await storage.getSmtpProfile(Number(req.params.id));
+      if (!existing || existing.organizationId !== req.user!.organizationId) return res.status(404).json({ message: 'SMTP profile not found' });
+      const data = insertSmtpProfileSchema.partial().parse(req.body);
+      if (!data.password) delete data.password;
+      const updated = await storage.updateSmtpProfile(existing.id, data);
+      if (!updated) return res.status(404).json({ message: 'SMTP profile not found' });
+      const { password: _password, ...safeProfile } = updated;
+      res.json({ ...safeProfile, password: '' });
+    } catch (error) {
+      res.status(error instanceof z.ZodError ? 400 : 500).json({ message: 'Unable to update SMTP profile' });
     }
   });
 

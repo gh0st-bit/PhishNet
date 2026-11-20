@@ -256,6 +256,7 @@ export default function ReportSchedulesPage() {
                           <Mail className="h-3 w-3" />
                           {schedule.recipients.split(',').length} recipient(s)
                         </div>
+                        <div className="mt-1 max-w-xs break-words text-xs text-muted-foreground">{schedule.recipients}</div>
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
@@ -264,6 +265,7 @@ export default function ReportSchedulesPage() {
                       </TableCell>
                       <TableCell>
                         <Switch
+                          aria-label={`Enable ${schedule.type} report for ${schedule.recipients}`}
                           checked={schedule.enabled}
                           onCheckedChange={() => handleToggleEnabled(schedule)}
                           disabled={toggleEnabledMutation.isPending}

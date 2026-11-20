@@ -34,7 +34,6 @@ export default function RealTimeCampaignWidget() {
     // Connect to current origin with campaigns namespace
     const socket = io(namespace, {
       path: "/socket.io",
-      withCredentials: true,
       transports: ["polling", "websocket"],
     });
 
@@ -73,7 +72,7 @@ export default function RealTimeCampaignWidget() {
   }, [orgId, namespace]);
 
   return (
-    <Card>
+    <Card className="glass glass-tile">
       <CardHeader className="pb-3 flex items-center justify-between">
         <CardTitle className="text-base flex items-center gap-2">
           <Activity className="h-4 w-4" />

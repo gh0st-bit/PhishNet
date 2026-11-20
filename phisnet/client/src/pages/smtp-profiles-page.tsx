@@ -27,14 +27,37 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 const smtpProfileSchema = z.object({
   name: z.string().min(1, "Profile name is required"),
   host: z.string().min(1, "SMTP host is required"),
-  port: z.coerce.number().int().min(1, "Port must be a positive number"),
+  port: z.coerce.number<string | number>().int().min(1, "Port must be a positive number"),
   username: z.string().min(1, "Username is required"),
-  password: z.string().min(1, "Password is required"),
+  password: z.string(),
   fromName: z.string().min(1, "From name is required"),
   fromEmail: z.string().email("Please enter a valid email address"),
 });
 
 type SmtpProfileFormValues = z.infer<typeof smtpProfileSchema>;
+
+const FieldWithHelp = ({ label, help, children }: { label: string; help: string; children: React.ReactNode }) => (
+    <FormItem>
+      <FormLabel className="flex items-center gap-2">
+        {label}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="max-w-xs">{help}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </FormLabel>
+      <FormControl>
+        {children}
+      </FormControl>
+      <FormMessage />
+    </FormItem>
+  );
+
 
 export default function SmtpProfilesPage() {
   const { toast } = useToast();
@@ -46,7 +69,7 @@ export default function SmtpProfilesPage() {
   
   const { data: profiles = [], isLoading } = useSmtpProfiles();
 
-  const form = useForm<SmtpProfileFormValues>({
+  const form = useForm<z.input<typeof smtpProfileSchema>, unknown, SmtpProfileFormValues>({
     resolver: zodResolver(smtpProfileSchema),
     defaultValues: {
       name: "",
@@ -61,13 +84,13 @@ export default function SmtpProfilesPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: SmtpProfileFormValues) => {
-      const res = await apiRequest("POST", "/api/smtp-profiles", data);
+      const res = await apiRequest(selectedProfile ? "PUT" : "POST", selectedProfile ? `/api/smtp-profiles/${selectedProfile.id}` : "/api/smtp-profiles", data);
       return await res.json();
     },
     onSuccess: () => {
       toast({
-        title: "SMTP Profile created",
-        description: "Your SMTP profile has been created successfully.",
+        title: selectedProfile ? "SMTP Profile updated" : "SMTP Profile created",
+        description: selectedProfile ? "Your SMTP profile has been updated successfully." : "Your SMTP profile has been created successfully.",
       });
       queryClient.invalidateQueries({ queryKey: ['/api/smtp-profiles'] });
       setIsCreating(false);
@@ -134,7 +157,7 @@ export default function SmtpProfilesPage() {
       host: profile.host,
       port: profile.port,
       username: profile.username,
-      password: profile.password,
+      password: "",
       fromName: profile.fromName,
       fromEmail: profile.fromEmail,
     });
@@ -147,27 +170,6 @@ export default function SmtpProfilesPage() {
   };
 
   // Add this helper component
-  const FieldWithHelp = ({ label, help, children }: { label: string; help: string; children: React.ReactNode }) => (
-    <FormItem>
-      <FormLabel className="flex items-center gap-2">
-        {label}
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p className="max-w-xs">{help}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </FormLabel>
-      <FormControl>
-        {children}
-      </FormControl>
-      <FormMessage />
-    </FormItem>
-  );
 
   return (
     <AppLayout>

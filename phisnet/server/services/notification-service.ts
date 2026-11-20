@@ -2,14 +2,24 @@
 import { db, pool } from '../db';
 import { notificationsSchema, notificationPreferencesSchema } from '@shared/schema';
 import { eq, and, desc, count } from 'drizzle-orm';
+import { appRole } from '@shared/access-control';
+
+const member = (roles:string[]) => `EXISTS(SELECT 1 FROM users u WHERE u.id=$1 AND (u.is_admin OR EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.id AND r.name IN (${roles.map(role=>`'${role}'`).join(',')}))))`;
+const visibility = `
+ AND (n.type NOT IN ('campaign','campaign_created','campaign_complete','email_opened','link_clicked','form_submitted','invite_accepted','weekly_report','monthly_report') OR ${member(['Admin','OrgAdmin'])})
+ AND (n.type <> 'threat_intel' OR ${member(['Admin'])})
+ AND (n.type NOT IN ('article','flashcard') OR ${member(['Admin','OrgAdmin'])} OR (
+   EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=$1 AND r.name='User') AND (
+     (n.type='article' AND EXISTS(SELECT 1 FROM articles a WHERE a.id::text=n.metadata->>'articleId' AND a.published AND a.organization_id=n.organization_id)) OR
+     (n.type='flashcard' AND EXISTS(SELECT 1 FROM flashcard_decks d WHERE d.id::text=n.metadata->>'deckId' AND d.published AND d.organization_id=n.organization_id)))))`;
 
 export class NotificationService {
   static async getUserNotifications(userId: number, limit: number = 20, offset: number = 0) {
     try {
       const result = await pool.query(
-        `SELECT * FROM notifications 
-         WHERE user_id = $1 
-         ORDER BY created_at DESC 
+        `SELECT n.* FROM notifications n
+         WHERE n.user_id = $1 ${visibility}
+         ORDER BY n.created_at DESC, n.id DESC
          LIMIT $2 OFFSET $3`,
         [userId, limit, offset]
       );
@@ -24,7 +34,7 @@ export class NotificationService {
   static async getUnreadCount(userId: number): Promise<number> {
     try {
       const result = await pool.query(
-        'SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND is_read = false',
+        `SELECT COUNT(*) FROM notifications n WHERE n.user_id = $1 AND n.is_read = false ${visibility}`,
         [userId]
       );
       
@@ -99,7 +109,7 @@ export class NotificationService {
     try {
       console.log(`📢 Creating organization notification for org ${notification.organizationId}, type: ${notification.type}`);
       const usersResult = await pool.query(
-        'SELECT id FROM users WHERE organization_id = $1',
+        `SELECT u.id,u.is_admin,ARRAY(SELECT r.name FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.id) AS roles FROM users u WHERE u.organization_id = $1 AND u.is_active`,
         [notification.organizationId]
       );
       
@@ -107,6 +117,10 @@ export class NotificationService {
       
       const notifications = [];
       for (const user of usersResult.rows) {
+        const role = appRole({isAdmin:user.is_admin,roles:user.roles});
+        const learning = ['article','flashcard'].includes(notification.type);
+        if (learning && (role === 'Manager' || (role === 'User' && notification.metadata?.published !== true))) continue;
+        if (!learning && ['campaign','campaign_created','campaign_complete','email_opened','link_clicked','form_submitted','invite_accepted','weekly_report','monthly_report'].includes(notification.type) && role === 'User') continue;
         // Check if the user has enabled this type of notification
         const shouldNotify = await this.shouldNotify(user.id, notification.type);
         if (!shouldNotify) {

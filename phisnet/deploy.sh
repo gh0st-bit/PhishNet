@@ -610,10 +610,6 @@ create_friend_package() {
         "start.ps1" 
         "start.bat"
         "test-deployment.ps1"
-        "QUICK-FRIEND-SETUP.md"
-        "FRIEND-DEPLOYMENT-GUIDE.md"
-        "WINDOWS-SETUP.md"
-        "UNIVERSAL-SETUP.md"
         "package.json"
         ".env.example"
     )
@@ -752,10 +748,7 @@ sudo systemctl status postgresql
 - ✅ Sample configurations
 
 ## Support & Documentation
-- **Windows Guide**: `WINDOWS-SETUP.md`
-- **Quick Reference**: `QUICK-FRIEND-SETUP.md`
-- **Detailed Guide**: `FRIEND-DEPLOYMENT-GUIDE.md`
-- **Universal Setup**: `UNIVERSAL-SETUP.md`
+- **Project documentation**: https://github.com/gh0st-bit/PhishNet/blob/main/README.md
 
 **🎯 This package contains everything needed for a complete PhishNet deployment on any operating system!**
 EOF

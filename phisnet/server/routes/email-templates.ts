@@ -78,7 +78,7 @@ export function registerEmailTemplateRoutes(app: Express) {
     } catch (error) {
       console.error("Error creating template:", error);
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
+        return res.status(400).json({ message: "Validation error", errors: error.issues });
       }
       res.status(500).json({ message: "Error creating email template" });
     }
@@ -105,7 +105,7 @@ export function registerEmailTemplateRoutes(app: Express) {
       res.json(updatedTemplate);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
+        return res.status(400).json({ message: "Validation error", errors: error.issues });
       }
       res.status(500).json({ message: "Error updating email template" });
     }

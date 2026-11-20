@@ -53,7 +53,7 @@ export default function ThreatLandscape({ threats, threatAnalysis }: ThreatLands
   };
 
   return (
-    <Card>
+    <Card className="glass glass-tile">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="text-base">Current Threat Landscape</CardTitle>

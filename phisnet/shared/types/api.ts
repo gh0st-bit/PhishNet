@@ -45,6 +45,8 @@ export interface Notification {
 }
 
 export interface CampaignResult {
+  reported?: boolean;
+  reportedAt?: string;
   id: number;
   sent: boolean;
   opened: boolean;
@@ -67,6 +69,7 @@ export interface ApiResponse<T> {
 // Specific API Response Types
 export interface CampaignsResponse {
   campaigns: Campaign[];
+  pagination?: {page:number;limit:number;total:number};
 }
 
 export interface TemplatesResponse {
@@ -128,6 +131,10 @@ export interface CampaignResultsResponse extends Array<CampaignResult> {}
 
 // Enhanced Campaign type with additional properties
 export interface CampaignWithDetails extends Campaign {
+  targetGroupId: number;
+  smtpProfileId: number;
+  emailTemplateId: number;
+  landingPageId: number;
   scheduledAt?: string;
   createdAt: string;
   endDate?: string;

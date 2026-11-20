@@ -21,8 +21,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 // @ts-ignore
-import SunEditor from 'suneditor-react';
-import 'suneditor/dist/css/suneditor.min.css';
+import SunEditor from '@/components/ui/html-editor';
 // Import custom CSS to override SunEditor styles
 import "@/styles/suneditor-dark.css";
 
@@ -51,6 +50,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClose }) =>
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const sunEditorRef = useRef<any>(null);
+  const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null);
   const [customTypes, setCustomTypes] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -220,11 +220,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClose }) =>
   };
 
   const handleSendTestEmail = () => {
-    // Implement test email functionality
-    toast({
-      title: "Test email sent",
-      description: "A test email has been sent to your inbox.",
-    });
+    setPreview({subject: form.getValues('subject'), html: sunEditorRef.current?.getContents() || form.getValues('html_content') || ''});
   };
 
   function onSubmit(data: TemplateFormValues) {
@@ -448,7 +444,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClose }) =>
             />
           </div>
           
-          <div className="flex justify-between pt-4 mt-2 border-t bg-background z-10 mt-auto sticky bottom-0 left-0 right-0">
+          <div className="flex justify-between pt-4 mt-2 border-t bg-background z-10 mt-auto sticky bottom-0 glass-float left-0 right-0">
             <div className="flex flex-wrap gap-2">
               <Button 
                 type="button" 
@@ -476,7 +472,7 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClose }) =>
                 variant="outline" 
                 onClick={handleSendTestEmail}
               >
-                <Send className="mr-1 h-4 w-4" /> Test Mail
+                <Send className="mr-1 h-4 w-4" /> Preview Email
               </Button>
             </div>
             
@@ -499,6 +495,10 @@ const TemplateEditor: React.FC<TemplateEditorProps> = ({ template, onClose }) =>
             </Button>
           </div>
         </form>
+        {preview && <section aria-label="Email preview" className="mt-4 space-y-3 rounded border p-4">
+          <div className="flex justify-between gap-4"><div><h2 className="font-semibold">Email preview: {preview.subject || 'No subject'}</h2><p className="text-sm text-muted-foreground">Local preview only. No email has been sent.</p></div><Button type="button" variant="outline" onClick={() => setPreview(null)}>Close preview</Button></div>
+          <iframe title="Draft email preview" className="h-64 w-full bg-white" sandbox="" referrerPolicy="no-referrer" srcDoc={`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; form-action 'none'"></head><body>${preview.html}</body></html>`}/>
+        </section>}
       </Form>
     </div>
   );

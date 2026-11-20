@@ -15,11 +15,11 @@
   --border: 0 0% 88%;      /* #E0E0E0 - Light border */
   --input: 0 0% 88%;       /* #E0E0E0 - Input border */
   --primary: 30 100% 50%;  /* #FF8000 - Vibrant orange */
-  --primary-foreground: 0 0% 100%; /* White text on orange */
+  --primary-foreground: 0 0% 5%; /* White text on orange */
   --secondary: 0 0% 96%;   /* #F5F5F5 - Subtle secondary bg */
   --secondary-foreground: 0 0% 0%;  /* Black text */
   --accent: 30 90% 55%;    /* #FFA333 - Slightly lighter orange */
-  --accent-foreground: 0 0% 100%;   /* White text on accent */
+  --accent-foreground: 0 0% 5%;   /* White text on accent */
   --destructive: 0 75% 50%; /* #BF4040 - Red */
   --destructive-foreground: 0 0% 100%; /* White text on destructive */
   --ring: 30 100% 50%;     /* #FF8000 - Orange ring */
@@ -36,7 +36,7 @@
   --sidebar-background: 0 0% 100%;   /* White */
   --sidebar-foreground: 0 0% 13%;    /* #222222 - Dark text */
   --sidebar-primary: 30 100% 50%;    /* Orange */
-  --sidebar-primary-foreground: 0 0% 100%; /* White */
+  --sidebar-primary-foreground: 0 0% 5%; /* White */
   --sidebar-accent: 0 0% 96%;        /* #F5F5F5 */
   --sidebar-accent-foreground: 0 0% 20%; /* #333333 */
   --sidebar-border: 0 0% 90%;        /* #E6E6E6 */
@@ -55,11 +55,11 @@
   --border: 0 0% 20%; /* #333333 - Border grey */
   --input: 0 0% 20%; /* #333333 - Input grey */
   --primary: 30 100% 45%; /* #E67300 - Slightly darker orange */
-  --primary-foreground: 0 0% 100%; /* White text on orange */
+  --primary-foreground: 0 0% 5%; /* White text on orange */
   --secondary: 0 0% 20%; /* #333333 - Dark grey */
   --secondary-foreground: 0 0% 90%; /* #E5E5E5 - Light grey text */
   --accent: 30 90% 50%; /* #FF9419 - Orange */
-  --accent-foreground: 0 0% 100%; /* White text on accent */
+  --accent-foreground: 0 0% 5%; /* White text on accent */
   --destructive: 0 70% 45%; /* #B33C3C - Darker red */
   --destructive-foreground: 0 0% 100%; /* White text on destructive */
   --ring: 30 100% 45%; /* #E67300 - Orange ring */
@@ -164,4 +164,274 @@ button[data-state="active"] {
 /* Fix the duplicate close button issue */
 .dialog-content-preview > [data-radix-collection-item] {
   display: none;
+}
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; } }
+
+/* Shared interaction and printable management-summary defaults. */
+:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 3px; }
+@media (pointer: coarse) {
+  button, [role="button"], input:not([type="checkbox"]):not([type="radio"]), select { min-height: 44px; }
+}
+@media print {
+  aside, header, nav, button, [role="dialog"], [data-radix-popper-content-wrapper] { display: none !important; }
+  html, body, #root, main, #root > div { height: auto !important; overflow: visible !important; }
+  * { box-shadow: none !important; }
+  main { background: white !important; color: black !important; }
+  .print\:hidden { display:none !important; }
+  table { break-inside: auto; }
+  tr { break-inside:avoid; }
+}
+
+/* =====================================================================
+   Glass restyle: sidebar, header, dashboard tiles and login card only.
+   Visual layer only. Animations touch transform and opacity exclusively.
+   ===================================================================== */
+
+/* Fixed background layer behind the app, so the glass has something to blur. */
+.glass-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background-color: #f3f0eb; }
+.dark .glass-backdrop { background-color: #0d0d0e; }
+/* Reference background: two orange glows and one grey glow, plus a 48px grid that fades
+   toward the edges. Each glow layer drifts very slowly (transform only). */
+.glass-backdrop__glow { position: absolute; inset: -8%; will-change: transform; }
+.glass-backdrop__glow--orange { background: radial-gradient(38% 42% at 15% 18%, var(--pn-o1), transparent 70%), radial-gradient(40% 40% at 62% 95%, var(--pn-o1), transparent 70%); animation: glass-drift-a 22s ease-in-out infinite alternate; }
+.glass-backdrop__glow--grey { background: radial-gradient(34% 36% at 88% 28%, var(--pn-o2), transparent 70%); animation: glass-drift-b 25s ease-in-out infinite alternate; }
+.glass-backdrop__grid { position: absolute; inset: 0; opacity: 0.5;
+  background: linear-gradient(var(--pn-line) 1px, transparent 1px) 0 0 / 48px 48px, linear-gradient(90deg, var(--pn-line) 1px, transparent 1px) 0 0 / 48px 48px;
+  -webkit-mask: radial-gradient(70% 60% at 50% 30%, #000, transparent); mask: radial-gradient(70% 60% at 50% 30%, #000, transparent); }
+@keyframes glass-drift-a { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(2.5vmax, 2vmax, 0); } }
+@keyframes glass-drift-b { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-2.5vmax, -2vmax, 0); } }
+/* Only pages that render the backdrop let it show through the body. */
+body:has(.glass-backdrop) { background-color: transparent; }
+
+/* App-wide glass surfaces: every card, modal, menu, field and tab strip, but only on
+   pages that render the backdrop (public pages keep their solid look). :where() keeps
+   these at single-class specificity, so hover/focus/open-state utilities on the same
+   element still win, and the explicit .glass rules further down take precedence. */
+:where(body:has(.glass-backdrop)) .bg-card {
+  background-color: rgba(255,255,255,0.68);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
+  border-color: rgba(255,255,255,0.75);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 6px 22px rgba(70,45,10,0.07);
+}
+:where(.dark body:has(.glass-backdrop)) .bg-card {
+  background-color: rgba(36,36,38,0.78);
+  border-color: rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 6px 22px rgba(0,0,0,0.30);
+}
+/* Floating surfaces (dialogs, sheets, menus, popovers, selects, tooltips, toasts, sticky
+   action bars) can sit over any content, so they are denser: 0.9 keeps text AA. */
+:where(body:has(.glass-backdrop)) :is(.bg-popover, .glass-float) {
+  background-color: rgba(255,255,255,0.90);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5);
+  border-color: rgba(255,255,255,0.80);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.30), 0 18px 50px rgba(40,25,5,0.18);
+}
+:where(.dark body:has(.glass-backdrop)) :is(.bg-popover, .glass-float) {
+  background-color: rgba(36,36,38,0.90);
+  border-color: rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 18px 50px rgba(0,0,0,0.50);
+}
+/* Modal backdrop: dimmed and lightly blurred instead of near-black. */
+:where(body:has(.glass-backdrop)) .glass-overlay {
+  background-color: rgba(0,0,0,0.55);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+/* Fields, outline buttons, tab strips, alerts and editor frames: translucent. */
+:where(body:has(.glass-backdrop)) :is(.glass-field, .tabs-list, input.bg-background, select.bg-background, textarea.bg-background, button.bg-background, a.bg-background, [role="combobox"].bg-background) {
+  background-color: rgba(255,255,255,0.55);
+}
+:where(.dark body:has(.glass-backdrop)) :is(.glass-field, .tabs-list, input.bg-background, select.bg-background, textarea.bg-background, button.bg-background, a.bg-background, [role="combobox"].bg-background) {
+  background-color: rgba(18,18,20,0.45);
+}
+/* Solid grey fills (table headers, chips, tracks, tab lists) become tints of the same tokens. */
+:where(body:has(.glass-backdrop)) .bg-muted { background-color: hsl(var(--muted) / 0.55); }
+:where(body:has(.glass-backdrop)) .bg-secondary { background-color: hsl(var(--secondary) / 0.6); }
+/* A label that masks a divider line sits on glass, so it uses the panel colour. */
+:where(body:has(.glass-backdrop)) .glass-chip { background-color: rgba(255,255,255,0.68); }
+:where(.dark body:has(.glass-backdrop)) .glass-chip { background-color: rgba(36,36,38,0.78); }
+
+/* Reusable frosted panel. Radius is left to each element's existing classes.
+   Opacity is above the 0.55/0.60 starting point so text keeps WCAG AA (4.5:1) even
+   where both glows overlap: dark orange links 4.6:1, light muted text 4.8:1. */
+.glass {
+  background-color: rgba(255,255,255,0.68);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  border-color: rgba(255,255,255,0.75);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 8px 28px rgba(70,45,10,0.08);
+}
+.dark .glass {
+  background-color: rgba(36,36,38,0.78);
+  border-color: rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 8px 28px rgba(0,0,0,0.35);
+}
+/* Sidebar: lighter blur so the panel reads as glass rather than frosted plastic. */
+.glass.glass-soft { -webkit-backdrop-filter: blur(8px) saturate(1.2); backdrop-filter: blur(8px) saturate(1.2); }
+/* Header: bottom hairline drawn as an inset shadow so the bar keeps its exact height. */
+.glass-bar { box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -1px 0 rgba(255,255,255,0.75), 0 6px 20px rgba(70,45,10,0.06); }
+.dark .glass-bar { box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -1px 0 rgba(255,255,255,0.12), 0 6px 20px rgba(0,0,0,0.30); }
+
+/* Sidebar active item glow. */
+.glass-nav-active { box-shadow: 0 0 24px hsl(var(--primary) / 0.25); }
+
+/* Dashboard tiles: lift, orange ring and a mouse-following spotlight. The ring and
+   spotlight are pseudo-elements faded with opacity, so only transform/opacity animate. */
+.glass-tile { position: relative; isolation: isolate; transition: transform 0.25s ease; }
+.glass-tile::before, .glass-tile::after { content: ""; position: absolute; border-radius: inherit; pointer-events: none; z-index: -1; opacity: 0; transition: opacity 0.25s ease; }
+.glass-tile::before { inset: 0; background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), hsl(var(--primary) / 0.16), transparent 70%); }
+.glass-tile::after { inset: -1px; box-shadow: 0 0 0 1px hsl(var(--primary)), 0 12px 32px hsl(var(--primary) / 0.18); }
+.glass-tile:hover { transform: translateY(-3px); }
+.glass-tile:hover::before, .glass-tile:hover::after { opacity: 1; }
+
+/* Login inputs: translucent glass fields. */
+.glass-input { background-color: rgba(255,255,255,0.55); }
+.dark .glass-input { background-color: rgba(18,18,20,0.45); }
+
+/* Buttons: light shine sweep and a small lift on hover. */
+.glass-shine { position: relative; overflow: hidden; transition: transform 0.2s ease; }
+.glass-shine::after { content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%);
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.35) 50%, transparent 70%); }
+.glass-shine:hover { transform: translateY(-2px); }
+.glass-shine:hover::after { transform: translateX(120%); transition: transform 0.7s ease; }
+
+/* Page entrance. 'backwards' fill leaves no transform behind afterwards, so fixed
+   descendants are never re-anchored once the animation ends. */
+.glass-page-enter { animation: glass-page-in 0.5s ease backwards; }
+@keyframes glass-page-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-backdrop__glow, .glass-page-enter { animation: none !important; }
+  .glass-tile, .glass-tile::before, .glass-tile::after, .glass-shine, .glass-shine::after { transition: none !important; }
+  .glass-tile:hover, .glass-shine:hover { transform: none !important; }
+  .glass-shine::after { display: none; }
+}
+
+/* Browsers without backdrop-filter get a near-opaque panel instead of unreadable translucency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass, :where(body:has(.glass-backdrop)) .bg-card { background-color: rgba(255,255,255,0.94); }
+  :where(.dark body:has(.glass-backdrop)) .bg-card { background-color: rgba(30,30,32,0.95); }
+  :where(body:has(.glass-backdrop)) :is(.bg-popover, .glass-float) { background-color: #fff; }
+  :where(.dark body:has(.glass-backdrop)) :is(.bg-popover, .glass-float) { background-color: #242426; }
+  .dark .glass { background-color: rgba(30,30,32,0.95); }
+  .glass-input { background-color: rgba(255,255,255,0.9); }
+  .dark .glass-input { background-color: rgba(24,24,26,0.9); }
+}
+
+@media print {
+  .glass-backdrop { display: none !important; }
+  .glass, :where(body:has(.glass-backdrop)) :is(.bg-card, .bg-popover, .glass-float) { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; background-color: #fff !important; }
+}
+
+/* =====================================================================
+   PhishNet v2 shell: floating top bar, icon rail + flyouts, command palette,
+   reference typography and tokens. Scoped to pages that render the backdrop
+   (the signed-in app and the sign-in page); public pages are unaffected.
+   ===================================================================== */
+body:has(.glass-backdrop) {
+  --pn-font-head: "Space Grotesk", "DM Sans", system-ui, sans-serif;
+  --pn-font-body: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --pn-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --pn-o1: rgba(232,117,0,0.31); --pn-o2: rgba(138,132,122,0.25);
+  --pn-line: rgba(0,0,0,0.10);
+  --pn-glass: rgba(255,255,255,0.60); --pn-glass-border: rgba(255,255,255,0.75);
+  /* Readable orange for text, derived from the tenant's primary colour (AA on glass). */
+  --pn-accent-text: color-mix(in srgb, hsl(var(--primary)) 60%, #000);
+  /* Reference text colours: warm near-black and warm grey. */
+  --foreground: 30 4% 10%; --card-foreground: 30 4% 10%; --popover-foreground: 30 4% 10%;
+  --muted-foreground: 36 5% 38%;
+  /* 12px buttons/inputs (rounded-md); cards and dialogs are set to 18px below. */
+  --radius: 0.875rem;
+  font-family: var(--pn-font-body);
+}
+.dark body:has(.glass-backdrop) {
+  --pn-o1: rgba(255,138,31,0.27); --pn-o2: rgba(138,138,138,0.19);
+  --pn-line: rgba(255,255,255,0.10);
+  --pn-glass: rgba(36,36,38,0.55); --pn-glass-border: rgba(255,255,255,0.12);
+  --pn-accent-text: color-mix(in srgb, hsl(var(--primary)) 70%, #fff);
+  --foreground: 36 17% 94%; --card-foreground: 36 17% 94%; --popover-foreground: 36 17% 94%;
+  --muted-foreground: 36 5% 63%;
+}
+body:has(.glass-backdrop) :is(h1, h2, h3, h4) { font-family: var(--pn-font-head); letter-spacing: -0.02em; }
+:where(body:has(.glass-backdrop)) :is(.font-mono, kbd, code, pre) { font-family: var(--pn-font-mono); }
+:where(body:has(.glass-backdrop)) .text-primary { color: var(--pn-accent-text); }
+/* Big dashboard numbers use the display face. */
+.glass-countup { font-family: var(--pn-font-head, inherit); font-weight: 700; letter-spacing: -0.03em; }
+
+/* Checkboxes keep small square corners (a larger radius makes them look like radio buttons). */
+:where(body:has(.glass-backdrop)) [role="checkbox"] { border-radius: 4px; }
+/* Cards and dialogs: 18px corners; every card gets an orange hover edge (no layout change). */
+:where(body:has(.glass-backdrop)) .bg-card.rounded-lg, .glass-tile, :where(body:has(.glass-backdrop)) :is([role="dialog"], [role="alertdialog"]).glass-float { border-radius: 18px; }
+:where(body:has(.glass-backdrop)) .bg-card:hover { border-color: hsl(var(--primary) / 0.45); }
+
+/* ---- Top bar ---- */
+.pn-topbar { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 14px; border-radius: 16px; border-width: 1px; }
+.pn-logo { display: flex; align-items: center; gap: 10px; flex: none; font-family: var(--pn-font-head); font-weight: 700; font-size: 21px; letter-spacing: -0.02em; color: hsl(var(--foreground)); }
+.pn-search { display: flex; align-items: center; gap: 10px; flex: 0 1 420px; min-width: 0; padding: 9px 14px; border-radius: 12px;
+  border: 1px solid var(--pn-glass-border); background: var(--pn-glass); color: hsl(var(--muted-foreground)); transition: transform 0.2s ease; }
+.pn-search:hover { color: hsl(var(--foreground)); border-color: hsl(var(--primary) / 0.6); transform: translateY(-1px); }
+.pn-search kbd { margin-left: auto; font-size: 12px; border: 1px solid var(--pn-line); border-radius: 6px; padding: 1px 6px; }
+@media (min-width: 768px) { .pn-search { min-width: 240px; } }
+.pn-ib, .pn-ib-host > button { position: relative; display: grid; place-items: center; width: 40px; height: 40px; min-height: 40px; padding: 0;
+  border-radius: 12px; border: 1px solid var(--pn-glass-border); background: var(--pn-glass); color: hsl(var(--foreground)); transition: transform 0.2s ease; }
+.pn-ib:hover, .pn-ib-host > button:hover { background: hsl(var(--primary) / 0.18); transform: translateY(-1px); }
+.pn-ib-host { display: contents; }
+.pn-profile { height: 44px; gap: 8px; padding: 2px 10px 2px 2px; border-radius: 999px; }
+@media (max-width: 639px) { .pn-topbar { gap: 8px; } .pn-help { display: none; } }
+
+/* ---- Rail + flyout ---- */
+.pn-rail-wrap { position: relative; z-index: 30; flex: none; align-self: flex-start; display: flex; max-height: 100%; }
+.pn-rail { width: 90px; max-height: 100%; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; border-radius: 18px; border-width: 1px; }
+/* Labels wrap only between words (never mid-word); the rail is 90px so single words fit. */
+.pn-rail-btn { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 2px; border-radius: 12px;
+  color: hsl(var(--muted-foreground)); font-size: 11px; font-weight: 500; line-height: 1.15; text-align: center; overflow-wrap: normal; word-break: normal; hyphens: none; }
+.pn-rail-btn .pn-rail-icon { display: grid; transition: transform 0.2s ease; }
+.pn-rail-btn .pn-rail-icon svg { width: 20px; height: 20px; }
+.pn-rail-btn:hover, .pn-rail-btn[aria-expanded="true"] { background: hsl(var(--primary) / 0.18); color: hsl(var(--foreground)); }
+.pn-rail-btn:hover .pn-rail-icon { transform: scale(1.1); }
+.pn-rail-btn[data-active="true"] { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-weight: 600; box-shadow: 0 0 24px hsl(var(--primary) / 0.25); }
+.pn-flyout { position: absolute; left: calc(100% + 12px); top: 0; z-index: 40; width: 250px; max-height: min(75vh, calc(100vh - 120px)); overflow: auto;
+  padding: 14px; border-radius: 18px; border-width: 1px; animation: pn-fly-in 0.18s ease both; }
+.pn-flyout h3 { font-size: 16px; font-weight: 700; margin: 2px 8px 8px; }
+.pn-fly-link { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; color: hsl(var(--muted-foreground)); font-weight: 500; }
+.pn-fly-link .pn-fly-icon { display: grid; transition: transform 0.2s ease; }
+.pn-fly-link .pn-fly-icon svg { width: 18px; height: 18px; }
+.pn-fly-link:hover { background: hsl(var(--primary) / 0.18); color: hsl(var(--foreground)); }
+.pn-fly-link:hover .pn-fly-icon { transform: scale(1.1); }
+.pn-fly-link[aria-current="page"] { color: var(--pn-accent-text); font-weight: 600; background: hsl(var(--primary) / 0.10); }
+@keyframes pn-fly-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+@keyframes pn-fly-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* Phones: the rail becomes a bottom tab bar and the flyout opens above it. */
+@media (max-width: 767px) {
+  .pn-shell { padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  .pn-rail-wrap { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; align-self: auto; }
+  .pn-rail { width: auto; flex: 1; flex-direction: row; justify-content: space-around; overflow-x: auto; overflow-y: hidden;
+    border-radius: 18px 18px 0 0; padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px)); }
+  /* Tabs share the width equally but never shrink below their label (7+ sections scroll sideways). */
+  .pn-rail-btn { flex: 1 1 0; min-width: min-content; padding: 8px 3px; font-size: 10px; white-space: nowrap; }
+  .pn-search { flex: 0 0 auto; padding: 9px; }
+  .pn-flyout { position: fixed; left: 12px; right: 12px; top: auto; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: auto; max-height: 60vh; animation-name: pn-fly-up; }
+}
+
+/* ---- Command palette ---- */
+.pn-palette-input { width: 100%; padding: 14px 44px 14px 14px; border: 0; border-bottom: 1px solid var(--pn-line, hsl(var(--border))); background: none; outline: none; font-size: 16px; }
+.pn-palette-input:focus-visible { border-bottom-color: hsl(var(--primary)); }
+.pn-palette-list { display: flex; flex-direction: column; max-height: 50vh; overflow: auto; margin-top: 6px; }
+.pn-palette-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 10px; text-align: left; }
+.pn-palette-item[aria-selected="true"], .pn-palette-item:hover { background: hsl(var(--primary) / 0.16); }
+
+/* ---- Floating glass bubble (sign-in decoration) ---- */
+.pn-bubble { position: absolute; right: -18px; top: -26px; z-index: 1; width: 52px; height: 52px; border-radius: 16px; border-width: 1px;
+  display: grid; place-items: center; color: hsl(var(--primary)); animation: pn-float 6s ease-in-out infinite alternate; pointer-events: none; }
+.pn-bubble svg { width: 26px; height: 26px; }
+@keyframes pn-float { to { transform: translateY(-14px) rotate(2deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pn-bubble, .pn-flyout { animation: none !important; }
+  .pn-search, .pn-ib, .pn-ib-host > button, .pn-rail-icon, .pn-fly-icon { transition: none !important; }
+  .pn-search:hover, .pn-ib:hover, .pn-ib-host > button:hover, .pn-rail-btn:hover .pn-rail-icon, .pn-fly-link:hover .pn-fly-icon { transform: none !important; }
+}
+@media print {
+  .pn-shell, .pn-shell > div { overflow: visible !important; height: auto !important; padding: 0 !important; }
+  .pn-bubble { display: none !important; }
 }

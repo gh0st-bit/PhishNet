@@ -1,3 +1,5 @@
+import AppLayout from '@/components/layout/app-layout';
+import {RefreshButton} from '@/components/ui/refresh-button';
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
@@ -5,10 +7,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useState } from "react";
-import { Loader2, Trophy, Award, Video, ListChecks, Star, Users, AlertCircle, ExternalLink, Play, LogOut, Menu, BookOpen } from "lucide-react";
+import { Loader2, Trophy, Award, Video, ListChecks, Star, Users, AlertCircle, ExternalLink, Play, BookOpen } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
 import { LearningTrendChart } from "@/components/dashboard/learning-trend-chart";
 import { SkillRadarChart } from "@/components/dashboard/skill-radar-chart";
 import { ActivityHeatmap } from "@/components/dashboard/activity-heatmap";
@@ -119,20 +120,8 @@ function useEmployeeQuery<T>(key: string, url: string) {
 }
 
 export default function EmployeeDashboardPage() {
-  const [activeTab, setActiveTab] = useState<string>("all");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [, navigate] = useLocation();
-  const { logout } = useAuth();
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      navigate("/auth");
-    } catch (error) {
-      console.error("Logout failed:", error);
-    }
-  };
-  
+  const [activeTab, setActiveTab] = useState<string>("all");
   // Data queries
   const trainingQ = useEmployeeQuery<TrainingResponse>("training","/api/employee/training");
   const quizzesQ = useEmployeeQuery<QuizzesResponse>("quizzes","/api/employee/quizzes");
@@ -194,100 +183,13 @@ export default function EmployeeDashboardPage() {
     return true;
   });
 
-  return (
-    <div className="min-h-screen bg-background flex">
-      {/* Employee Sidebar */}
-      <aside className={`
-        fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border
-        transform transition-transform duration-200 ease-in-out
-        lg:relative lg:translate-x-0
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-        <div className="flex flex-col h-full">
-          <div className="flex items-center justify-between h-16 px-4 border-b border-border">
-            <h2 className="text-xl font-bold">Employee Portal</h2>
-            <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(false)}>
-              <span className="sr-only">Close menu</span>×
-            </Button>
-          </div>
-          
-          <nav className="flex-1 overflow-y-auto p-4 space-y-2">
-            <Button variant="ghost" className="w-full justify-start" onClick={() => { setActiveTab('all'); setSidebarOpen(false); }}>
-              <BookOpen className="mr-2 h-4 w-4" />
-              My Dashboard
-            </Button>
-            <Button variant="ghost" className="w-full justify-start" onClick={() => { setActiveTab('active'); setSidebarOpen(false); }}>
-              <Play className="mr-2 h-4 w-4" />
-              Active Training
-            </Button>
-            <Button variant="ghost" className="w-full justify-start" onClick={() => { setActiveTab('completed'); setSidebarOpen(false); }}>
-              <ListChecks className="mr-2 h-4 w-4" />
-              Completed
-            </Button>
-            <Button variant="ghost" className="w-full justify-start" onClick={() => { setActiveTab('badges'); setSidebarOpen(false); }}>
-              <Award className="mr-2 h-4 w-4" />
-              My Badges
-            </Button>
-            <Button variant="ghost" className="w-full justify-start" onClick={() => { setActiveTab('leaderboard'); setSidebarOpen(false); }}>
-              <Trophy className="mr-2 h-4 w-4" />
-              Leaderboard
-            </Button>
-          </nav>
-
-          <div className="p-4 border-t border-border">
-            <Button variant="outline" className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10" onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </Button>
-          </div>
-        </div>
-      </aside>
-
-      {/* Backdrop for mobile */}
-      {sidebarOpen && (
-        <button
-          type="button"
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Close menu"
-        />
-      )}
-
-      {/* Main Content */}
-      <div className="flex-1 overflow-x-hidden">
-        <div className="space-y-6 p-4 md:p-6 max-w-[1600px] mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
-            <Menu className="h-5 w-5" />
-          </Button>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Security Learning Portal</h1>
-            <p className="text-sm text-muted-foreground mt-1">Track your progress, earn badges, and master cybersecurity</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-          <Button 
-            size="sm" 
-            variant="outline" 
-            onClick={() => {trainingQ.refetch(); quizzesQ.refetch(); pointsQ.refetch(); badgesQ.refetch(); leaderboardQ.refetch(); analyticsQ.refetch(); insightsQ.refetch(); levelQ.refetch();}} 
-            disabled={trainingQ.isLoading || analyticsQ.isLoading}
-          >
-            {(trainingQ.isLoading || analyticsQ.isLoading) ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Refresh'}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="hidden lg:flex gap-2"
-            onClick={handleLogout}
-          >
-            <LogOut className="h-4 w-4" />
-            Logout
-          </Button>
-        </div>
-      </div>
-      
+  const queries=[trainingQ,quizzesQ,pointsQ,badgesQ,leaderboardQ,analyticsQ,insightsQ,levelQ];
+  return <AppLayout><div className="space-y-6">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><h1 className="text-2xl md:text-3xl font-bold">Security Learning Portal</h1><p className="text-sm text-muted-foreground">Your learning, achievements and practice inbox in one workspace.</p></div>
+      <div className="flex gap-2"><ThemeToggle/><RefreshButton onRefresh={()=>Promise.all(queries.map(q=>q.refetch({throwOnError:true})))}>Refresh dashboard</RefreshButton></div>
+    </div>
+    <Card className="p-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold">My inbox</h2><p className="text-sm text-muted-foreground">Open your existing practice messages and review their details.</p></div><Link href="/employee/inbox"><Button>Open my inbox</Button></Link></Card>
       {hasError && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
@@ -466,7 +368,7 @@ export default function EmployeeDashboardPage() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
                 {filteredModules.slice(0,6).map(m => (
-                  <div key={m.id} className="group border rounded-lg p-3 sm:p-4 bg-card hover:shadow-md hover:border-primary/50 transition-all cursor-pointer">
+                  <div key={m.id} className="group border rounded-lg p-3 sm:p-4 bg-card hover:shadow-md hover:border-primary/50 transition-all">
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold line-clamp-2 group-hover:text-primary transition">{m.title}</h3>
@@ -490,7 +392,7 @@ export default function EmployeeDashboardPage() {
                       </div>
                       <div className="flex justify-between items-center text-xs">
                         <span className="font-medium">{m.progressPercentage ?? 0}% complete</span>
-                        <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs">
+                        <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" onClick={() => navigate(`/employee/training/${m.id}`)}>
                           <Play className="h-3 w-3" />
                           {!m.progressStatus || m.progressStatus === 'not_started' ? 'Start' : m.progressStatus === 'completed' ? 'Review' : 'Continue'}
                         </Button>
@@ -536,9 +438,9 @@ export default function EmployeeDashboardPage() {
                           {passed && <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">✓ Passed</span>}
                         </div>
                       </div>
-                      <Button size="sm" variant="outline" className="gap-1">
+                      <Button size="sm" variant="outline" className="gap-1" onClick={() => navigate(`/employee/quizzes/${q.id}`)}>
                         <ExternalLink className="h-3 w-3" />
-                        {q.bestScore ? 'Retake' : 'Start'}
+                        {q.bestScore != null ? 'Retake' : 'Start'}
                       </Button>
                     </div>
                   );
@@ -585,7 +487,7 @@ export default function EmployeeDashboardPage() {
                                        b.rarity === 'epic' ? 'text-purple-500' : 
                                        b.rarity === 'rare' ? 'text-blue-500' : 'text-gray-500';
                     return (
-                      <div 
+                      <Link href={`/employee/badges/${b.id}`}
                         key={b.id} 
                         className={`group relative flex flex-col items-center gap-2 text-center p-3 rounded-lg border transition-all cursor-pointer ${
                           b.earned 
@@ -597,7 +499,7 @@ export default function EmployeeDashboardPage() {
                         <Trophy className={`h-6 w-6 ${b.earned ? rarityColor : 'text-muted-foreground/50'} transition group-hover:scale-110`} />
                         <span className="text-[10px] font-medium leading-tight line-clamp-2">{b.name}</span>
                         {b.earned && <span className="absolute -top-1 -right-1 text-xs">✓</span>}
-                      </div>
+                      </Link>
                     );
                   })}
                   {!(badgesQ.data?.badges||[]).length && (
@@ -693,8 +595,8 @@ export default function EmployeeDashboardPage() {
             <Button variant="outline" className="w-full justify-start gap-2 h-auto py-3">
               <Award className="h-4 w-4" />
               <div className="text-left">
-                <div className="font-medium text-sm">Certificates</div>
-                <div className="text-xs text-muted-foreground">View earned certs</div>
+                <div className="font-medium text-sm">Achievements</div>
+                <div className="text-xs text-muted-foreground">View earned badges</div>
               </div>
             </Button>
           </Link>
@@ -709,8 +611,5 @@ export default function EmployeeDashboardPage() {
           </Link>
         </div>
       </Card>
-      </div>
-      </div>
-    </div>
-  );
+      </div></AppLayout>;
 }

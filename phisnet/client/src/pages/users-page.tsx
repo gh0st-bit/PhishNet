@@ -46,7 +46,7 @@ const userFormSchema = z.object({
   lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Please enter a valid email address"),
   password: z.string().min(8, "Password must be at least 8 characters").optional(),
-  roleId: z.number({ required_error: "Role is required" }),
+  roleId: z.number({ error: "Role is required" }),
   isActive: z.boolean().default(true),
 });
 
@@ -61,14 +61,14 @@ export default function UsersPage() {
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { canAccess } = usePermissions();
+  const { canAccess, user: actor } = usePermissions();
 
   // Check permissions - add fallback values and safety checks
   const canViewUsers = canAccess(PERMISSIONS.USERS_VIEW);
   const canCreateUsers = canAccess(PERMISSIONS.USERS_CREATE);
   const canEditUsers = canAccess(PERMISSIONS.USERS_EDIT);
   const canDeleteUsers = canAccess(PERMISSIONS.USERS_DELETE);
-  const canManageRoles = canAccess(PERMISSIONS.ORG_MANAGE); // Use a permission that exists
+  const canManageRoles = canAccess(PERMISSIONS.USERS_MANAGE_ROLES);
 
   const { data: users = [], refetch } = useUsers();
 
@@ -82,7 +82,7 @@ export default function UsersPage() {
     enabled: canManageRoles,
   });
 
-  const form = useForm<UserFormValues>({
+  const form = useForm<z.input<typeof userFormSchema>, unknown, UserFormValues>({
     resolver: zodResolver(userFormSchema),
     defaultValues: {
       firstName: "",
@@ -104,7 +104,7 @@ export default function UsersPage() {
         title: "User created",
         description: "The user has been created successfully.",
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       setIsCreating(false);
       form.reset();
     },
@@ -127,7 +127,7 @@ export default function UsersPage() {
         title: "User updated",
         description: "The user has been updated successfully.",
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       setEditingUser(null);
       form.reset();
     },
@@ -150,7 +150,7 @@ export default function UsersPage() {
         title: "User deleted",
         description: "The user has been deleted successfully.",
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/users'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       setDeleteDialogOpen(false);
       setUserToDelete(null);
     },
@@ -297,7 +297,7 @@ export default function UsersPage() {
                     {(canEditUsers || canDeleteUsers) && (
                       <TableCell>
                         <div className="flex space-x-2">
-                          {canEditUsers && (
+                          {canEditUsers && (actor?.isAdmin || !user.roles?.some(role => role.name === 'Admin')) && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -306,7 +306,7 @@ export default function UsersPage() {
                               <Edit className="h-4 w-4" />
                             </Button>
                           )}
-                          {canDeleteUsers && (
+                          {canDeleteUsers && (actor?.isAdmin || !user.roles?.some(role => role.name === 'Admin')) && (
                             <Button
                               variant="ghost"
                               size="sm"

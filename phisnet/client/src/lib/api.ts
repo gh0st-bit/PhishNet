@@ -23,7 +23,7 @@ import type {
   Notification
 } from '@shared/types/api';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 class ApiClient {
   private baseUrl: string;
@@ -33,7 +33,7 @@ class ApiClient {
   }
 
   private async fetch<T>(endpoint: string): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${endpoint}`);
+    const response = await fetch(`${this.baseUrl}${endpoint}`, { credentials: "include" });
     if (!response.ok) {
       throw new Error(`API Error: ${response.status} ${response.statusText}`);
     }
@@ -62,8 +62,8 @@ class ApiClient {
   }
 
   // Campaigns API
-  async getCampaigns(): Promise<CampaignsResponse> {
-    return this.fetch<CampaignsResponse>('/api/campaigns');
+  async getCampaigns(page=1): Promise<CampaignsResponse> {
+    return this.fetch<CampaignsResponse>(`/api/campaigns?page=${page}&limit=50`);
   }
 
   async getCampaign(id: number): Promise<CampaignWithDetails> {
@@ -76,7 +76,8 @@ class ApiClient {
 
   // Templates API
   async getTemplates(): Promise<TemplatesResponse> {
-    return this.fetch<TemplatesResponse>('/api/email-templates');
+    const data=await this.fetch<TemplatesResponse | TemplatesResponse['templates']>('/api/email-templates');
+    return Array.isArray(data)?{templates:data}:data;
   }
 
   // Groups and Targets API

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearch } from 'wouter';
 import AppLayout from "@/components/layout/app-layout";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -44,10 +45,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export default function CampaignsPage() {
+  const search = useSearch();
   const [isCreating, setIsCreating] = useState(false);
   const [isViewing, setIsViewing] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+  useEffect(() => {
+    const id = Number(new URLSearchParams(search).get('campaign'));
+    if (Number.isSafeInteger(id) && id > 0) { setSelectedCampaignId(id); setIsViewing(true); }
+  }, [search]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [campaignToDelete, setCampaignToDelete] = useState<number | null>(null);
   
@@ -55,7 +61,15 @@ export default function CampaignsPage() {
   const queryClient = useQueryClient();
   const { theme } = useTheme();
   
-  const { data: campaigns = [], isLoading, error } = useCampaigns();
+  const [page,setPage]=useState(1);
+  const { data: campaigns = [], isLoading, error,pagination } = useCampaigns(page);
+
+  const launchMutation = useMutation({
+    mutationFn: async (id: number) => (await apiRequest('POST', `/api/campaigns/${id}/launch`)).json(),
+    onSuccess: () => { toast({ title: 'Campaign queued', description: 'Delivery progress will appear as the worker sends messages.' }); queryClient.invalidateQueries({ queryKey: ['/api/campaigns'] }); },
+    onError: (error: Error) => toast({ title: 'Cannot launch campaign', description: error.message, variant: 'destructive' }),
+  });
+  const [launchId, setLaunchId] = useState<number | null>(null);
 
   const deleteMutation = useMutation({
     mutationFn: async (campaignId: number) => {
@@ -201,6 +215,11 @@ export default function CampaignsPage() {
   
   return (
     <AppLayout>
+      <AlertDialog open={launchId !== null} onOpenChange={open => { if (!open) setLaunchId(null); }}>
+        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Launch this campaign?</AlertDialogTitle><AlertDialogDescription>This queues simulation emails for the selected recipients. Review the campaign before launching.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (launchId !== null) launchMutation.mutate(launchId); setLaunchId(null); }}>Launch campaign</AlertDialogAction></AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Campaigns</h1>
         <Button onClick={() => setIsCreating(true)}>
@@ -256,6 +275,7 @@ export default function CampaignsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end space-x-2">
+                        {campaign.status.toLowerCase() === 'draft' && <Button size="sm" onClick={() => setLaunchId(campaign.id)} disabled={launchMutation.isPending}>Launch</Button>}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button 
@@ -328,9 +348,10 @@ export default function CampaignsPage() {
         </CardContent>
       </Card>
 
+      <div className="flex items-center justify-between gap-3"><Button variant="outline" disabled={page===1} onClick={()=>setPage(page-1)}>Previous page</Button><span className="text-sm">Page {page}{pagination?` - ${pagination.total} campaigns`:''}</span><Button variant="outline" disabled={!pagination||page*pagination.limit>=pagination.total} onClick={()=>setPage(page+1)}>Next page</Button></div>
       {/* Create Campaign Dialog */}
       <Dialog open={isCreating} onOpenChange={setIsCreating}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Campaign</DialogTitle>
           </DialogHeader>
@@ -342,7 +363,7 @@ export default function CampaignsPage() {
 
       {/* Edit Campaign Dialog */}
       <Dialog open={isEditing} onOpenChange={setIsEditing}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Campaign</DialogTitle>
           </DialogHeader>

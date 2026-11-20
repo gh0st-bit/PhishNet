@@ -1,3 +1,4 @@
+import AppLayout from "@/components/layout/app-layout";
 import { useState } from "react"; // importing useState
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient"; // custom API request function
@@ -46,7 +47,7 @@ interface ModuleFormData {
 }
 
 // AdminTrainingPage Component
-export default function AdminTrainingPage() {
+export default function AdminTrainingPage({ videoMode = false }: { videoMode?: boolean }) {
   const queryClient = useQueryClient();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingModule, setEditingModule] = useState<TrainingModule | null>(null);
@@ -181,11 +182,11 @@ export default function AdminTrainingPage() {
     }
   };
 
-  return (
+  return (<AppLayout>{(
     <div className="space-y-6 p-4 md:p-6 max-w-[1600px] mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Training Modules</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{videoMode ? 'Videos' : 'Training Modules'}</h1>
           <p className="text-sm text-muted-foreground mt-1">Manage security training content for employees</p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={(open) => {
@@ -198,7 +199,7 @@ export default function AdminTrainingPage() {
           <DialogTrigger asChild>
             <Button className="gap-2">
               <Plus className="h-4 w-4" />
-              Create Module
+              {videoMode ? 'Add New Video' : 'Create Module'}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -435,5 +436,5 @@ export default function AdminTrainingPage() {
         </div>
       )}
     </div>
-  );
+  )}</AppLayout>);
 }

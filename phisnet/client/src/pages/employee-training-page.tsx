@@ -1,3 +1,5 @@
+import {useLocation} from 'wouter';
+import {RefreshButton} from '@/components/ui/refresh-button';
 import AppLayout from "@/components/layout/app-layout";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -20,6 +22,7 @@ interface TrainingResponse {
 }
 
 export default function EmployeeTrainingPage() {
+  const [,navigate]=useLocation();
   const { data, isLoading, refetch } = useQuery<TrainingResponse>({
     queryKey: ["/api/employee/training"],
     queryFn: async () => {
@@ -37,9 +40,7 @@ export default function EmployeeTrainingPage() {
           <h1 className="text-2xl font-bold">Training Modules</h1>
           <p className="text-sm text-muted-foreground">Your assigned learning content</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
-        </Button>
+        <RefreshButton onRefresh={()=>refetch({throwOnError:true})}/>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -62,7 +63,7 @@ export default function EmployeeTrainingPage() {
                 <div className="text-xs text-muted-foreground">
                   {status === 'completed' ? 'Completed' : status === 'in_progress' ? 'In Progress' : 'Not Started'}
                 </div>
-                <Button size="sm" className="gap-2">
+                <Button size="sm" className="gap-2" onClick={()=>navigate(`/employee/training/${m.id}`)}>
                   {status === 'completed' ? <ListChecks className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   {cta}
                 </Button>

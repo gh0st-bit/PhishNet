@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { copyText } from '@/lib/clipboard';
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -58,6 +59,7 @@ export default function EnrollmentPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showBulkDialog, setShowBulkDialog] = useState(false);
+  const [inviteLinks,setInviteLinks] = useState<Record<number,string>>({});
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [parsedEmails, setParsedEmails] = useState<string[]>([]);
 
@@ -87,12 +89,11 @@ export default function EnrollmentPage() {
       return await response.json();
     },
     onSuccess: (data) => {
-      console.log("Invite response:", data);
+      setInviteLinks(previous=>({...previous,...Object.fromEntries((data.success||[]).filter((item:any)=>item.inviteUrl).map((item:any)=>[item.id,item.inviteUrl]))}));
       
       const successCount = data.successCount ?? data.success?.length ?? 0;
       const failedCount = data.failedCount ?? data.failed?.length ?? 0;
       
-      console.log("Success count:", successCount, "Failed count:", failedCount);
       
       if (failedCount > 0) {
         customToast.error({
@@ -136,15 +137,16 @@ export default function EnrollmentPage() {
   // Resend invite mutation
   const resendInvite = useMutation({
     mutationFn: async (inviteId: number) => {
-      return apiRequest("POST", `/api/admin/enroll/invites/${inviteId}/resend`);
+      return (await apiRequest("POST", `/api/admin/enroll/invites/${inviteId}/resend`)).json() as Promise<{ inviteUrl?: string }>;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data, inviteId) => {
       customToast.success({ title: "Invite resent successfully", description: "A new invitation email has been sent." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/enroll/invites"] });
       // Optionally copy new invite URL
       if (data.inviteUrl) {
-        navigator.clipboard.writeText(data.inviteUrl);
-        customToast.info({ title: "New invite link copied to clipboard" });
+        setInviteLinks(previous=>({...previous,[inviteId]:data.inviteUrl!}));
+        if(await copyText(data.inviteUrl))customToast.info({ title: "New invite link copied to clipboard" });
+        else customToast.error({title:'Clipboard unavailable',description:'The invitation was sent. Use the invitation email to open the link.'});
       }
     },
     onError: (error: Error) => {
@@ -214,10 +216,11 @@ export default function EnrollmentPage() {
     form.setValue('emails', '');
   };
 
-  const copyInviteLink = (invite: UserInvite) => {
-    const inviteUrl = invite.inviteUrl || `${window.location.origin}/api/enroll/accept?token=${encodeURIComponent(invite.token)}`;
-    navigator.clipboard.writeText(inviteUrl);
-    customToast.success({ title: "Invite link copied", description: "The invitation link has been copied to your clipboard." });
+  const copyInviteLink = async (invite: UserInvite) => {
+    const inviteUrl = inviteLinks[invite.id];
+    if(!inviteUrl)return;
+    if(await copyText(inviteUrl))customToast.success({ title: "Invite link copied", description: "The invitation link has been copied to your clipboard." });
+    else customToast.error({title:'Clipboard unavailable',description:'Use the invitation email to open the link.'});
   };
 
   const getStatusBadge = (invite: UserInvite) => {
@@ -351,9 +354,9 @@ export default function EnrollmentPage() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               {!invite.acceptedAt && new Date(invite.expiresAt) > new Date() && (
-                                <DropdownMenuItem onClick={() => copyInviteLink(invite)}>
+                                <DropdownMenuItem disabled={!inviteLinks[invite.id]} onClick={() => copyInviteLink(invite)}>
                                   <Copy className="mr-2 h-4 w-4" />
-                                  Copy Link
+                                  {inviteLinks[invite.id]?'Copy Link':'Resend to get a new link'}
                                 </DropdownMenuItem>
                               )}
                               {!invite.acceptedAt && (

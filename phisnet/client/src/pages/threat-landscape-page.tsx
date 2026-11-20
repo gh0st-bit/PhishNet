@@ -1,3 +1,4 @@
+import {RefreshButton} from '@/components/ui/refresh-button';
 import { useState } from "react";
 import AppLayout from "@/components/layout/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -305,10 +306,7 @@ export default function ThreatLandscapePage() {
     refetchInterval: 5 * 60 * 1000,
   });
 
-  const handleRefresh = () => {
-    refetchAnalysis();
-    refetchThreats();
-  };
+
 
   if (analysisLoading) {
     return (
@@ -333,10 +331,7 @@ export default function ThreatLandscapePage() {
               Real-time threat intelligence from multiple security feeds
             </p>
           </div>
-          <Button onClick={handleRefresh} variant="outline" size="sm">
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
+          <RefreshButton onRefresh={()=>Promise.all([refetchAnalysis({throwOnError:true}),refetchThreats({throwOnError:true})])}/>
         </div>
 
         {analysis && <ThreatStats analysis={analysis} />}

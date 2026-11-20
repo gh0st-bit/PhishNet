@@ -69,6 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           description: `Welcome back, ${data.firstName} ${data.lastName}!`,
         });
         
+        const next=new URLSearchParams(window.location.search).get('next');
+        if(next&&/^\/employee\/report(?:\?|$)/.test(next)&&!data.isAdmin&&!data.roles?.some((role:string)=>['Admin','OrgAdmin','Manager'].includes(role))){window.location.replace(next);return;}
         // Simple role-based redirect logic
         const roles: string[] = Array.isArray(data.roles) ? data.roles : [];
         
@@ -76,6 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.isAdmin || roles.includes("Admin")) {
           // Global admin → admin dashboard
           window.location.replace("/");
+        } else if (roles.includes("Manager") && !roles.includes("OrgAdmin")) {
+          window.location.replace('/manager');
         } else if (roles.includes("OrgAdmin")) {
           // Organization admin → org admin portal
           window.location.replace("/org-admin");
@@ -84,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           window.location.replace("/employee");
         } else {
           // Fallback → admin dashboard
-          window.location.replace("/");
+          window.location.replace("/employee");
         }
       }
     },

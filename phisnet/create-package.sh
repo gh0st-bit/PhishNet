@@ -188,7 +188,7 @@ psql -U postgres -d phishnet -f database-data-only.sql
 
 ## 🆘 Troubleshooting
 - Run `./deploy.sh` for fresh installation
-- Check `KALI-TROUBLESHOOTING.md` for Kali Linux issues
+- Project documentation: https://github.com/gh0st-bit/PhishNet/blob/main/README.md
 - Ensure PostgreSQL is running
 - Check `.env` file for correct database connection
 

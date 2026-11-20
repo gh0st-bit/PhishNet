@@ -32,12 +32,12 @@ export default function StatCard({
     : isPositiveChange ? "text-success" : "text-destructive";
 
   return (
-    <Card>
+    <Card className="glass glass-tile">
       <CardContent className="p-3 sm:p-4 lg:p-5">
         <div className="flex justify-between items-start">
           <div className="flex-1 min-w-0">
             <p className="text-xs sm:text-sm text-muted-foreground truncate">{title}</p>
-            <h3 className="text-xl sm:text-2xl lg:text-2xl font-semibold text-foreground mt-1">{value}</h3>
+            <h3 className="text-xl sm:text-2xl lg:text-2xl font-semibold text-foreground mt-1 glass-countup">{value}</h3>
           </div>
           <div className={cn("p-1.5 sm:p-2 rounded-md shrink-0 ml-2", iconBgColor)}>
             <div className={cn(iconColor, "[&>svg]:h-4 [&>svg]:w-4 sm:[&>svg]:h-5 sm:[&>svg]:w-5")}>{icon}</div>

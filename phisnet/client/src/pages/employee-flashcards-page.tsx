@@ -1,4 +1,6 @@
-import { useState } from "react";
+import AppLayout from '@/components/layout/app-layout';
+import { useState, useEffect } from "react";
+import { useSearch } from 'wouter';
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +26,11 @@ interface Flashcard {
 }
 
 export default function EmployeeFlashcardsPage() {
+  return <AppLayout><EmployeeFlashcardsContent /></AppLayout>;
+}
+
+function EmployeeFlashcardsContent() {
+  const search = useSearch();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedDeck, setSelectedDeck] = useState<FlashcardDeck | null>(null);
@@ -36,6 +43,11 @@ export default function EmployeeFlashcardsPage() {
     staleTime: 0, // Always fetch fresh data
     gcTime: 0, // Don't cache
   });
+  useEffect(() => {
+    const id = Number(new URLSearchParams(search).get('deck'));
+    const deck = decks?.find(deck => deck.id === id);
+    if (deck) setSelectedDeck(deck);
+  }, [decks, search]);
 
   // Fetch cards for selected deck
   const { data: cards, isLoading: cardsLoading } = useQuery<Flashcard[]>({

@@ -1,4 +1,7 @@
-import { useState } from "react";
+import {RefreshButton} from '@/components/ui/refresh-button';
+import { useState, useEffect } from "react";
+import { useSearch } from 'wouter';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import AppLayout from "@/components/layout/app-layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -37,12 +40,17 @@ interface PaginatedArticlesResponse {
 }
 
 export default function AdminArticlesPage() {
+  const search = useSearch();
   const { user } = useAuth();
-  const isAdmin = !!user?.isAdmin;
+  const isAdmin = !!user?.isAdmin || !!user?.roles?.includes('OrgAdmin');
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
+  const [previewId, setPreviewId] = useState<number | null>(null);
+  useEffect(() => { const id=Number(new URLSearchParams(search).get('preview')); if(Number.isSafeInteger(id)&&id>0) setPreviewId(id); },[search]);
+  const {data:previewArticle,isLoading:previewLoading,error:previewError}=useQuery<Article>({queryKey:['/api/admin/articles',previewId,'preview'],enabled:!!previewId,
+    queryFn:async()=>{const response=await apiRequest('GET',`/api/admin/articles/${previewId}`);const result=await response.json();return result.article || result;}});
   const [categoryFilter, setCategoryFilter] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 12;
@@ -141,9 +149,7 @@ export default function AdminArticlesPage() {
               <Label htmlFor="categoryFilter" className="text-xs uppercase">Category</Label>
               <Input id="categoryFilter" placeholder="Filter category" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} />
             </div>
-            <Button variant="outline" onClick={() => { queryClient.invalidateQueries({ queryKey: ["/api/admin/articles"] }); }}>
-              Refresh
-            </Button>
+            <RefreshButton onRefresh={()=>queryClient.refetchQueries({queryKey:["/api/admin/articles"],type:"active"},{throwOnError:true})}/>
           </div>
 
           {isLoading && (
@@ -182,6 +188,7 @@ export default function AdminArticlesPage() {
                   <span>{article.readTimeMinutes ? `${article.readTimeMinutes} min read` : ""}</span>
                   <span>{new Date(article.publishedAt).toLocaleDateString()}</span>
                 </div>
+                <Button size="sm" variant="outline" onClick={() => setPreviewId(article.id)} aria-label={`Preview ${article.title}`}>Preview article</Button>
                 {isAdmin && (
                   <div className="flex gap-2 pt-2 border-t">
                     {article.published ? (
@@ -244,6 +251,14 @@ export default function AdminArticlesPage() {
           )}
         </Card>
       </div>
+      <Dialog open={!!previewId} onOpenChange={open=>{if(!open)setPreviewId(null);}}>
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col">
+          <DialogHeader><DialogTitle>{previewArticle?.title || 'Article preview'}</DialogTitle><DialogDescription>{previewArticle?.published ? 'Published article' : 'Draft preview'}</DialogDescription></DialogHeader>
+          {previewLoading && <p role="status">Loading preview...</p>}
+          {previewError && <p role="alert">This article is unavailable or has been deleted.</p>}
+          {previewArticle && <iframe title="Article preview" sandbox="" referrerPolicy="no-referrer" className="w-full flex-1 min-h-64 bg-white" srcDoc={`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'"><style>body{font:16px/1.6 system-ui;padding:24px;max-width:800px;margin:auto}img{max-width:100%}</style></head><body>${previewArticle.content}</body></html>`} />}
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

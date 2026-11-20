@@ -1,3 +1,6 @@
+import {awardEligibleBadges} from './badge-evaluation';
+import {pool} from '../db';
+import {randomUUID} from 'node:crypto';
 /**
  * Gamification Service
  * Handles XP, leveling, badge unlocks, and achievements
@@ -70,128 +73,27 @@ export class GamificationService {
    * Award XP to user and handle level-ups
    * Returns: { leveledUp: boolean, oldLevel: number, newLevel: number, badges: any[] }
    */
-  async awardXP(userId: number, xp: number, reason: string): Promise<{ leveledUp: boolean; oldLevel: number; newLevel: number; newBadges: any[] }> {
-    // Get or create user points
-    let [userPoint] = await db
-      .select()
-      .from(userPoints)
-      .where(eq(userPoints.userId, userId))
-      .limit(1);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (userPoint) {
-      const oldLevel = this.calculateLevel(userPoint.totalPoints);
-      const newPoints = userPoint.totalPoints + xp;
-      const newLevel = this.calculateLevel(newPoints);
-
-      // Update streak
-      const lastActivity = userPoint.lastActivityDate ? new Date(userPoint.lastActivityDate) : null;
-      let newStreak = userPoint.currentStreak;
-
-      if (lastActivity) {
-        lastActivity.setHours(0, 0, 0, 0);
-        const daysDiff = Math.floor((today.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24));
-
-        if (daysDiff === 1) {
-          newStreak = userPoint.currentStreak + 1;
-        } else if (daysDiff > 1) {
-          newStreak = 1;
-        }
-      } else {
-        newStreak = 1;
-      }
-
-      await db
-        .update(userPoints)
-        .set({
-          totalPoints: newPoints,
-          currentStreak: newStreak,
-          longestStreak: Math.max(newStreak, userPoint.longestStreak),
-          lastActivityDate: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(userPoints.userId, userId));
-
-      // Check for new badges
-      const newBadges = await this.checkBadgeUnlocks(userId, newPoints, newStreak);
-
-      return {
-        leveledUp: newLevel > oldLevel,
-        oldLevel,
-        newLevel,
-        newBadges,
-      };
-    } else {
-      // Create new record
-      await db.insert(userPoints).values({
-        userId,
-        totalPoints: xp,
-        currentStreak: 1,
-        longestStreak: 1,
-        lastActivityDate: new Date(),
-      });
-
-      const newBadges = await this.checkBadgeUnlocks(userId, xp, 1);
-
-      return {
-        leveledUp: false,
-        oldLevel: 1,
-        newLevel: this.calculateLevel(xp),
-        newBadges,
-      };
-    }
+  async awardXP(userId:number,xp:number,reason:string,eventKey=reason+':'+randomUUID()):Promise<{leveledUp:boolean;oldLevel:number;newLevel:number;newBadges:any[]}>{
+    if(!Number.isInteger(xp)||xp<0||xp>10000)throw new Error('Invalid points award');
+    const client=await pool.connect();let oldPoints=0,newPoints=0,streak=0;
+    try{await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock($1)',[userId]);
+      const {rows:[user]}=await client.query('SELECT organization_id FROM users WHERE id=$1 AND is_active',[userId]);if(!user)throw new Error('Active employee required');
+      const {rows:[prior]}=await client.query('SELECT * FROM user_points WHERE user_id=$1 FOR UPDATE',[userId]);oldPoints=prior?.total_points||0;
+      const inserted=await client.query('INSERT INTO points_events(organization_id,user_id,event_key,reason,points) VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id,event_key) DO NOTHING RETURNING id',[user.organization_id,userId,eventKey,reason,xp]);
+      if(!inserted.rowCount){await client.query('COMMIT');return {leveledUp:false,oldLevel:this.calculateLevel(oldPoints),newLevel:this.calculateLevel(oldPoints),newBadges:[]};}
+      const today=new Date().toISOString().slice(0,10),last=prior?.last_activity_date?new Date(prior.last_activity_date).toISOString().slice(0,10):null;
+      const yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);streak=last===today?prior.current_streak:last===yesterday?prior.current_streak+1:1;newPoints=oldPoints+xp;
+      await client.query(`INSERT INTO user_points(user_id,total_points,current_streak,longest_streak,last_activity_date) VALUES($1,$2,$3,$3,now()) ON CONFLICT(user_id) DO UPDATE SET total_points=$2,current_streak=$3,longest_streak=greatest(user_points.longest_streak,$3),last_activity_date=now(),updated_at=now()`,[userId,newPoints,streak]);
+      await client.query('COMMIT');
+    }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+    const newBadges=await this.checkBadgeUnlocks(userId,newPoints,streak);const oldLevel=this.calculateLevel(oldPoints),newLevel=this.calculateLevel(newPoints);return {leveledUp:newLevel>oldLevel,oldLevel,newLevel,newBadges};
   }
 
   /**
    * Check and award badges based on criteria
    */
   private async checkBadgeUnlocks(userId: number, totalPoints: number, currentStreak: number): Promise<any[]> {
-    try {
-      // Get all badges the user hasn't earned yet
-      const allBadges = await db.select().from(badges);
-      const earnedBadges = await db
-        .select()
-        .from(userBadges)
-        .where(eq(userBadges.userId, userId));
-
-      const earnedBadgeIds = new Set(earnedBadges.map(b => b.badgeId));
-      const unearnedBadges = allBadges.filter(b => !earnedBadgeIds.has(b.id));
-
-      const newlyEarned: any[] = [];
-
-      for (const badge of unearnedBadges) {
-        const criteria = badge.criteria as any;
-        let earned = false;
-
-        if (!criteria || !criteria.type) continue;
-
-        switch (criteria.type) {
-          case "total_points":
-          case "points":
-            earned = totalPoints >= (criteria.amount || criteria.requiredPoints || 0);
-            break;
-          case "streak":
-            earned = currentStreak >= (criteria.days || criteria.requiredDays || 0);
-            break;
-          // Add more criteria types as needed
-        }
-
-        if (earned) {
-          await db.insert(userBadges).values({
-            userId,
-            badgeId: badge.id,
-          });
-          newlyEarned.push(badge);
-        }
-      }
-
-      return newlyEarned;
-    } catch (error) {
-      console.error("Error checking badge unlocks:", error);
-      return [];
-    }
+    return awardEligibleBadges(userId);
   }
 
   /**

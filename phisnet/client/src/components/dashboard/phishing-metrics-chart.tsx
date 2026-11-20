@@ -28,7 +28,7 @@ export default function PhishingMetricsChart({ data }: PhishingMetricsChartProps
   };
 
   return (
-    <Card>
+    <Card className="glass glass-tile">
       <CardHeader className="pb-2">
         <CardTitle>Phishing Success Rate</CardTitle>
       </CardHeader>

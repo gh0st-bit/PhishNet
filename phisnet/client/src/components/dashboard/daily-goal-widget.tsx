@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Target, CalendarClock } from "lucide-react";
+import { useLocation } from "wouter";
 
 interface DailyGoalProps {
   target: number;
@@ -11,6 +12,7 @@ interface DailyGoalProps {
 }
 
 export function DailyGoalWidget({ target, completedToday, progress, suggestion, dueSoon }: DailyGoalProps) {
+  const [, navigate] = useLocation();
   return (
     <Card className="p-3 sm:p-4 lg:p-5 flex items-center gap-3 sm:gap-4">
       <div className="relative h-12 w-12 sm:h-14 sm:w-14 lg:h-16 lg:w-16 shrink-0">
@@ -49,7 +51,7 @@ export function DailyGoalWidget({ target, completedToday, progress, suggestion, 
           </div>
         )}
       </div>
-      <Button size="sm" variant="outline" className="hidden lg:inline-flex gap-1 shrink-0">
+      <Button size="sm" variant="outline" className="hidden lg:inline-flex gap-1 shrink-0" onClick={() => navigate(dueSoon ? `/employee/training/${dueSoon.moduleId}` : '/employee/training')}>
         <CheckCircle2 className="h-4 w-4" />
         Start
       </Button>

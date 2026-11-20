@@ -1,5 +1,11 @@
+import { randomUUID } from 'node:crypto';
+import { putPrivateObject,deletePrivateObject,imageType } from '../services/object-store';
+import { pool } from '../db';
+import { publicUser } from '../public-user';
 import type { Express } from 'express';
-import { isAuthenticated, hasOrganization, isAdmin, hashPassword, comparePasswords } from '../auth';
+import { isAuthenticated, hasOrganization, isAdmin, isAdminOrOrgAdmin, hashPassword, comparePasswords, destroyUserSessions } from '../auth';
+import { ROLE_PERMISSIONS } from '@shared/access-control';
+import { z } from 'zod';
 import { storage } from '../storage';
 import { db } from '../db';
 import { users, rolesSchema, userRolesSchema, DEFAULT_ROLES } from '@shared/schema';
@@ -7,7 +13,7 @@ import { AuditService } from '../services/audit.service';
 import { eq } from 'drizzle-orm';
 import multer from 'multer';
 
-const upload = multer();
+const upload = multer({storage:multer.memoryStorage(),limits:{fileSize:5*1024*1024,files:1}});
 
 function assertUser(user: Express.User | undefined): asserts user is Express.User {
   if (!user) {
@@ -36,7 +42,8 @@ export function registerUserRoutes(app: Express) {
         return res.status(404).json({ message: "User not found" });
       }
       
-      res.json(updatedUser);
+      if (!updatedUser) return res.status(404).json({ message: "User not found" });
+      res.json(publicUser(updatedUser));
     } catch (error) {
       console.error("Error updating user profile:", error);
       res.status(500).json({ message: "Failed to update user profile" });
@@ -89,6 +96,8 @@ export function registerUserRoutes(app: Express) {
       if (!updatedUser) {
         return res.status(500).json({ message: "Failed to update password" });
       }
+      // Sign out every other session; the current one stays signed in.
+      await destroyUserSessions(req.user.id, req.sessionID);
       
       res.json({ message: "Password updated successfully" });
     } catch (error) {
@@ -105,19 +114,26 @@ export function registerUserRoutes(app: Express) {
         return res.status(400).json({ message: "No file uploaded" });
       }
       
-      // Convert image to base64 for storage
-      const profilePicture = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-      
-      const updatedUser = await storage.updateUser(req.user.id, { profilePicture });
-      
+      const type=imageType(req.file.buffer);const id=randomUUID();const key=`assets/${req.user.organizationId}/${id}.${type.extension}`;
+      await putPrivateObject(key,req.file.buffer,type.mime);
+      let updatedUser;
+      const client=await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('INSERT INTO private_assets(id,organization_id,owner_user_id,object_key,mime_type,byte_length) VALUES($1,$2,$3,$4,$5,$6)',[id,req.user.organizationId,req.user.id,key,type.mime,req.file.size]);
+        await client.query('UPDATE users SET profile_picture=$2,updated_at=now() WHERE id=$1 AND organization_id=$3',[req.user.id,`/api/assets/${id}`,req.user.organizationId]);
+        await client.query('COMMIT');updatedUser=await storage.getUser(req.user.id);
+      }catch(error){await client.query('ROLLBACK');await deletePrivateObject(key);throw error;}
+      finally{client.release();}
       if (!updatedUser) {
         return res.status(404).json({ message: "User not found" });
       }
       
-      res.json(updatedUser);
+      if (!updatedUser) return res.status(404).json({ message: "User not found" });
+      res.json(publicUser(updatedUser));
     } catch (error) {
       console.error("Error updating profile picture:", error);
-      res.status(500).json({ message: "Failed to update profile picture" });
+      res.status((error as any).status||500).json({ message: (error as any).status?(error as Error).message:"Failed to update profile picture" });
     }
   });
   
@@ -125,26 +141,9 @@ export function registerUserRoutes(app: Express) {
   app.get("/api/users", isAuthenticated, hasOrganization, async (req, res) => {
     try {
       assertUser(req.user);
-      // Ensure default roles are seeded
-      try {
-        const existingRole = await db.select({ id: rolesSchema.id }).from(rolesSchema).limit(1);
-        if (existingRole.length === 0) {
-          for (const r of DEFAULT_ROLES) {
-            try {
-              await db.insert(rolesSchema).values({
-                name: r.name,
-                description: r.description,
-                permissions: Array.isArray((r as any).permissions) ? (r as any).permissions : (r as any).permissions?.permissions || []
-              } as any);
-            } catch {}
-          }
-        }
-      } catch (e) {
-        console.error('Role seeding check failed:', e);
-      }
-
       const userList = await db.select({
         id: users.id,
+        organizationId: users.organizationId,
         firstName: users.firstName,
         lastName: users.lastName,
         email: users.email,
@@ -170,21 +169,6 @@ export function registerUserRoutes(app: Express) {
           .innerJoin(rolesSchema, eq(userRolesSchema.roleId, rolesSchema.id))
           .where(eq(userRolesSchema.userId, user.id));
 
-          if (userRoles.length === 0 && (user.isAdmin || user.email.toLowerCase() === 'admin@phishnet.com')) {
-            // Auto-assign Admin role if missing
-            const [adminRole] = await db.select({ id: rolesSchema.id, name: rolesSchema.name, description: rolesSchema.description, permissions: rolesSchema.permissions })
-              .from(rolesSchema)
-              .where(eq(rolesSchema.name, 'Admin'));
-            if (adminRole) {
-              try {
-                await db.insert(userRolesSchema).values({ userId: user.id, roleId: adminRole.id });
-                userRoles.push(adminRole);
-              } catch (e) {
-                console.warn('Role auto-assign duplicate or race condition:', e);
-              }
-            }
-          }
-          
           return {
             ...user,
             roles: userRoles,
@@ -200,10 +184,15 @@ export function registerUserRoutes(app: Express) {
   });
 
   // Create a new user (Admin only)
-  app.post("/api/users", isAuthenticated, hasOrganization, isAdmin, async (req, res) => {
+  app.post("/api/users", isAuthenticated, hasOrganization, isAdminOrOrgAdmin, async (req, res) => {
     try {
       assertUser(req.user);
-      const { firstName, lastName, email, password, roleId, isActive } = req.body;
+      const parsed = z.object({ firstName:z.string().trim().min(1), lastName:z.string().trim().min(1), email:z.string().email().transform(v=>v.toLowerCase().trim()), password:z.string().min(8), roleId:z.number().int().positive().optional(), isActive:z.boolean().optional() }).safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({message:'Invalid user details', errors:parsed.error.issues});
+      const { firstName, lastName, email, password, roleId, isActive } = parsed.data;
+      const [role] = await db.select().from(rolesSchema).where(roleId ? eq(rolesSchema.id, roleId) : eq(rolesSchema.name, 'User'));
+      if (!role || !Object.hasOwn(ROLE_PERMISSIONS, role.name)) return res.status(400).json({message:'Choose a supported role'});
+      if (role.name === 'Admin' && !req.user.isAdmin) return res.status(403).json({message:'Only a platform administrator can grant Admin'});
       
       // Check if user already exists
       const existingUser = await db.select()
@@ -219,36 +208,21 @@ export function registerUserRoutes(app: Express) {
       const hashedPassword = await hashPassword(password);
       
       // Create user
-      const [newUser] = await db.insert(users).values({
+      const newUser = await db.transaction(async tx => {
+      const [created] = await tx.insert(users).values({
         firstName,
         lastName,
         email,
         password: hashedPassword,
         isActive: isActive ?? true,
-        organizationId: req.user.organizationId,
+        isAdmin: role.name === 'Admin',
+        emailVerified: true,
+        organizationId: req.user!.organizationId,
+        organizationName: req.user!.organizationName,
       }).returning();
-      
-      // Assign roles
-      if (roleId) {
-        await db.insert(userRolesSchema).values({
-          userId: newUser.id,
-          roleId: roleId
-        });
-      } else {
-        // If no explicit role selected, default to "User" role for employees
-        const [userRole] = await db
-          .select({ id: rolesSchema.id })
-          .from(rolesSchema)
-          .where(eq(rolesSchema.name, 'User'))
-          .limit(1);
-
-        if (userRole) {
-          await db.insert(userRolesSchema).values({
-            userId: newUser.id,
-            roleId: userRole.id,
-          });
-        }
-      }
+      await tx.insert(userRolesSchema).values({userId:created.id, roleId:role.id});
+      return created;
+      });
       
       // Audit log user creation
       AuditService.log({
@@ -264,7 +238,7 @@ export function registerUserRoutes(app: Express) {
         metadata: { email: newUser.email, roleId },
       }).catch((err) => console.error("[Audit] Failed to log user creation:", err));
       
-      res.status(201).json(newUser);
+      res.status(201).json(publicUser(newUser));
     } catch (error) {
       console.error("Error creating user:", error);
       res.status(500).json({ message: "Error creating user" });
@@ -272,7 +246,7 @@ export function registerUserRoutes(app: Express) {
   });
 
   // Update a user (Admin only)
-  app.put("/api/users/:id", isAuthenticated, hasOrganization, isAdmin, async (req, res) => {
+  app.put("/api/users/:id", isAuthenticated, hasOrganization, isAdminOrOrgAdmin, async (req, res) => {
     try {
       assertUser(req.user);
       const userId = Number.parseInt(req.params.id, 10);
@@ -287,6 +261,12 @@ export function registerUserRoutes(app: Express) {
       if (!existingUser || existingUser.organizationId !== req.user.organizationId) {
         return res.status(404).json({ message: "User not found" });
       }
+      const existingRoles = await db.select({name:rolesSchema.name}).from(userRolesSchema).innerJoin(rolesSchema,eq(rolesSchema.id,userRolesSchema.roleId)).where(eq(userRolesSchema.userId,userId));
+      if (!req.user.isAdmin && (existingUser.isAdmin || existingRoles.some(r=>r.name==='Admin'))) return res.status(403).json({message:'Only a platform administrator can modify an Admin'});
+      const role = roleId !== undefined ? (await db.select().from(rolesSchema).where(eq(rolesSchema.id,Number(roleId))))[0] : undefined;
+      if (roleId !== undefined && (!role || !Object.hasOwn(ROLE_PERMISSIONS,role.name))) return res.status(400).json({message:'Choose a supported role'});
+      if (role?.name === 'Admin' && !req.user.isAdmin) return res.status(403).json({message:'Only a platform administrator can grant Admin'});
+      if (userId === req.user.id && (isActive === false || (role && !existingRoles.some(r=>r.name===role.name)))) return res.status(400).json({message:'Use another administrator to change your own role or disable your account'});
       
       // Update user
       const updateData: any = {};
@@ -294,19 +274,16 @@ export function registerUserRoutes(app: Express) {
       if (lastName !== undefined) updateData.lastName = lastName;
       if (email !== undefined) updateData.email = email;
       if (isActive !== undefined) updateData.isActive = isActive;
+      if (role) updateData.isAdmin = role.name === 'Admin';
       
-      const updatedUser = await storage.updateUser(userId, updateData);
-      
-      // Update role if provided
-      if (roleId !== undefined) {
-        await db.delete(userRolesSchema).where(eq(userRolesSchema.userId, userId));
-        if (roleId) {
-          await db.insert(userRolesSchema).values({
-            userId,
-            roleId
-          });
+      const updatedUser = await db.transaction(async tx => {
+        const [updated] = await tx.update(users).set(updateData).where(eq(users.id,userId)).returning();
+        if(role) {
+          await tx.delete(userRolesSchema).where(eq(userRolesSchema.userId,userId));
+          await tx.insert(userRolesSchema).values({userId,roleId:role.id});
         }
-      }
+        return updated;
+      });
       
       // Audit log user update
       AuditService.log({
@@ -322,7 +299,8 @@ export function registerUserRoutes(app: Express) {
         metadata: { email: updatedUser?.email, changes: updateData, roleId },
       }).catch((err) => console.error("[Audit] Failed to log user update:", err));
       
-      res.json(updatedUser);
+      if (!updatedUser) return res.status(404).json({ message: "User not found" });
+      res.json(publicUser(updatedUser));
     } catch (error) {
       console.error("Error updating user:", error);
       res.status(500).json({ message: "Error updating user" });
@@ -330,7 +308,7 @@ export function registerUserRoutes(app: Express) {
   });
 
   // Delete a user (Admin only)
-  app.delete("/api/users/:id", isAuthenticated, hasOrganization, isAdmin, async (req, res) => {
+  app.delete("/api/users/:id", isAuthenticated, hasOrganization, isAdminOrOrgAdmin, async (req, res) => {
     try {
       assertUser(req.user);
       const userId = Number.parseInt(req.params.id, 10);
@@ -346,6 +324,8 @@ export function registerUserRoutes(app: Express) {
       }
       
       // Don't allow deleting yourself
+      const assigned = await db.select({name:rolesSchema.name}).from(userRolesSchema).innerJoin(rolesSchema,eq(rolesSchema.id,userRolesSchema.roleId)).where(eq(userRolesSchema.userId,userId));
+      if (!req.user.isAdmin && (existingUser.isAdmin || assigned.some(r=>r.name==='Admin'))) return res.status(403).json({message:'Only a platform administrator can delete an Admin'});
       if (userId === req.user.id) {
         return res.status(400).json({ message: "Cannot delete your own account" });
       }
@@ -404,7 +384,7 @@ export function registerUserRoutes(app: Express) {
         }).from(rolesSchema);
       }
 
-      res.json(roles);
+      res.json(roles.filter(role => req.user!.isAdmin || role.name !== 'Admin').map(role=>({...role,permissions:ROLE_PERMISSIONS[role.name as keyof typeof ROLE_PERMISSIONS] || []})));
     } catch (error) {
       console.error("Error fetching roles:", error);
       res.status(500).json({ message: "Error fetching roles" });

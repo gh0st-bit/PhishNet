@@ -1,4 +1,6 @@
+import {RefreshButton} from '@/components/ui/refresh-button';
 import { useState, useRef, useEffect } from "react";
+import { useSearch } from 'wouter';
 import AppLayout from "@/components/layout/app-layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -56,12 +58,17 @@ interface PaginatedDecksResponse {
 }
 
 export default function AdminFlashcardsPage() {
+  const search = useSearch();
+  const linkedDeckId = Number(new URLSearchParams(search).get('deck'));
+  const { data: linkedDeck } = useQuery({queryKey:['/api/admin/flashcard-decks', linkedDeckId, 'notification'], enabled:Number.isSafeInteger(linkedDeckId)&&linkedDeckId>0,
+    queryFn:async()=> (await apiRequest('GET',`/api/admin/flashcard-decks/${linkedDeckId}`)).json()});
   const { user } = useAuth();
-  const isAdmin = !!user?.isAdmin;
+  const isAdmin = !!user?.isAdmin || !!user?.roles?.includes('OrgAdmin');
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [editingDeck, setEditingDeck] = useState<FlashcardDeck | null>(null);
   const [selectedDeck, setSelectedDeck] = useState<FlashcardDeck | null>(null);
+  useEffect(() => { if (linkedDeck?.deck) setSelectedDeck(linkedDeck.deck); }, [linkedDeck]);
   const [isDeckDialogOpen, setIsDeckDialogOpen] = useState(false);
   const [isCardDialogOpen, setIsCardDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -357,7 +364,7 @@ export default function AdminFlashcardsPage() {
               <Label htmlFor="deckCategoryFilter" className="text-xs uppercase">Category</Label>
               <Input id="deckCategoryFilter" placeholder="Filter category" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} />
             </div>
-            <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/admin/flashcard-decks"] })}>Refresh</Button>
+            <RefreshButton onRefresh={()=>queryClient.refetchQueries({queryKey:["/api/admin/flashcard-decks"],type:"active"},{throwOnError:true})}/>
           </div>
 
           {decksLoading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading decks...</div>}

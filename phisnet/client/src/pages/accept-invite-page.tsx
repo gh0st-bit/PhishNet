@@ -206,11 +206,11 @@ export default function AcceptInvitePage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <FormLabel htmlFor="invite-password">Password</FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Input
-                          type={showPassword ? "text" : "password"}
+                          id="invite-password" type={showPassword ? "text" : "password"}
                           placeholder="••••••••"
                           {...field}
                           disabled={acceptInvite.isPending}
@@ -240,11 +240,11 @@ export default function AcceptInvitePage() {
                 name="confirmPassword"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Confirm Password</FormLabel>
+                    <FormLabel htmlFor="invite-confirm-password">Confirm Password</FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Input
-                          type={showConfirmPassword ? "text" : "password"}
+                          id="invite-confirm-password" type={showConfirmPassword ? "text" : "password"}
                           placeholder="••••••••"
                           {...field}
                           disabled={acceptInvite.isPending}

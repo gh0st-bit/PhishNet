@@ -10,6 +10,7 @@ interface LeaderboardEntry {
 }
 
 interface LeaderboardResponse {
+  enabled?:boolean;
   leaderboard: LeaderboardEntry[];
 }
 
@@ -31,6 +32,7 @@ export default function EmployeeLeaderboardPage() {
         <p className="text-sm text-muted-foreground">Top performers in your organization</p>
       </div>
 
+      {data?.enabled===false&&<p>Leaderboards are not enabled for this organization.</p>}
       <Card className="p-4">
         <div className="space-y-3">
           {(data?.leaderboard || []).map((e, idx) => (

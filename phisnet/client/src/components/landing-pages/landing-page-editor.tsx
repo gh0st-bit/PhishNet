@@ -51,7 +51,7 @@ export default function LandingPageEditor({ onClose, page }: LandingPageEditorPr
 
   const isEditing = !!page;
 
-  const form = useForm<LandingPageFormValues>({
+  const form = useForm<z.input<typeof landingPageSchema>, unknown, LandingPageFormValues>({
     resolver: zodResolver(landingPageSchema),
     defaultValues: {
       name: page?.name || "",
@@ -165,17 +165,6 @@ export default function LandingPageEditor({ onClose, page }: LandingPageEditorPr
 
   // Thumbnail extraction happens during clone onSuccess
 
-  // Update the preview whenever HTML content changes
-  useEffect(() => {
-    if (activeTab === "preview" && previewFrameRef.current) {
-      const doc = previewFrameRef.current.contentDocument;
-      if (doc) {
-        doc.open();
-        doc.write(form.getValues("htmlContent"));
-        doc.close();
-      }
-    }
-  }, [activeTab, form.watch("htmlContent")]);
 
   // Load the preview when the component mounts if we're editing an existing page
   useEffect(() => {
@@ -550,9 +539,9 @@ export default function LandingPageEditor({ onClose, page }: LandingPageEditorPr
                     <iframe 
                       ref={previewFrameRef}
                       title="Landing Page Preview"
-                      sandbox="allow-same-origin"
+                      sandbox=""
                       className="w-full h-full border-0"
-                      srcDoc={form.getValues("htmlContent")}
+                      srcDoc={'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src https: data:; style-src \'unsafe-inline\' https:; form-action \'none\'; base-uri \'none\'">'+form.watch("htmlContent")}
                     />
                   </Card>
                 )}
@@ -563,7 +552,7 @@ export default function LandingPageEditor({ onClose, page }: LandingPageEditorPr
       </div>
       
       {/* Fixed button bar at the bottom */}
-      <div className="border-t pt-4 mt-4 flex justify-between sticky bottom-0 bg-background">
+      <div className="border-t pt-4 mt-4 flex justify-between sticky bottom-0 bg-background glass-float">
         {isCloning ? (
           <div className="flex justify-end space-x-2 w-full">
             <Button variant="outline" onClick={() => setIsCloning(false)}>

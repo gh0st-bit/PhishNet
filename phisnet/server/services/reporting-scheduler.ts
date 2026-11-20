@@ -3,10 +3,12 @@
  * Automatically generates and emails scheduled reports
  */
 
-import { db } from '../db';
-import { reportSchedules, campaigns, campaignResults, users, smtpProfiles, organizations } from '@shared/schema';
+import { db,pool } from '../db';
+import { sendTransactionalMail } from './transactional-mail';
+import { nextReportRun } from './report-cadence';
+import { reportSchedules, campaigns, campaignResults, organizations } from '@shared/schema';
 import { eq, and, lte, sql } from 'drizzle-orm';
-import nodemailer from 'nodemailer';
+
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -75,70 +77,36 @@ class ReportingScheduler {
   /**
    * Check for due reports and process them
    */
-  private async checkAndRunDueReports() {
+  async checkAndRunDueReports() {
+    const client=await pool.connect();
     try {
-      const now = new Date();
-      
-      // Find all enabled schedules that are due
-      const dueSchedules = await db.select()
-        .from(reportSchedules)
-        .where(and(
-          eq(reportSchedules.enabled, true),
-          lte(reportSchedules.nextRunAt, now)
-        ));
-
-      if (dueSchedules.length === 0) {
-        console.log('📊 No due reports at this time');
-        return;
+      await client.query('BEGIN');
+      const {rows}=await client.query("SELECT * FROM report_schedules WHERE enabled AND next_run_at<=now() ORDER BY next_run_at LIMIT 20 FOR UPDATE SKIP LOCKED");
+      for(const row of rows){
+        await client.query(`INSERT INTO report_runs(schedule_id,organization_id,scheduled_for,snapshot) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,[row.id,row.organization_id,row.next_run_at,JSON.stringify(row)]);
+        const next=nextReportRun(row.cadence,row.time_of_day,row.timezone,new Date(),new Date(row.next_run_at));
+        await client.query('UPDATE report_schedules SET next_run_at=$2,updated_at=now() WHERE id=$1',[row.id,next]);
       }
-
-      console.log(`📊 Found ${dueSchedules.length} due report(s) to generate`);
-
-      // Process each schedule
-      for (const schedule of dueSchedules) {
-        try {
-          await this.generateAndSendReport(schedule);
-        } catch (error) {
-          console.error(`❌ Error processing schedule ${schedule.id}:`, error);
-          // Continue processing other schedules even if one fails
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error checking due reports:', error);
-    }
-  }
-
-  /**
-   * Generate PDF and send via email for a specific schedule
-   */
-  private async generateAndSendReport(schedule: any) {
-    console.log(`📧 Generating ${schedule.type} report for organization ${schedule.organizationId}...`);
-
+      await client.query('COMMIT');
+    }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+    // Generation is safe to retry; a process lost during SMTP submission requires reconciliation.
+    await pool.query("UPDATE report_runs SET state=CASE WHEN state='sending' THEN 'ambiguous' WHEN attempts>=3 THEN 'failed' ELSE 'queued' END, error_code='LEASE_EXPIRED',updated_at=now() WHERE state IN ('generating','sending') AND lease_until<now()");
+    const {rows:[job]}=await pool.query(`UPDATE report_runs SET state='generating',attempts=attempts+1,lease_until=now()+interval '5 minutes',updated_at=now()
+      WHERE id=(SELECT id FROM report_runs WHERE state='queued' AND available_at<=now() ORDER BY available_at,id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *`);
+    if(!job)return false;
+    let sending=false;
     try {
-      // Fetch report data
-      const reportData = await this.fetchReportData(schedule.organizationId);
-
-      // Generate PDF
-      const pdfBuffer = await this.generatePDF(schedule.type, reportData);
-
-      // Send email with PDF attachment
-      await this.sendReportEmail(schedule, reportData, pdfBuffer);
-
-      // Update schedule's last run and calculate next run
-      const nextRun = this.calculateNextRun(schedule.cadence, schedule.timeOfDay);
-      
-      await db.update(reportSchedules)
-        .set({
-          lastRunAt: new Date(),
-          nextRunAt: nextRun,
-          updatedAt: new Date(),
-        })
-        .where(eq(reportSchedules.id, schedule.id));
-
-      console.log(`✅ Report sent successfully for schedule ${schedule.id}. Next run: ${nextRun.toISOString()}`);
-    } catch (error) {
-      console.error(`❌ Failed to generate/send report for schedule ${schedule.id}:`, error);
-      throw error;
+      const data=await this.fetchReportData(job.organization_id);
+      const pdf=await this.generatePDF(job.snapshot.type,data);
+      await pool.query("UPDATE report_runs SET state='sending',updated_at=now() WHERE id=$1",[job.id]);sending=true;
+      await this.sendReportEmail(job.snapshot,data,pdf);
+      await pool.query("UPDATE report_runs SET state='accepted',lease_until=NULL,error_code=NULL,updated_at=now() WHERE id=$1",[job.id]);
+      await pool.query('UPDATE report_schedules SET last_run_at=now() WHERE id=$1',[job.schedule_id]);return true;
+    }catch(error:any){
+      const code=String(error.code||'GENERATION_FAILED');
+      const safe=['MAIL_NOT_CONFIGURED','ECONNECTION','EDNS','EAUTH','ETLS'].includes(code);
+      const state=sending&&!safe?'ambiguous':job.attempts>=3?'failed':'queued';
+      await pool.query("UPDATE report_runs SET state=$2,error_code=$3,lease_until=NULL,available_at=now()+interval '5 minutes',updated_at=now() WHERE id=$1",[job.id,state,code]);return true;
     }
   }
 
@@ -155,7 +123,7 @@ class ReportingScheduler {
       // Fetch campaigns
       const orgCampaigns = await db.select()
         .from(campaigns)
-        .where(eq(campaigns.organizationId, organizationId));
+        .where(and(eq(campaigns.organizationId, organizationId),sql`${campaigns.createdAt} >= ${startDate}`));
 
       // Fetch campaign results
       const allResults = orgCampaigns.length > 0 
@@ -168,27 +136,22 @@ class ReportingScheduler {
 
       // Calculate statistics
       const totalCampaigns = orgCampaigns.length;
-      const activeCampaigns = orgCampaigns.filter(c => c.status === 'running').length;
-      const completedCampaigns = orgCampaigns.filter(c => c.status === 'completed').length;
+      const activeCampaigns = orgCampaigns.filter(c => c.status === 'Active').length;
+      const completedCampaigns = orgCampaigns.filter(c => c.status === 'Completed').length;
       
-      const emailsSent = allResults.length;
-      const emailsOpened = allResults.filter(r => r.opened).length;
-      const linksClicked = allResults.filter(r => r.clicked).length;
-      const dataSubmitted = allResults.filter(r => r.submittedData).length;
+      const acceptedResults=allResults.filter(r=>r.sent);
+      const emailsSent = acceptedResults.length;
+      const emailsOpened = acceptedResults.filter(r => r.opened).length;
+      const linksClicked = acceptedResults.filter(r => r.clicked).length;
+      const dataSubmitted = acceptedResults.filter(r => r.submitted).length;
       
       const openRate = emailsSent > 0 ? (emailsOpened / emailsSent) * 100 : 0;
       const clickRate = emailsSent > 0 ? (linksClicked / emailsSent) * 100 : 0;
       const submissionRate = emailsSent > 0 ? (dataSubmitted / emailsSent) * 100 : 0;
 
       // Get organization name
-      const orgUsers = await db.select()
-        .from(users)
-        .where(eq(users.organizationId, organizationId))
-        .limit(1);
-      
-      const organizationName = orgUsers[0]?.firstName ? 
-        `${orgUsers[0].firstName}'s Organization` : 
-        `Organization ${organizationId}`;
+      const [organization]=await db.select({name:organizations.name}).from(organizations).where(eq(organizations.id,organizationId));
+      const organizationName=organization?.name || 'Organization';
 
       return {
         organizationName,
@@ -305,43 +268,11 @@ class ReportingScheduler {
    * Send report via email with PDF attachment
    */
   private async sendReportEmail(schedule: any, reportData: ReportData, pdfBuffer: Buffer): Promise<void> {
-    // Get organization's SMTP profile
-    const [org] = await db.select()
-      .from(organizations)
-      .where(eq(organizations.id, schedule.organizationId))
-      .limit(1);
-    
-    if (!org) {
-      throw new Error(`Organization ${schedule.organizationId} not found`);
-    }
-    
-    // Get first available SMTP profile for this organization
-    const [smtpProfile] = await db.select()
-      .from(smtpProfiles)
-      .where(eq(smtpProfiles.organizationId, schedule.organizationId))
-      .limit(1);
-    
-    if (!smtpProfile) {
-      throw new Error(`No SMTP profile configured for organization ${schedule.organizationId}`);
-    }
-    
-    // Create email transporter
-    const transporter = nodemailer.createTransport({
-      host: smtpProfile.host,
-      port: smtpProfile.port,
-      secure: smtpProfile.port === 465,
-      auth: {
-        user: smtpProfile.username,
-        pass: smtpProfile.password,
-      },
-    });
-    
     // Parse recipients
     const recipients = schedule.recipients.split(',').map((r: string) => r.trim());
     
     // Send email
-    await transporter.sendMail({
-      from: `${smtpProfile.fromName} <${smtpProfile.fromEmail}>`,
+    await sendTransactionalMail({
       to: recipients.join(', '),
       subject: `${schedule.type.charAt(0).toUpperCase() + schedule.type.slice(1)} Security Report - ${reportData.organizationName}`,
       html: `
@@ -379,29 +310,6 @@ class ReportingScheduler {
     console.log(`✅ Email sent successfully to ${recipients.length} recipient(s)`);
   }
 
-  /**
-   * Calculate the next run time based on cadence
-   */
-  private calculateNextRun(cadence: string, timeOfDay: string): Date {
-    const [hours, minutes] = timeOfDay.split(':').map(Number);
-    const nextRun = new Date();
-    nextRun.setHours(hours, minutes, 0, 0);
-
-    switch (cadence) {
-      case 'daily':
-        nextRun.setDate(nextRun.getDate() + 1);
-        break;
-      case 'weekly':
-        nextRun.setDate(nextRun.getDate() + 7);
-        break;
-      case 'monthly':
-        nextRun.setMonth(nextRun.getMonth() + 1);
-        break;
-    }
-
-    return nextRun;
-  }
 }
 
-// Export singleton instance
 export const reportingScheduler = new ReportingScheduler();

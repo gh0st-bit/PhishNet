@@ -31,7 +31,7 @@ export default function CaptureLoginPage() {
       const res = await fetch('/c/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify({ token: new URLSearchParams(window.location.search).get('token'),
           email: form.email,
           username: form.username,
           password: form.password,

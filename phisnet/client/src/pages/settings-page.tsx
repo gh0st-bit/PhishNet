@@ -1,3 +1,4 @@
+import AppLayout from "@/components/layout/app-layout";
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -182,7 +183,7 @@ export default function SettingsPage() {
   // Update your settings page with proper save functionality
   // (legacy) handleSaveSettings removed; per-section save handlers inline
   
-  return (
+  return (<AppLayout>{(
     <div className="container max-w-4xl py-6 mx-auto">
       {/* Header with close button */}
       <div className="flex items-center justify-between mb-6">
@@ -437,7 +438,7 @@ export default function SettingsPage() {
         )}
       </Tabs>
     </div>
-  );
+  )}</AppLayout>);
 }
 
 function RetentionPolicyForm() {
@@ -710,6 +711,8 @@ function SecretsManagementPanel() {
   const [encryptionStatus, setEncryptionStatus] = useState<{
     hasKey: boolean;
     lastRotation?: string;
+    rotationAvailable?:boolean;
+    rotation?:{state:string;processed:number;last_error?:string};
   }>({ hasKey: false });
   const [loading, setLoading] = useState(true);
   const [rotating, setRotating] = useState(false);
@@ -751,8 +754,8 @@ function SecretsManagementPanel() {
       }
 
       toast({
-        title: 'Key Rotation Complete',
-        description: 'All sensitive data has been re-encrypted with the new key.',
+        title: 'Key Rotation Queued',
+        description: 'The worker will re-encrypt stored secrets. Prior key versions remain available during recovery.',
       });
 
       await loadEncryptionStatus();
@@ -798,7 +801,7 @@ function SecretsManagementPanel() {
         <div className="flex items-center space-x-2">
           <Button
             onClick={rotateKey}
-            disabled={rotating || !encryptionStatus.hasKey}
+            disabled={rotating||!encryptionStatus.rotationAvailable}
             variant="outline"
           >
             {rotating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
@@ -806,8 +809,9 @@ function SecretsManagementPanel() {
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Key rotation re-encrypts all sensitive data with a new key. This improves security but may take time.
+          Rotation uses versioned keys and a resumable worker job. It is enabled by the operator after backup verification and worker activation. Prior key versions are retained.
         </p>
+        {encryptionStatus.rotation&&<p className="text-sm">Re-encryption: {encryptionStatus.rotation.state}; processed {encryptionStatus.rotation.processed} secrets. {encryptionStatus.rotation.last_error}</p>}
       </div>
 
       <Alert variant="default">
@@ -815,7 +819,7 @@ function SecretsManagementPanel() {
         <AlertTitle>Security Best Practices</AlertTitle>
         <AlertDescription className="space-y-2">
           <ul className="list-disc list-inside space-y-1 text-sm">
-            <li>Rotate encryption keys every 90 days</li>
+            <li>Keep a secure backup of the active encryption keys</li>
             <li>Never share MASTER_ENCRYPTION_KEY</li>
             <li>Store master key in secure vault service</li>
             <li>Use different keys for dev/staging/production</li>

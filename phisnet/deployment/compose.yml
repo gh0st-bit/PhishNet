@@ -1,0 +1,109 @@
+# Staging candidate. Production release gates are in docs/production-readiness.md.
+# Oracle Always Free walkthrough: docs/deployment/oracle-always-free.md
+x-logging: &logging
+  driver: json-file
+  options: {max-size: 10m, max-file: "5"}
+services:
+  database:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: phishnet
+      POSTGRES_USER: phishnet
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U phishnet -d phishnet]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+    logging: *logging
+  app:
+    image: phishnet-app:local
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://phishnet_web:${WEB_DB_PASSWORD:?Set WEB_DB_PASSWORD}@database:5432/phishnet
+      CONTROL_DATABASE_URL: postgresql://phishnet_control:${CONTROL_DB_PASSWORD:?Set CONTROL_DB_PASSWORD}@database:5432/phishnet
+      NODE_ENV: production
+      APP_BASE_URL: https://${DOMAIN:?Set DOMAIN}
+      CORS_ORIGINS: https://${DOMAIN:?Set DOMAIN}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
+      MASTER_ENCRYPTION_KEY: ${MASTER_ENCRYPTION_KEY:?Set MASTER_ENCRYPTION_KEY}
+      SIMULATION_EXTERNAL_DELIVERY_ENABLED: ${SIMULATION_EXTERNAL_DELIVERY_ENABLED:-false}
+      SECRET_ROTATION_ENABLED: ${SECRET_ROTATION_ENABLED:-false}
+      WORKER_DELIVERY_PAUSED: ${WORKER_DELIVERY_PAUSED:-true}
+      METRICS_TOKEN: ${METRICS_TOKEN:?Set METRICS_TOKEN}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-PhishNet}
+      TRANSACTIONAL_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      LOCAL_MAILBOX_ENABLED: "false"
+      HOST: 0.0.0.0
+      PORT: 5000
+      CAMPAIGN_SCHEDULER_ENABLED: "false"
+      REPORT_SCHEDULER_ENABLED: "false"
+      THREAT_FEED_ENABLED: "false"
+      DATA_RETENTION_ENABLED: "false"
+    depends_on:
+      database:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
+    restart: unless-stopped
+    logging: *logging
+    init: true
+  worker:
+    extends: app
+    command: [node, dist/worker.js]
+    depends_on:
+      database:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+  migrate:
+    profiles: [tools]
+    image: phishnet-app:local
+    command: [sh, -c, 'node dist/bootstrap.js && node dist/provision-runtime.js']
+    environment:
+      NODE_ENV: production
+      MIGRATION_DATABASE_URL: postgresql://phishnet:${DB_PASSWORD:?Set DB_PASSWORD}@database:5432/phishnet
+      WEB_DB_PASSWORD: ${WEB_DB_PASSWORD:?Set WEB_DB_PASSWORD}
+      CONTROL_DB_PASSWORD: ${CONTROL_DB_PASSWORD:?Set CONTROL_DB_PASSWORD}
+    depends_on:
+      database:
+        condition: service_healthy
+  # One-time: docker compose --profile tools run --rm -e ADMIN_PASSWORD create-admin  (see the Oracle guide)
+  create-admin:
+    profiles: [tools]
+    image: phishnet-app:local
+    command: [node, dist/create-admin.js]
+    environment:
+      NODE_ENV: production
+      MIGRATION_DATABASE_URL: postgresql://phishnet:${DB_PASSWORD:?Set DB_PASSWORD}@database:5432/phishnet
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME:-}
+      ADMIN_LAST_NAME: ${ADMIN_LAST_NAME:-}
+      ADMIN_ORGANIZATION: ${ADMIN_ORGANIZATION:-}
+    depends_on:
+      database:
+        condition: service_healthy
+  proxy:
+    image: caddy:2.10
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - certificates:/data
+    depends_on: [app]
+    restart: unless-stopped
+    logging: *logging
+volumes:
+  database:
+  uploads:
+  certificates:

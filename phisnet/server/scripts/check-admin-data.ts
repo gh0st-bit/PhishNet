@@ -27,7 +27,7 @@ async function checkAdminData() {
 
   try {
     // Check email templates
-    const templates = await db.select().from(emailTemplates).where(eq(emailTemplates.organizationId, orgId));
+    const templates = await db.select().from(emailTemplates).where(eq(emailTemplates.organization_id, orgId));
     console.log(`📧 Email Templates: ${templates.length}`);
   } catch (e: any) {
     console.log(`❌ Email Templates: ERROR - ${e.message}`);

@@ -1,3 +1,4 @@
+import {RefreshButton} from '@/components/ui/refresh-button';
 import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,7 +48,7 @@ export function NotificationSettings() {
   }, []);
 
   // Fetch notification preferences from API
-  const fetchNotificationPreferences = async () => {
+  const fetchNotificationPreferences = async (manual=false) => {
     try {
       setLoadingPreferences(true);
       const response = await fetch('/api/notifications/preferences', {
@@ -72,6 +73,7 @@ export function NotificationSettings() {
       };
       setPreferences(mapped);
     } catch (error) {
+      if(manual)throw error;
       console.error('Error fetching notification preferences:', error);
       toast({
         title: "Error",
@@ -300,15 +302,7 @@ export function NotificationSettings() {
             )}
           </CardContent>
           <CardFooter>
-            <Button 
-              variant="outline" 
-              onClick={fetchNotificationPreferences}
-              disabled={loadingPreferences}
-              className="ml-auto"
-            >
-              {loadingPreferences && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Refresh Settings
-            </Button>
+            <RefreshButton className="ml-auto" onRefresh={()=>fetchNotificationPreferences(true)}>Refresh Settings</RefreshButton>
           </CardFooter>
         </Card>
       </TabsContent>

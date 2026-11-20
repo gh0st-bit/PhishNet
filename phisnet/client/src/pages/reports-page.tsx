@@ -441,7 +441,7 @@ function ScheduledReportsManager() {
 export default function ReportsPage() {
   const { theme } = useTheme();
   const { toast } = useToast();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
   const isDark = theme === "dark";
 
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -449,14 +449,15 @@ export default function ReportsPage() {
     to: new Date(),
   });
 
+  const [dataset,setDataset]=useState("all");
   const [activeTab, setActiveTab] = useState("overview");
   const [exportFormat, setExportFormat] = useState<string>("pdf");
 
   // Fetch real report data
   const { data: reportData, isLoading } = useQuery({
-    queryKey: ["/api/reports/data", dateRange],
+    queryKey: ["/api/reports/data", dateRange,dataset],
     queryFn: async () => {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({dataset});
       if (dateRange?.from) params.append("startDate", dateRange.from.toISOString());
       if (dateRange?.to) params.append("endDate", dateRange.to.toISOString());
 
@@ -470,6 +471,7 @@ export default function ReportsPage() {
     mutationFn: async ({ exportType, format }: { exportType: string; format: string }) => {
       const response = await apiRequest("POST", "/api/reports/export", {
         type: exportType,
+        dataset,
         format: format,
         theme: theme, // Pass current theme to server
         dateRange: dateRange
@@ -529,6 +531,7 @@ export default function ReportsPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Reports & Analytics</h1>
         <div className="flex items-center gap-4">
+          <label>Campaign dataset<select aria-label="Campaign dataset" className="block border rounded bg-background p-2" value={dataset} onChange={e=>setDataset(e.target.value)}><option value="all">All records</option><option value="customer">Customer records</option><option value="demo">Demonstration records</option></select></label>
           <DatePickerWithRange
             date={dateRange}
             onDateChange={setDateRange}
@@ -640,7 +643,7 @@ export default function ReportsPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">
-                        Success Rate
+                        Click rate
                       </p>
                       <p className="text-2xl font-bold">
                         {reportData?.summary?.successRate || 0}%
@@ -672,6 +675,7 @@ export default function ReportsPage() {
               </Card>
             </div>
 
+            <Card className="p-4"><h3 className="font-semibold">Positive reporting behavior</h3><p>{reportData?.summary?.reportedCount || 0} messages reported suspicious · {reportData?.summary?.reportRate || 0}% of accepted deliveries in this report.</p><p className="text-xs text-muted-foreground">Reporting a suspicious message is a positive outcome. Use the organization overview CSV for the delivered/clicked/reported counts.</p></Card>
             {/* Charts */}
             <div className="grid gap-6 lg:grid-cols-2">
               <Card>
@@ -809,7 +813,7 @@ export default function ReportsPage() {
                     <TableHead>Sent</TableHead>
                     <TableHead>Opened</TableHead>
                     <TableHead>Clicked</TableHead>
-                    <TableHead>Success Rate</TableHead>
+                    <TableHead>Click rate</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -836,7 +840,7 @@ export default function ReportsPage() {
                         <Button 
                           variant="ghost" 
                           size="sm"
-                          onClick={() => setLocation('/campaigns')}
+                          onClick={() => setLocation((location.startsWith('/org-admin') ? '/org-admin/campaigns' : '/campaigns') + '?campaign=' + campaign.id)}
                         >
                           View Details
                         </Button>
@@ -878,7 +882,7 @@ export default function ReportsPage() {
                     <TableHead>Campaigns</TableHead>
                     <TableHead>Clicked</TableHead>
                     <TableHead>Submitted</TableHead>
-                    <TableHead>Success Rate</TableHead>
+                    <TableHead>Click rate</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -941,7 +945,7 @@ export default function ReportsPage() {
                       type="monotone"
                       dataKey="successRate"
                       stroke={colors.line}
-                      name="Success Rate %"
+                      name="Click rate %"
                     />
                     <Line
                       type="monotone"

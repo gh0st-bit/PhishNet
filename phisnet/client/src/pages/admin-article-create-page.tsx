@@ -1,14 +1,13 @@
 import AppLayout from "@/components/layout/app-layout";
-import { useState } from "react";
-import { useLocation } from "wouter";
+import { useState, useEffect } from "react";
+import { useLocation, useRoute } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
-import SunEditor from "suneditor-react";
-import "suneditor/dist/css/suneditor.min.css";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import SunEditor from "@/components/ui/html-editor";
 import { Loader2 } from "lucide-react";
 
 interface CreateArticlePayload {
@@ -23,6 +22,9 @@ interface CreateArticlePayload {
 }
 
 export default function AdminArticleCreatePage() {
+  const [, params] = useRoute('/admin/content/articles/edit/:id');
+  const articleId = params?.id;
+  const {data:existingArticle}=useQuery({queryKey:['/api/admin/articles',articleId,'edit'],enabled:!!articleId,queryFn:async()=>{const res=await fetch(`/api/admin/articles/${articleId}`);if(!res.ok)throw new Error('Article unavailable');return (await res.json()).article;}});
   const [form, setForm] = useState({
     title: "",
     category: "",
@@ -37,6 +39,7 @@ export default function AdminArticleCreatePage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  useEffect(()=>{if(existingArticle)setForm({title:existingArticle.title,category:existingArticle.category,excerpt:existingArticle.excerpt||'',tags:(existingArticle.tags||[]).join(', '),thumbnailUrl:existingArticle.thumbnailUrl||'',readTimeMinutes:existingArticle.readTimeMinutes?String(existingArticle.readTimeMinutes):'',content:existingArticle.content});},[existingArticle]);
 
   async function handleSubmit(e: React.FormEvent, published: boolean = true) {
     e.preventDefault();
@@ -55,8 +58,8 @@ export default function AdminArticleCreatePage() {
         published,
       };
 
-      const res = await fetch("/api/admin/articles", {
-        method: "POST",
+      const res = await fetch(articleId ? `/api/admin/articles/${articleId}` : '/api/admin/articles', {
+        method: articleId ? 'PUT' : 'POST',
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -64,6 +67,8 @@ export default function AdminArticleCreatePage() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.message || "Failed to create article");
       }
+      if(articleId){const status=await fetch(`/api/admin/articles/${articleId}/publish`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({published})});if(!status.ok)throw new Error('Could not update publication status');}
+      queryClient.invalidateQueries({queryKey:['/api/admin/articles']});
       
       // Invalidate notification queries to show new notification immediately
       queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
@@ -94,7 +99,7 @@ export default function AdminArticleCreatePage() {
     <AppLayout>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Create Article</h1>
+          <h1 className="text-2xl font-bold">{articleId ? 'Edit Article' : 'Create Article'}</h1>
           <p className="text-sm text-muted-foreground">Compose rich training or awareness content.</p>
         </div>
       </div>
@@ -133,7 +138,7 @@ export default function AdminArticleCreatePage() {
               onChange={(content) => setForm(prev => ({ ...prev, content }))}
               setContents={form.content}
               setOptions={{
-                height: 400,
+                height: '400px',
                 resizeEnable: false,
                 showPathLabel: false,
                 font: ["Arial", "Verdana", "Times New Roman", "Courier"],

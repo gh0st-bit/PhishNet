@@ -687,9 +687,6 @@ function Create-FriendPackage {
         "start.ps1",
         "start.bat",
         "test-deployment.ps1",
-        "QUICK-FRIEND-SETUP.md",
-        "FRIEND-DEPLOYMENT-GUIDE.md", 
-        "WINDOWS-SETUP.md",
         "package.json",
         ".env.example"
     )
@@ -783,8 +780,7 @@ taskkill /PID <PID_NUMBER> /F
 Right-click PowerShell → "Run as Administrator"
 
 ## 📞 Need Help?
-- Check ``WINDOWS-SETUP.md`` for detailed Windows guide
-- Check ``QUICK-FRIEND-SETUP.md`` for quick reference
+- Project documentation: https://github.com/gh0st-bit/PhishNet/blob/main/README.md
 - Run ``.\test-deployment.ps1`` to verify everything works
 
 ## ✅ Success Indicators

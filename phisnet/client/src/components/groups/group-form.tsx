@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -37,6 +38,10 @@ export default function GroupForm({ group, onClose }: GroupFormProps) {
     },
   });
 
+  const [dynamic,setDynamic]=useState(Boolean(group?.filterRules));
+  const [department,setDepartment]=useState(group?.filterRules?.department || '');
+  const [position,setPosition]=useState(group?.filterRules?.position || '');
+  const [emailDomain,setEmailDomain]=useState(group?.filterRules?.emailDomain || '');
   const isEditing = !!group;
 
   const mutation = useMutation({
@@ -45,7 +50,7 @@ export default function GroupForm({ group, onClose }: GroupFormProps) {
         ? `/api/groups/${group.id}` 
         : "/api/groups";
       const method = isEditing ? "PUT" : "POST";
-      const res = await apiRequest(method, url, data);
+      const res = await apiRequest(method, url, { ...data, filterRules: dynamic ? { ...(department?{department}:{}),...(position?{position}:{}),...(emailDomain?{emailDomain}:{}) } : null });
       return await res.json();
     },
     onSuccess: () => {
@@ -104,6 +109,14 @@ export default function GroupForm({ group, onClose }: GroupFormProps) {
           )}
         />
 
+        <fieldset className="space-y-3 rounded border p-4">
+          <legend>Audience membership</legend>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={dynamic} onChange={event=>setDynamic(event.target.checked)} />Use a dynamic audience</label>
+          {dynamic && <><p className="text-sm text-muted-foreground">Match recipients from your organization directory. All supplied rules must match.</p>
+          <label className="block">Department<Input value={department} onChange={event=>setDepartment(event.target.value)} /></label>
+          <label className="block">Position<Input value={position} onChange={event=>setPosition(event.target.value)} /></label>
+          <label className="block">Email domain<Input placeholder="example.com" value={emailDomain} onChange={event=>setEmailDomain(event.target.value)} /></label></>}
+        </fieldset>
         <div className="flex justify-end space-x-3">
           <Button variant="outline" type="button" onClick={onClose}>
             Cancel
@@ -202,7 +215,7 @@ export default function GroupForm({ group, onClose }: GroupFormProps) {
         //? `/api/groups/${group.id}` 
         //: "/api/groups";
       //const method = isEditing ? "PUT" : "POST";
-      //const res = await apiRequest(method, url, data);
+      //const res = await apiRequest(method, url, { ...data, filterRules: dynamic ? { ...(department?{department}:{}),...(position?{position}:{}),...(emailDomain?{emailDomain}:{}) } : null });
       //return await res.json();
     //},
     //onSuccess: () => {

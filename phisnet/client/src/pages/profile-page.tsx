@@ -1,3 +1,4 @@
+import AppLayout from "@/components/layout/app-layout";
 import React, { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -148,7 +149,7 @@ export default function ProfilePage() {
   // Generate user initials for avatar fallback
   const userInitials = `${user?.firstName?.[0] || ""}${user?.lastName?.[0] || ""}`;
 
-  return (
+  return (<AppLayout>{(
     <div className="container max-w-4xl py-6 mx-auto">
       {/* Header with close button */}
       <div className="flex items-center justify-between mb-6">
@@ -297,5 +298,5 @@ export default function ProfilePage() {
         </Card>
       </div>
     </div>
-  );
+  )}</AppLayout>);
 }

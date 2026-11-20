@@ -1,4 +1,4 @@
-import { MailService } from '@sendgrid/mail';
+
 import nodemailer from 'nodemailer';
 import { storage } from './storage';
 import jwt from 'jsonwebtoken';
@@ -6,17 +6,17 @@ import { User } from '@shared/schema';
 
 // Configure SendGrid if available
 const SENDGRID_AVAILABLE = !!process.env.SENDGRID_API_KEY;
-const mailService = new MailService();
-if (SENDGRID_AVAILABLE) {
-  mailService.setApiKey(process.env.SENDGRID_API_KEY as string);
-}
+const mailService={async send(msg:{to:string;from:{email:string;name:string};subject:string;text:string;html:string}){
+  const response=await fetch('https://api.sendgrid.com/v3/mail/send',{method:'POST',signal:AbortSignal.timeout(15000),headers:{Authorization:`Bearer ${process.env.SENDGRID_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({personalizations:[{to:[{email:msg.to}]}],from:msg.from,subject:msg.subject,content:[{type:'text/plain',value:msg.text},{type:'text/html',value:msg.html}],tracking_settings:{click_tracking:{enable:false},open_tracking:{enable:false}}})});
+  if(!response.ok)throw new Error(`Transactional provider returned ${response.status}`);
+}};
 
 // Email configuration
-const EMAIL_FROM = 'noreply@phishnet.io';
+const EMAIL_FROM = process.env.TRANSACTIONAL_FROM_EMAIL||process.env.SMTP_FROM_EMAIL||'noreply@phishnet.io';
 const EMAIL_NAME = 'PhishNet Security';
 
 // JWT secret for password reset tokens
-const JWT_SECRET = process.env.JWT_SECRET || 'phishnet-password-reset-secret';
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || (() => { throw new Error('JWT_SECRET or SESSION_SECRET required'); })();
 // Token expiration time (1 hour)
 const TOKEN_EXPIRY = '1h';
 
@@ -163,6 +163,7 @@ export function verifyPasswordResetToken(token: string): { userId: number; email
  * Sends a password reset email
  */
 export async function sendPasswordResetEmail(user: User, resetUrl: string) {
+  if (process.env.MAIL_TRANSPORT === 'sink') return true;
   try {
     const subject = 'Reset Your PhishNet Password';
     const recipientName = getRecipientName(user);
@@ -222,33 +223,22 @@ export async function sendPasswordResetEmail(user: User, resetUrl: string) {
       return true;
     }
 
-    // Fallback to SMTP using first available SMTP profile in user's org or env
+    // Transactional SMTP is configured independently of simulation profiles.
     try {
       let fromEmail = process.env.SMTP_FROM_EMAIL || EMAIL_FROM;
       let fromName = process.env.SMTP_FROM_NAME || EMAIL_NAME;
       let host = process.env.SMTP_HOST;
       let port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined;
-      let username = process.env.SMTP_USERNAME;
-      let password = process.env.SMTP_PASSWORD;
+      let username = (process.env.TRANSACTIONAL_SMTP_USERNAME || process.env.SMTP_USERNAME || process.env.SMTP_USER);
+      let password = (process.env.TRANSACTIONAL_SMTP_PASSWORD || process.env.SMTP_PASSWORD || process.env.SMTP_PASS);
 
-      if (!host || !port || !username || !password) {
-        // Try fetching an SMTP profile from the same organization
-        if ((user as any).organizationId) {
-          const profiles = await storage.listSmtpProfiles((user as any).organizationId);
-          if (profiles && profiles.length > 0) {
-            const p = profiles[0];
-            host = p.host; port = p.port; username = p.username; password = p.password;
-            fromEmail = p.fromEmail || fromEmail; fromName = p.fromName || fromName;
-          }
-        }
-      }
 
       if (!host || !port || !username || !password) {
         console.error('SMTP not configured and SendGrid unavailable');
         return false;
       }
 
-      const transporter = nodemailer.createTransport({
+      const transporter = nodemailer.createTransport({ connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 30000, requireTLS: process.env.NODE_ENV === 'production',
         host,
         port,
         secure: port === 465,
@@ -278,6 +268,7 @@ export async function sendPasswordResetEmail(user: User, resetUrl: string) {
  * Sends an email verification email
  */
 export async function sendEmailVerificationEmail(user: User, verificationUrl: string) {
+  if (process.env.MAIL_TRANSPORT === 'sink') return true;
   try {
     const subject = 'Verify Your PhishNet Email Address';
     const recipientName = getRecipientName(user);
@@ -341,27 +332,16 @@ export async function sendEmailVerificationEmail(user: User, verificationUrl: st
       let fromName = process.env.SMTP_FROM_NAME || EMAIL_NAME;
       let host = process.env.SMTP_HOST;
       let port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined;
-      let username = process.env.SMTP_USERNAME;
-      let password = process.env.SMTP_PASSWORD;
+      let username = (process.env.TRANSACTIONAL_SMTP_USERNAME || process.env.SMTP_USERNAME || process.env.SMTP_USER);
+      let password = (process.env.TRANSACTIONAL_SMTP_PASSWORD || process.env.SMTP_PASSWORD || process.env.SMTP_PASS);
 
-      if (!host || !port || !username || !password) {
-        // Try fetching an SMTP profile from the same organization
-        if ((user as any).organizationId) {
-          const profiles = await storage.listSmtpProfiles((user as any).organizationId);
-          if (profiles && profiles.length > 0) {
-            const p = profiles[0];
-            host = p.host; port = p.port; username = p.username; password = p.password;
-            fromEmail = p.fromEmail || fromEmail; fromName = p.fromName || fromName;
-          }
-        }
-      }
 
       if (!host || !port || !username || !password) {
         console.warn('SMTP not configured for email verification - user must verify manually');
         return false;
       }
 
-      const transporter = nodemailer.createTransport({
+      const transporter = nodemailer.createTransport({ connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 30000, requireTLS: process.env.NODE_ENV === 'production',
         host,
         port,
         secure: port === 465,
@@ -391,6 +371,7 @@ export async function sendEmailVerificationEmail(user: User, verificationUrl: st
  * Sends an enrollment/invitation email with accept link
  */
 export async function sendEnrollmentInviteEmail(params: { toEmail: string; organizationName?: string; inviteUrl: string; }) {
+  if (process.env.MAIL_TRANSPORT === 'sink') return true;
   const { toEmail, organizationName, inviteUrl } = params;
   try {
     const subject = `You're invited to join ${organizationName || 'PhishNet'}`;
@@ -444,15 +425,15 @@ export async function sendEnrollmentInviteEmail(params: { toEmail: string; organ
       let fromName = process.env.SMTP_FROM_NAME || EMAIL_NAME;
       const host = process.env.SMTP_HOST;
       const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined;
-      const username = process.env.SMTP_USERNAME;
-      const password = process.env.SMTP_PASSWORD;
+      const username = (process.env.TRANSACTIONAL_SMTP_USERNAME || process.env.SMTP_USERNAME || process.env.SMTP_USER);
+      const password = (process.env.TRANSACTIONAL_SMTP_PASSWORD || process.env.SMTP_PASSWORD || process.env.SMTP_PASS);
 
       if (!host || !port || !username || !password) {
         console.warn('SMTP not configured for enrollment invites');
         return false;
       }
 
-      const transporter = nodemailer.createTransport({
+      const transporter = nodemailer.createTransport({ connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 30000, requireTLS: process.env.NODE_ENV === 'production',
         host,
         port,
         secure: port === 465,
@@ -482,6 +463,7 @@ export async function sendEnrollmentInviteEmail(params: { toEmail: string; organ
  * Sends an email to admins when an invitation is accepted (subject to preferences).
  */
 export async function sendInviteAcceptedEmail(params: { toEmail: string; organizationName?: string; userFullName: string; invitedEmail: string; }) {
+  if (process.env.MAIL_TRANSPORT === 'sink') return true;
   const { toEmail, organizationName, userFullName, invitedEmail } = params;
   try {
     const subject = `Invitation accepted in ${organizationName || 'PhishNet'}`;
@@ -518,13 +500,13 @@ You can review users in the admin enrollment section.
       let fromName = process.env.SMTP_FROM_NAME || EMAIL_NAME;
       const host = process.env.SMTP_HOST;
       const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT, 10) : undefined;
-      const username = process.env.SMTP_USERNAME;
-      const password = process.env.SMTP_PASSWORD;
+      const username = (process.env.TRANSACTIONAL_SMTP_USERNAME || process.env.SMTP_USERNAME || process.env.SMTP_USER);
+      const password = (process.env.TRANSACTIONAL_SMTP_PASSWORD || process.env.SMTP_PASSWORD || process.env.SMTP_PASS);
       if (!host || !port || !username || !password) {
         console.warn('SMTP not configured for invite accepted emails');
         return false;
       }
-      const transporter = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user: username, pass: password } });
+      const transporter = nodemailer.createTransport({ connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 30000, requireTLS: process.env.NODE_ENV === 'production', host, port, secure: port === 465, auth: { user: username, pass: password } });
       try { await transporter.verify(); } catch {}
       const info = await transporter.sendMail({ from: `${fromName} <${fromEmail}>`, to: toEmail, subject, text, html });
       console.log('Invite accepted email sent via SMTP to:', toEmail, 'messageId:', (info as any).messageId);

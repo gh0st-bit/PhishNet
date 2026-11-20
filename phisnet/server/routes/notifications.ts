@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import { isAuthenticated, isAdmin } from '../auth';
 import { NotificationService } from '../services/notification-service';
+import { notificationDestination } from '@shared/access-control';
 
 function assertUser(user: Express.User | undefined): asserts user is Express.User {
   if (!user) {
@@ -34,7 +35,7 @@ export function registerNotificationRoutes(app: Express) {
         priority: n.priority,
         isRead: n.is_read,
         readAt: n.read_at,
-        actionUrl: n.action_url,
+        actionUrl: notificationDestination({type:n.type,actionUrl:n.action_url,metadata:n.metadata},req.user!),
         createdAt: n.created_at,
         metadata: n.metadata,
       }));

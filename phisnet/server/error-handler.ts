@@ -95,8 +95,8 @@ class ErrorHandler {
       stack: error.stack,
       request: {
         method: req.method,
-        url: req.url,
-        body: req.body,
+        url: req.path,
+        body: undefined,
         user: req.user ? { id: req.user.id, email: req.user.email } : undefined
       },
       solution: this.getSuggestedSolution(error)
@@ -115,19 +115,21 @@ class ErrorHandler {
     console.error('🚨 Runtime Error Detected:');
     console.error('Error:', error.message);
     console.error('💡 Suggested Solution:', errorLog.solution);
-    console.error('Request:', `${req.method} ${req.url}`);
+    console.error('Request:', `${req.method} ${req.path}`);
     console.error('---');
   }
 
   // Express error middleware
   middleware = (error: Error, req: Request, res: Response, next: NextFunction) => {
     this.logError(error, req);
+    const requestStatus=Number((error as any).status||(error as any).statusCode);
+    if(Number.isInteger(requestStatus)&&requestStatus>=400&&requestStatus<500)return res.status(requestStatus).json({message:error.message});
 
     // Handle different types of errors
     if (error instanceof ZodError) {
       return res.status(400).json({
         message: 'Validation error',
-        errors: error.errors,
+        errors: error.issues,
         solution: 'Check request body schema and ensure all required fields are provided'
       });
     }
@@ -157,10 +159,6 @@ class ErrorHandler {
     res.status(500).json({
       message: 'Internal server error',
       solution: this.getSuggestedSolution(error),
-      ...(process.env.NODE_ENV === 'development' && { 
-        error: error.message,
-        stack: error.stack 
-      })
     });
   };
 

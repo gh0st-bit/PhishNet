@@ -20,6 +20,9 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useAuth } from '@/hooks/use-auth';
+import { notificationDestination } from '@shared/access-control';
+import { useLocation } from 'wouter';
 
 interface Notification {
   id: number;
@@ -34,6 +37,8 @@ interface Notification {
 }
 
 export default function NotificationBell() {
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const queryClient = useQueryClient();
 
@@ -102,9 +107,8 @@ export default function NotificationBell() {
       markAsReadMutation.mutate(notification.id);
     }
     
-    if (notification.actionUrl) {
-      globalThis.location.href = notification.actionUrl;
-    }
+    setIsOpen(false);
+    navigate(notificationDestination(notification, user || {}));
   };
 
   const getPriorityColor = (priority: string) => {
@@ -156,7 +160,7 @@ export default function NotificationBell() {
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="relative">
+        <Button variant="ghost" size="sm" className="relative" aria-label="Notifications">
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
             <Badge 

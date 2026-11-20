@@ -1,3 +1,4 @@
+import CampaignDeliveryPanel from './campaign-delivery-panel';
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,8 +60,9 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
     submitted: null,
   });
 
-  const { data: campaign, isLoading } = useCampaignDetails(campaignId);
+  const { data: campaign, isLoading, error } = useCampaignDetails(campaignId);
   const { data: results = [] } = useCampaignResults(campaignId);
+  if (error) return <p role="alert" className="p-6">This campaign is unavailable or has been deleted.</p>;
   if (isLoading || !campaign) {
     return <div className="flex justify-center p-12">Loading campaign details...</div>;
   }
@@ -72,11 +74,12 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
   const openedCount = typedResults.filter((r: CampaignResult) => r.opened).length;
   const clickedCount = typedResults.filter((r: CampaignResult) => r.clicked).length;
   const submittedCount = typedResults.filter((r: CampaignResult) => r.submitted).length;
+  const reportedCount = typedResults.filter(r=>r.sent&&r.reported).length;
   // Calculate percentages safely
   const sentPercentage = totalTargets > 0 ? Math.round((sentCount / totalTargets) * 100) : 0;
   const openedPercentage = sentCount > 0 ? Math.round((openedCount / sentCount) * 100) : 0;
-  const clickedPercentage = openedCount > 0 ? Math.round((clickedCount / openedCount) * 100) : 0;
-  const submittedPercentage = clickedCount > 0 ? Math.round((submittedCount / clickedCount) * 100) : 0;
+  const clickedPercentage = sentCount > 0 ? Math.round((clickedCount / sentCount) * 100) : 0;
+  const submittedPercentage = sentCount > 0 ? Math.round((submittedCount / sentCount) * 100) : 0;
   // Calculate campaign duration
   let campaignDuration = 'Duration not specified';
   if (campaign.scheduledAt && campaign.endDate) {
@@ -129,13 +132,14 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
   // Export to CSV
   const handleExport = () => {
     const csv = [
-      ["Target", "Sent", "Opened", "Clicked", "Data Submitted", "Timestamp"],
+      ["Target", "Sent", "Opened", "Clicked", "Data Submitted", "Reported Suspicious", "Timestamp"],
       ...filteredResults.map((result) => [
         `Target #${result.targetId}`,
         result.sent ? "Yes" : "No",
         result.opened ? "Yes" : "No",
         result.clicked ? "Yes" : "No",
         result.submitted ? "Yes" : "No",
+        result.reported ? 'Yes' : 'No',
         result.timestamp ? format(new Date(result.timestamp), "MMM d, yyyy h:mm a") : "-",
       ]),
     ]
@@ -155,6 +159,7 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
 
   return (
     <div className="space-y-6">
+      <Card className="p-4"><p className="text-sm text-muted-foreground">Reported suspicious</p><p className="text-2xl font-semibold" data-testid="campaign-reported">{reportedCount}</p><p className="text-xs text-muted-foreground">{sentCount?Math.round(reportedCount/sentCount*100):0}% of accepted deliveries. Reporting is a positive response.</p></Card>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">{campaign.name}</h2>
@@ -230,6 +235,7 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
         </Card>
       </div>
       
+      <CampaignDeliveryPanel id={campaignId} />
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="tabs-list">
           <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -418,6 +424,7 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
                     <TableHead>Opened</TableHead>
                     <TableHead>Clicked</TableHead>
                     <TableHead>Data Submitted</TableHead>
+                    <TableHead>Reported</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -457,11 +464,12 @@ export default function CampaignDetails({ campaignId, onEdit }: CampaignDetailsP
                             </span> : 
                             "-"}
                         </TableCell>
+                        <TableCell>{result.reported?'Reported':'—'}</TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center py-6 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
                         {hasActiveFilters ? "No results match the selected filters." : "No results data available yet."}
                       </TableCell>
                     </TableRow>

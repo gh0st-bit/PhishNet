@@ -1,3 +1,4 @@
+import { reliableRoutes } from '../http';
 import { Router } from 'express';
 import { isAuthenticated, hasOrganization } from '../auth';
 import { reconnaissanceOrchestrator } from '../services/reconnaissance/reconnaissance-orchestrator';
@@ -17,7 +18,7 @@ import {
 } from '@shared/schema';
 import { eq, desc } from 'drizzle-orm';
 
-const router = Router();
+const router = reliableRoutes(Router());
 
 // All reconnaissance routes require authentication
 router.use(isAuthenticated);

@@ -1,10 +1,13 @@
+import { pool } from '../db';
+import { getPrivateObject } from '../services/object-store';
+import { nextReportRun } from '../services/report-cadence';
 import type { Express } from 'express';
 import { isAuthenticated, hasOrganization } from '../auth';
 import { storage } from '../storage';
 import { db } from '../db';
 import { campaigns, users, campaignResults, targets, reportSchedules } from '@shared/schema';
 import { insertReportScheduleSchema } from '@shared/schema';
-import { eq, and, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
@@ -21,7 +24,8 @@ export function registerReportRoutes(app: Express) {
   app.post("/api/reports/export", isAuthenticated, hasOrganization, async (req, res) => {
     try {
       assertUser(req.user);
-      const { type, dateRange, format = 'pdf', theme = 'dark' } = req.body;
+      const {type,dateRange,format:requestedFormat,theme,dataset}=z.object({dataset:z.enum(['all','customer','demo']).default('all'),type:z.enum(['campaigns','users','results','comprehensive']),dateRange:z.object({start:z.iso.datetime(),end:z.iso.datetime()}).refine(v=>v.start<=v.end).optional(),format:z.enum(['pdf','xlsx','json','csv']).default('pdf'),theme:z.enum(['dark','light']).default('light')}).parse(req.body);
+      const format=requestedFormat;
 
       // Validate format
       const validFormats: ExportFormat[] = ['pdf', 'xlsx', 'json', 'csv'];
@@ -30,6 +34,7 @@ export function registerReportRoutes(app: Express) {
       let reportData: any = {
         type,
         organizationName: req.user.organizationName,
+        dataset,
         theme: theme, // Pass theme to exporter
         dateRange: dateRange ? {
           start: new Date(dateRange.start),
@@ -37,13 +42,16 @@ export function registerReportRoutes(app: Express) {
         } : null
       };
       
+      const {rows:[workspace]}=await pool.query("SELECT preferences->>'demonstration'='true' AS demo FROM organizations WHERE id=$1",[req.user.organizationId]);
+      reportData.provenance=workspace?.demo||dataset==='demo'?'Sample data':dataset==='all'?'All records; may include demonstration campaigns':'Customer records';
+      reportData.organizationName=`${req.user.organizationName} - ${reportData.provenance}`;
       // Build date filter
-      const dateFilter = dateRange ? 
+      const dateFilter = and(sql`(${dataset}='all' OR ${campaigns.dataset}=${dataset})`,dateRange ? 
         and(
           eq(campaigns.organizationId, req.user.organizationId),
-          gte(campaigns.createdAt, new Date(dateRange.start)),
-          lte(campaigns.createdAt, new Date(dateRange.end))
-        ) : eq(campaigns.organizationId, req.user.organizationId);
+          sql`${campaigns.createdAt} AT TIME ZONE current_setting('TimeZone') >= ${dateRange.start}::timestamptz`,
+          sql`${campaigns.createdAt} AT TIME ZONE current_setting('TimeZone') <= ${dateRange.end}::timestamptz`
+        ) : eq(campaigns.organizationId, req.user.organizationId));
 
       // Fetch report data based on type
       if (type === 'campaigns') {
@@ -71,7 +79,7 @@ export function registerReportRoutes(app: Express) {
         
         // Calculate summary metrics
         const allResults = compResults.map(r => r.campaign_results);
-        const totalEmailsSent = allResults.length;
+        const totalEmailsSent = allResults.filter(r=>r.sent).length;
         const clickedCount = allResults.filter(r => r.clicked).length;
         const atRiskUsersSet = new Set<number>();
         for (const r of allResults) {
@@ -87,7 +95,7 @@ export function registerReportRoutes(app: Express) {
       }
       
       // Use enhanced exporter with format support
-      const filename = await exportReport(reportData, exportFormat);
+      const filename = await exportReport(reportData, exportFormat,{organizationId:req.user.organizationId,userId:req.user.id});
       
       res.json({ 
         success: true,
@@ -97,42 +105,18 @@ export function registerReportRoutes(app: Express) {
       });
     } catch (error) {
       console.error("Error exporting report:", error);
+      if(error instanceof z.ZodError)return res.status(400).json({message:"Invalid report request",issues:error.issues});
       res.status(500).json({ message: "Error exporting report", error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
   // Download report file
-  app.get("/api/reports/download/:filename", isAuthenticated, (req, res) => {
-    try {
-      const filename = req.params.filename;
-      const filepath = path.join(process.cwd(), 'uploads', filename);
-
-      if (!fs.existsSync(filepath)) {
-        return res.status(404).json({ message: "File not found" });
-      }
-
-      const onDownload = (err?: Error) => {
-        if (err) {
-          console.error("Error downloading file:", err);
-          res.status(500).json({ message: "Error downloading file" });
-          return;
-        }
-        // Clean up file after download
-        const cleanup = async () => {
-          try {
-            await fs.promises.unlink(filepath);
-          } catch (unlinkErr) {
-            console.error("Error deleting file:", unlinkErr);
-          }
-        };
-        setTimeout(() => { void cleanup(); }, 5000);
-      };
-
-      res.download(filepath, filename, onDownload);
-    } catch (error) {
-      console.error("Error serving download:", error);
-      res.status(500).json({ message: "Error serving download" });
-    }
+  app.get('/api/reports/download/:filename',isAuthenticated,hasOrganization,async(req,res)=>{
+    const filename=req.params.filename;
+    if(!/^[0-9a-f-]{36}\.(pdf|xlsx|csv|json)$/.test(filename))return res.status(404).json({message:'Report not found'});
+    const {rows:[file]}=await pool.query('SELECT * FROM report_exports WHERE filename=$1 AND organization_id=$2 AND owner_user_id=$3 AND expires_at>now()',[filename,req.user!.organizationId,req.user!.id]);
+    if(!file)return res.status(404).json({message:'Report not found'});
+    res.set({'Content-Type':file.mime_type,'Content-Disposition':`attachment; filename="${filename}"`,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}).send(await getPrivateObject(file.object_key));
   });
 
   // Get report data for dashboard
@@ -140,6 +124,7 @@ export function registerReportRoutes(app: Express) {
     try {
       assertUser(req.user);
       const orgId = req.user.organizationId;
+      const dataset=z.enum(['all','customer','demo']).parse(req.query.dataset||'all');
 
       // Parse optional date range (default to 1 year)
       const endParam = typeof req.query.endDate === 'string' ? new Date(req.query.endDate) : undefined;
@@ -149,7 +134,7 @@ export function registerReportRoutes(app: Express) {
 
       // Fetch campaigns in range
       const orgCampaigns = await db.select().from(campaigns)
-        .where(and(eq(campaigns.organizationId, orgId), gte(campaigns.createdAt, startDate), lte(campaigns.createdAt, endDate)));
+        .where(and(eq(campaigns.organizationId, orgId), sql`(${dataset}='all' OR ${campaigns.dataset}=${dataset})`, sql`${campaigns.createdAt} AT TIME ZONE current_setting('TimeZone') >= ${startDate.toISOString()}::timestamptz`, sql`${campaigns.createdAt} AT TIME ZONE current_setting('TimeZone') <= ${endDate.toISOString()}::timestamptz`));
 
       const campaignIds = orgCampaigns.map(c => c.id);
 
@@ -161,7 +146,8 @@ export function registerReportRoutes(app: Express) {
 
       // Summary metrics
       const totalCampaigns = orgCampaigns.length;
-      const totalEmailsSent = allResults.length;
+      const totalEmailsSent = allResults.filter(r=>r.sent).length;
+      const reportedCount=allResults.filter(r=>r.sent&&r.reported).length;
       const clickedCount = allResults.filter(r => r.clicked).length;
       const atRiskUsersSet = new Set<number>();
       for (const r of allResults) {
@@ -178,7 +164,7 @@ export function registerReportRoutes(app: Express) {
         if (!monthBuckets.has(key)) monthBuckets.set(key, { sent: 0, opened: 0, clicked: 0, submitted: 0 });
         const bucket = monthBuckets.get(key)!;
         const results = allResults.filter(r => r.campaignId === c.id);
-        bucket.sent += results.length;
+        bucket.sent += results.filter(r=>r.sent).length;
         bucket.opened += results.filter(r => r.opened).length;
         bucket.clicked += results.filter(r => r.clicked).length;
         bucket.submitted += results.filter(r => r.submitted).length;
@@ -206,7 +192,7 @@ export function registerReportRoutes(app: Express) {
       // Campaign table data
       const campaignsTable = orgCampaigns.map(c => {
         const results = allResults.filter(r => r.campaignId === c.id);
-        const sent = results.length;
+        const sent = results.filter(r=>r.sent).length;
         const opened = results.filter(r => r.opened).length;
         const clicked = results.filter(r => r.clicked).length;
         const success = sent > 0 ? Math.round((clicked / sent) * 100) : 0;
@@ -225,7 +211,7 @@ export function registerReportRoutes(app: Express) {
       const targetAgg = new Map<number, { sent: number; clicked: number; submitted: number }>();
       for (const r of allResults) {
         const rec = targetAgg.get(r.targetId) || { sent: 0, clicked: 0, submitted: 0 };
-        rec.sent += 1;
+        rec.sent += r.sent ? 1 : 0;
         if (r.clicked) rec.clicked += 1;
         if (r.submitted) rec.submitted += 1;
         targetAgg.set(r.targetId, rec);
@@ -265,9 +251,12 @@ export function registerReportRoutes(app: Express) {
       });
 
       const response = {
+        dataset,
         summary: {
           totalCampaigns,
           totalEmailsSent,
+          reportedCount,
+          reportRate:totalEmailsSent?Math.round(reportedCount/totalEmailsSent*1000)/10:0,
           successRate,
           atRiskUsers,
         },
@@ -313,25 +302,7 @@ export function registerReportRoutes(app: Express) {
 
       const scheduleData = insertReportScheduleSchema.parse(req.body);
 
-      // Calculate next run time based on cadence
-      const now = new Date();
-      const [hours, minutes] = scheduleData.timeOfDay.split(':').map(Number);
-      const nextRun = new Date();
-      nextRun.setHours(hours, minutes, 0, 0);
-      
-      if (nextRun <= now) {
-        switch (scheduleData.cadence) {
-          case 'daily':
-            nextRun.setDate(nextRun.getDate() + 1);
-            break;
-          case 'weekly':
-            nextRun.setDate(nextRun.getDate() + 7);
-            break;
-          case 'monthly':
-            nextRun.setMonth(nextRun.getMonth() + 1);
-            break;
-        }
-      }
+      const nextRun=nextReportRun(scheduleData.cadence,scheduleData.timeOfDay,scheduleData.timezone);
 
       const [newSchedule] = await db.insert(reportSchedules)
         .values({
@@ -345,7 +316,7 @@ export function registerReportRoutes(app: Express) {
     } catch (error) {
       console.error("Error creating report schedule:", error);
       if (error instanceof z.ZodError) {
-        res.status(400).json({ message: "Invalid schedule data", errors: error.errors });
+        res.status(400).json({ message: "Invalid schedule data", errors: error.issues });
       } else {
         res.status(500).json({ message: "Error creating report schedule" });
       }
@@ -374,30 +345,8 @@ export function registerReportRoutes(app: Express) {
 
       const scheduleData = insertReportScheduleSchema.partial().parse(req.body);
 
-      // Recalculate next run if time or cadence changed
-      let nextRun = existing[0].nextRunAt;
-      if (scheduleData.timeOfDay || scheduleData.cadence) {
-        const timeOfDay = scheduleData.timeOfDay || existing[0].timeOfDay;
-        const [hours, minutes] = timeOfDay.split(':').map(Number);
-        const now = new Date();
-        nextRun = new Date();
-        nextRun.setHours(hours, minutes, 0, 0);
-        
-        if (nextRun <= now) {
-          const cadence = scheduleData.cadence || existing[0].cadence;
-          switch (cadence) {
-            case 'daily':
-              nextRun.setDate(nextRun.getDate() + 1);
-              break;
-            case 'weekly':
-              nextRun.setDate(nextRun.getDate() + 7);
-              break;
-            case 'monthly':
-              nextRun.setMonth(nextRun.getMonth() + 1);
-              break;
-          }
-        }
-      }
+      const merged={...existing[0],...scheduleData};
+      const nextRun=nextReportRun(merged.cadence,merged.timeOfDay,merged.timezone);
 
       const [updated] = await db.update(reportSchedules)
         .set({
@@ -412,7 +361,7 @@ export function registerReportRoutes(app: Express) {
     } catch (error) {
       console.error("Error updating report schedule:", error);
       if (error instanceof z.ZodError) {
-        res.status(400).json({ message: "Invalid schedule data", errors: error.errors });
+        res.status(400).json({ message: "Invalid schedule data", errors: error.issues });
       } else {
         res.status(500).json({ message: "Error updating report schedule" });
       }

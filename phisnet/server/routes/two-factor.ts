@@ -1,11 +1,25 @@
+import { databaseScope,withTenant } from '../database-context';
+import type { RequestHandler } from 'express';
 import type { Express, Request, Response } from 'express';
 import speakeasy from 'speakeasy';
-import { isAuthenticated } from '../auth';
+import { isAuthenticated,isOrgAdminRequest } from '../auth';
 import { authLimiter } from '../middleware/rate-limit';
 import { storage } from '../storage';
 import { TwoFactorService } from '../services/two-factor.service';
 import { SecretsService } from '../services/secrets.service';
 import { AuditService } from '../services/audit.service';
+
+const setupIdentity:RequestHandler=async(req,res,next)=> {
+  if(req.isAuthenticated())return next();
+  const id=Number((req.session as any).pendingTwoFactorUserId);
+  const expiry=Number((req.session as any).pendingTwoFactorExpiresAt);
+  if(!id||!expiry||expiry<Date.now())return res.status(401).json({message:'Sign in before setting up two-factor authentication'});
+  try {
+    const user=await databaseScope.run({organizationId:0,userId:0,system:true},()=>storage.getUser(id));
+    if(!user||!user.isActive)return res.status(401).json({message:'Authentication required'});
+    req.user=user;withTenant(user.organizationId,user.id,next);
+  }catch(error){next(error);}
+};
 
 /**
  * 2FA (TOTP) routes: setup, verify, disable, status, backup codes regeneration.
@@ -13,7 +27,7 @@ import { AuditService } from '../services/audit.service';
 export function registerTwoFactorRoutes(app: Express) {
 
   // Begin setup: generate secret + QR (stored temporarily in session until verified)
-  app.post('/api/user/2fa/setup', isAuthenticated, async (req: Request, res: Response) => {
+  app.post('/api/user/2fa/setup', setupIdentity, async (req: Request, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
       const user = await storage.getUser(req.user.id);
@@ -39,7 +53,7 @@ export function registerTwoFactorRoutes(app: Express) {
   });
 
   // Verify setup & enable 2FA
-  app.post('/api/user/2fa/verify-setup', isAuthenticated, authLimiter, async (req: Request, res: Response) => {
+  app.post('/api/user/2fa/verify-setup', setupIdentity, authLimiter, async (req: Request, res: Response) => {
     try {
       const { token } = req.body as { token?: string };
       if (!req.user) return res.status(401).json({ message: 'Not authenticated' });
@@ -48,10 +62,9 @@ export function registerTwoFactorRoutes(app: Express) {
       const pendingUserId = (req.session as any).pendingTwoFactorUserId;
       if (!sessionSecret || pendingUserId !== req.user.id) return res.status(400).json({ message: 'No pending setup' });
 
-      const expected = speakeasy.totp({ secret: sessionSecret, encoding: 'base32' });
       const valid = TwoFactorService.verifyToken(sessionSecret, token);
       if (!valid) {
-        console.warn(`2FA setup verification failed: provided=${token} expected=${expected}`);
+        console.warn('2FA setup verification failed');
       }
       if (!valid) return res.status(400).json({ message: 'Invalid verification code' });
 
@@ -109,6 +122,9 @@ export function registerTwoFactorRoutes(app: Express) {
       const user = await storage.getUser(req.user.id);
       if (!user) return res.status(404).json({ message: 'User not found' });
       if (!(user as any).twoFactorEnabled) return res.status(400).json({ message: '2FA not enabled' });
+      const {token}=req.body;
+      const secret=await SecretsService.decrypt(user.organizationId,user.twoFactorSecret!);
+      if(typeof token!=='string'||!TwoFactorService.verifyToken(secret,token))return res.status(401).json({message:'Current authenticator code required'});
       const codesPlain = TwoFactorService.generateBackupCodes();
       const codesHashed = await Promise.all(codesPlain.map(c => TwoFactorService.hashBackupCode(c)));
       await storage.updateUser(user.id, { twoFactorBackupCodes: codesHashed as any } as any);
@@ -127,6 +143,8 @@ export function registerTwoFactorRoutes(app: Express) {
       const user = await storage.getUser(req.user.id);
       if (!user) return res.status(404).json({ message: 'User not found' });
       if (!(user as any).twoFactorEnabled) return res.status(400).json({ message: '2FA not enabled' });
+      const org=await storage.getOrganization(user.organizationId);
+      if(org?.twoFactorRequired || (process.env.NODE_ENV==='production'&&(user.isAdmin||await isOrgAdminRequest(req))))return res.status(403).json({message:'Two-factor authentication is required by your organization'});
       if (!password) return res.status(400).json({ message: 'Password required' });
 
       // Reuse password comparison from auth (local import to avoid circular) - dynamic import

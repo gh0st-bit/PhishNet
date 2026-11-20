@@ -1,3 +1,4 @@
+import AppLayout from "@/components/layout/app-layout";
 import { useState } from "react";
 import { quizFormSchema, quizQuestionFormSchema } from "../validation/adminSchemas";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -47,11 +48,13 @@ interface PaginatedQuizzesResponse {
   totalPages: number;
 }
 
-export default function AdminQuizPage() {
+export default function AdminQuizPage({ mcqMode = false }: { mcqMode?: boolean }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [isQuizDialogOpen, setIsQuizDialogOpen] = useState(false);
   const [isQuestionDialogOpen, setIsQuestionDialogOpen] = useState(false);
+  const [isQuizPickerOpen, setIsQuizPickerOpen] = useState(false);
+  const [questionQuizId, setQuestionQuizId] = useState('');
   const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null);
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
   const [editingQuestion, setEditingQuestion] = useState<QuizQuestion | null>(null);
@@ -100,7 +103,8 @@ export default function AdminQuizPage() {
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/admin/quizzes/${selectedQuiz!.id}`);
       if (!res.ok) throw new Error("Failed to fetch quiz details");
-      return res.json();
+      const data = await res.json();
+      return { ...data.quiz, questions: data.questions };
     },
   });
 
@@ -318,7 +322,7 @@ export default function AdminQuizPage() {
 
   if (selectedQuiz && quizDetail) {
     return (
-      <div className="space-y-6 p-4 md:p-6 max-w-[1400px] mx-auto">
+      <AppLayout><div className="space-y-6 p-4 md:p-6 max-w-[1400px] mx-auto">
         <div className="flex items-center justify-between">
           <div>
             <Button variant="ghost" onClick={() => setSelectedQuiz(null)} className="mb-2">
@@ -337,7 +341,7 @@ export default function AdminQuizPage() {
             <DialogTrigger asChild>
               <Button className="gap-2">
                 <Plus className="h-4 w-4" />
-                Add Question
+                {mcqMode ? 'Add New MCQ' : 'Add Question'}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -420,7 +424,7 @@ export default function AdminQuizPage() {
                     <Label>Options *</Label>
                     {questionFormData.options.map((option, idx) => (
                       <Input
-                        key={`option-${idx}-${option}`}
+                        key={`option-${idx}`}
                         value={option}
                         onChange={(e) => {
                           const newOptions = [...questionFormData.options];
@@ -557,17 +561,32 @@ export default function AdminQuizPage() {
             ))
           )}
         </div>
-      </div>
+      </div></AppLayout>
     );
   }
 
-  return (
+  return (<AppLayout>{(
     <div className="space-y-6 p-4 md:p-6 max-w-[1600px] mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Quiz Builder</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{mcqMode ? 'MCQs & Quizzes' : 'Quiz Builder'}</h1>
           <p className="text-sm text-muted-foreground mt-1">Create and manage security awareness quizzes</p>
         </div>
+        {mcqMode && <Dialog open={isQuizPickerOpen} onOpenChange={setIsQuizPickerOpen}>
+          <DialogTrigger asChild><Button>Add New MCQ</Button></DialogTrigger>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Add MCQ to a quiz</DialogTitle><DialogDescription>Choose the quiz that will contain this question. Create a quiz first if none are available.</DialogDescription></DialogHeader>
+            <label htmlFor="question-quiz">Quiz</label>
+            <select id="question-quiz" className="rounded border bg-background p-2" value={questionQuizId} onChange={event => setQuestionQuizId(event.target.value)}>
+              <option value="">Select a quiz</option>
+              {(quizzesResp?.quizzes || []).map(quiz => <option key={quiz.id} value={quiz.id}>{quiz.title}</option>)}
+            </select>
+            <Button disabled={!questionQuizId} onClick={() => {
+              const quiz = quizzesResp?.quizzes.find(quiz => quiz.id === Number(questionQuizId));
+              if (quiz) { setSelectedQuiz(quiz); setIsQuizPickerOpen(false); resetQuestionForm(); setIsQuestionDialogOpen(true); }
+            }}>Continue</Button>
+          </DialogContent>
+        </Dialog>}
         <Dialog open={isQuizDialogOpen} onOpenChange={(open) => {
           setIsQuizDialogOpen(open);
           if (!open) {
@@ -840,5 +859,5 @@ export default function AdminQuizPage() {
         </>
       )}
     </div>
-  );
+  )}</AppLayout>);
 }

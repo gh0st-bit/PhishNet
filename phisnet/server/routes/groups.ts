@@ -1,5 +1,5 @@
 import type { Express } from 'express';
-import { isAuthenticated, hasOrganization } from '../auth';
+import { isAuthenticated, hasOrganization, isAdminOrOrgAdmin } from '../auth';
 import { storage } from '../storage';
 import { insertGroupSchema, insertTargetSchema } from '@shared/schema';
 import { z } from 'zod';
@@ -15,6 +15,20 @@ function assertUser(user: Express.User | undefined): asserts user is Express.Use
 }
 
 export function registerGroupRoutes(app: Express) {
+  app.put('/api/groups/:groupId/targets/:targetId', isAuthenticated, hasOrganization, isAdminOrOrgAdmin, async (req, res, next) => {
+    try {
+    const ids = z.object({groupId:z.coerce.number().int().positive(),targetId:z.coerce.number().int().positive()}).safeParse(req.params);
+    const data = insertTargetSchema.safeParse(req.body);
+    if(!ids.success || !data.success)return res.status(400).json({message:'Invalid target details'});
+    const {groupId,targetId}=ids.data;
+    const group=await storage.getGroup(groupId);
+    if(!group || group.organizationId!==req.user!.organizationId)return res.status(404).json({message:'Group not found'});
+    const target=await storage.getTarget(targetId);
+    if(!target || target.groupId!==groupId || target.organizationId!==req.user!.organizationId)return res.status(404).json({message:'Target not found'});
+    const updated=await storage.updateTarget(targetId,{...data.data,firstName:data.data.firstName?.trim()||'Recipient',lastName:data.data.lastName?.trim()||'User'});
+    res.json(updated);
+    } catch(error) { next(error); }
+  });
   // List all groups
   app.get("/api/groups", isAuthenticated, hasOrganization, async (req, res) => {
     try {
@@ -41,7 +55,7 @@ export function registerGroupRoutes(app: Express) {
       res.status(201).json(group);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
+        return res.status(400).json({ message: "Validation error", errors: error.issues });
       }
       res.status(500).json({ message: "Error creating group" });
     }
@@ -68,7 +82,7 @@ export function registerGroupRoutes(app: Express) {
       res.json(updatedGroup);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
+        return res.status(400).json({ message: "Validation error", errors: error.issues });
       }
       res.status(500).json({ message: "Error updating group" });
     }
@@ -167,7 +181,7 @@ export function registerGroupRoutes(app: Express) {
       res.status(201).json(target);
     } catch (error) {
       if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
+        return res.status(400).json({ message: "Validation error", errors: error.issues });
       }
       res.status(500).json({ message: "Error creating target" });
     }
@@ -239,7 +253,7 @@ export function registerGroupRoutes(app: Express) {
         } catch (error) {
           errors.push({
             row: index + 2, // +2 to account for 0-based index and header row
-            error: error instanceof z.ZodError ? error.errors : "Unknown error"
+            error: error instanceof z.ZodError ? error.issues : "Unknown error"
           });
         }
       }

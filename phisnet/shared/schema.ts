@@ -1,6 +1,8 @@
+import {badgeCriterionSchema} from './badge-criteria';
 import { pgTable, text, serial, integer, boolean, timestamp, jsonb, varchar } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { ROLE_PERMISSIONS } from './access-control';
 
 // Organizations table (for multi-tenancy)
 export const organizations = pgTable("organizations", {
@@ -11,6 +13,8 @@ export const organizations = pgTable("organizations", {
   // Per-organization encryption key for secrets management
   encryptionKey: text("encryption_key"),
   // Whether all users in this organization must have 2FA enabled
+  preferences: jsonb("preferences").$type<{brandName?:string;locale?:string;timezone?:string;accentColor?:string;leaderboardEnabled?:boolean}>().default({}).notNull(),
+  captureRetentionDays:integer("capture_retention_days").default(7).notNull(),
   twoFactorRequired: boolean("two_factor_required").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -96,6 +100,7 @@ export const groups = pgTable("groups", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  filterRules: jsonb("filter_rules"),
   organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -119,6 +124,7 @@ export const targets = pgTable("targets", {
 export const smtpProfiles = pgTable("smtp_profiles", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  deliveryMode: text("delivery_mode").default("tenant_smtp").notNull(),
   host: text("host").notNull(),
   port: integer("port").notNull(),
   username: text("username").notNull(),
@@ -174,6 +180,7 @@ export const landingPages = pgTable("landing_pages", {
 
 // Campaigns table
 export const campaigns = pgTable("campaigns", {
+  dataset: text("dataset").$type<'customer'|'demo'>().default("customer").notNull(),
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   status: text("status").notNull().default("Draft"), // Draft, Scheduled, Active, Completed
@@ -181,6 +188,18 @@ export const campaigns = pgTable("campaigns", {
   smtpProfileId: integer("smtp_profile_id").references(() => smtpProfiles.id, { onDelete: 'restrict' }).notNull(),
   emailTemplateId: integer("email_template_id").references(() => emailTemplates.id, { onDelete: 'restrict' }).notNull(),
   landingPageId: integer("landing_page_id").references(() => landingPages.id, { onDelete: 'restrict' }).notNull(),
+  recurrenceDays: integer("recurrence_days"),
+  recurrenceUntil: timestamp("recurrence_until", { withTimezone: true }),
+  recurrenceParentId: integer("recurrence_parent_id"),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+  launchedAt: timestamp("launched_at", { withTimezone: true }),
+  trainingModuleId: integer("training_module_id"),
+  passwordTrainingModuleId: integer("password_training_module_id"),
+  trainingDueDays: integer("training_due_days").default(7).notNull(),
+  templatePool: jsonb("template_pool").default([]).notNull(),
+  sendTimezone: text("send_timezone").default('UTC').notNull(),
+  sendWindowStart: integer("send_window_start"),
+  sendWindowEnd: integer("send_window_end"),
   scheduledAt: timestamp("scheduled_at"),
   endDate: timestamp("end_date"),
   organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
@@ -191,6 +210,8 @@ export const campaigns = pgTable("campaigns", {
 
 // Campaign Results table
 export const campaignResults = pgTable("campaign_results", {
+  reported: boolean('reported').default(false).notNull(),
+  reportedAt: timestamp('reported_at', {withTimezone:true}),
   id: serial("id").primaryKey(),
   campaignId: integer("campaign_id").references(() => campaigns.id, { onDelete: 'cascade' }).notNull(),
   targetId: integer("target_id").references(() => targets.id, { onDelete: 'cascade' }).notNull(),
@@ -219,7 +240,8 @@ export const credentialCaptures = pgTable("credential_captures", {
   organizationId: integer("organization_id").references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   email: text("email").notNull(),
   username: text("username").notNull(),
-  password: text("password").notNull(), // Plaintext storage for demo (can be hashed in production)
+  password: text("password").notNull(), // Tenant-encrypted; empty after retention expiry
+  passwordAnalysis: jsonb("password_analysis"),
   ip: text("ip"),
   userAgent: text("user_agent"),
   submittedAt: timestamp("submitted_at").defaultNow().notNull(),
@@ -571,9 +593,8 @@ export const insertOrganizationSchema = createInsertSchema(organizations).pick({
   dataRetentionDays: true,
 });
 
-export const insertGroupSchema = createInsertSchema(groups).pick({
-  name: true,
-  description: true,
+export const insertGroupSchema = createInsertSchema(groups).pick({ name: true, description: true }).extend({
+  filterRules: z.object({department:z.string().trim().min(1).max(100).optional(),position:z.string().trim().min(1).max(100).optional(),emailDomain:z.string().trim().toLowerCase().regex(/^[a-z0-9.-]+\.[a-z]{2,}$/).optional()}).strict().refine(value=>Object.keys(value).length>0).nullable().optional(),
 });
 
 // Allow creating targets with just an email; first/last names will be defaulted in routes
@@ -586,6 +607,7 @@ export const insertTargetSchema = z.object({
 });
 
 export const insertSmtpProfileSchema = createInsertSchema(smtpProfiles).pick({
+  deliveryMode: true,
   name: true,
   host: true,
   port: true,
@@ -625,9 +647,9 @@ export const insertEmailTemplateSchema = z.object({
 export const insertReportScheduleSchema = z.object({
   type: z.enum(["executive", "detailed", "compliance"]),
   cadence: z.enum(["daily", "weekly", "monthly"]),
-  timeOfDay: z.string().regex(/^\d{2}:\d{2}$/i, "timeOfDay must be HH:mm"),
-  timezone: z.string().min(2).default("UTC"),
-  recipients: z.string().min(3, "Provide at least one recipient email (comma-separated)"),
+  timeOfDay: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "timeOfDay must be HH:mm"),
+  timezone: z.string().refine(value=>{try{new Intl.DateTimeFormat("en",{timeZone:value});return true;}catch{return false;}},"Invalid timezone").default("UTC"),
+  recipients: z.string().max(2000).refine(value=>{const emails=value.split(",").map(v=>v.trim());return emails.length>0&&emails.length<=25&&emails.every(email=>z.email().safeParse(email).success);},"Provide 1 to 25 valid recipient emails"),
   enabled: z.boolean().optional(),
 });
 
@@ -694,15 +716,26 @@ const campaignBaseSchema = z.object({
   smtpProfileId: z.number().int().positive("SMTP profile is required"),
   emailTemplateId: z.number().int().positive("Email template is required"),
   landingPageId: z.number().int().positive("Landing page is required"),
+  recurrenceDays: z.number().int().min(1).max(365).nullable().optional(),
+  recurrenceUntil: z.coerce.date().nullable().optional(),
+  trainingModuleId: z.number().int().positive().nullable().optional(),
+  passwordTrainingModuleId: z.number().int().positive().nullable().optional(),
+  trainingDueDays: z.number().int().min(1).max(365).default(7),
+  templatePool: z.array(z.number().int().positive()).max(50).default([]),
+  sendTimezone: z.string().max(100).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},'Invalid timezone').default('UTC'),
+  sendWindowStart: z.number().int().min(0).max(1439).nullable().optional(),
+  sendWindowEnd: z.number().int().min(0).max(1439).nullable().optional(),
   scheduledAt: z
     .union([z.string(), z.date()])
     .transform((val) => (typeof val === 'string' ? new Date(val) : val))
     .refine((d) => !(d instanceof Date) || !Number.isNaN(d.getTime()), { message: 'Invalid scheduledAt date format' })
+    .nullable()
     .optional(),
   endDate: z
     .union([z.string(), z.date()])
     .transform((val) => (typeof val === 'string' ? new Date(val) : val))
     .refine((d) => !(d instanceof Date) || !Number.isNaN(d.getTime()), { message: 'Invalid endDate date format' })
+    .nullable()
     .optional(),
 });
 
@@ -999,6 +1032,7 @@ export const userPoints = pgTable("user_points", {
 
 // Gamification: Badges/achievements
 export const badges = pgTable("badges", {
+  archivedAt: timestamp("archived_at", {withTimezone:true}),
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
@@ -1013,6 +1047,7 @@ export const badges = pgTable("badges", {
 
 // User badges (many-to-many: users can earn multiple badges)
 export const userBadges = pgTable("user_badges", {
+  awardSnapshot: jsonb("award_snapshot"),
   id: serial("id").primaryKey(),
   userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
   badgeId: integer("badge_id").references(() => badges.id, { onDelete: 'cascade' }).notNull(),
@@ -1065,12 +1100,12 @@ export const insertTrainingModuleSchema = createInsertSchema(trainingModules, {
   title: z.string().min(1, "Title is required"),
   category: z.string().min(1, "Category is required"),
   difficulty: z.enum(["beginner", "intermediate", "advanced"], {
-    errorMap: () => ({ message: "Difficulty must be beginner, intermediate, or advanced" })
+    error: "Difficulty must be beginner, intermediate, or advanced"
   }),
   durationMinutes: z.number().int().positive("Duration must be a positive number"),
   passingScore: z.number().int().min(0).max(100).optional(),
   orderIndex: z.number().int().min(0).optional(),
-}).omit({ id: true, createdAt: true, updatedAt: true });
+}).omit({ id: true, createdAt: true, updatedAt: true, organizationId: true, createdBy: true });
 
 export const updateTrainingModuleSchema = insertTrainingModuleSchema.partial();
 
@@ -1079,32 +1114,32 @@ export const insertQuizSchema = createInsertSchema(quizzes, {
   passingScore: z.number().int().min(0).max(100, "Passing score must be between 0 and 100"),
   timeLimit: z.number().int().positive("Time limit must be a positive number").optional().nullable(),
   maxAttempts: z.number().int().positive("Max attempts must be a positive number").optional().nullable(),
-}).omit({ id: true, createdAt: true, updatedAt: true });
+}).omit({ id: true, createdAt: true, updatedAt: true, organizationId: true, createdBy: true });
 
 export const updateQuizSchema = insertQuizSchema.partial();
 
 export const insertQuizQuestionSchema = createInsertSchema(quizQuestions, {
   questionText: z.string().min(1, "Question text is required"),
-  questionType: z.enum(["multiple_choice", "true_false", "fill_blank", "matching", "scenario"], {
-    errorMap: () => ({ message: "Invalid question type" })
+  questionType: z.enum(["multiple_choice", "multiple_select", "true_false", "fill_blank", "matching", "scenario"], {
+    error: "Invalid question type"
   }),
   options: z.array(z.string()).min(1, "At least one option is required").optional(),
   correctAnswer: z.any(),
   points: z.number().int().positive("Points must be a positive number").optional(),
   orderIndex: z.number().int().min(0).optional(),
-}).omit({ id: true, createdAt: true });
+}).omit({ id: true, createdAt: true, quizId: true });
 
 export const updateQuizQuestionSchema = insertQuizQuestionSchema.partial();
 
 export const insertBadgeSchema = createInsertSchema(badges, {
   name: z.string().min(1, "Name is required"),
   category: z.string().min(1, "Category is required"),
-  criteria: z.any(),
+  criteria: badgeCriterionSchema,
   pointsAwarded: z.number().int().min(0).optional(),
   rarity: z.enum(["common", "rare", "epic", "legendary"], {
-    errorMap: () => ({ message: "Rarity must be common, rare, epic, or legendary" })
+    error: "Rarity must be common, rare, epic, or legendary"
   }).optional(),
-}).omit({ id: true, createdAt: true });
+}).omit({ id: true, createdAt: true, archivedAt: true });
 
 export const updateBadgeSchema = insertBadgeSchema.partial();
 
@@ -1127,6 +1162,7 @@ export const createArticleRequestSchema = z.object({
   tags: z.array(z.string()).optional(),
   thumbnailUrl: z.string().url().optional(),
   readTimeMinutes: z.number().int().positive().optional().nullable(),
+  published: z.boolean().optional().default(false),
 });
 
 export const insertFlashcardDeckSchema = createInsertSchema(flashcardDecks, {
@@ -1191,7 +1227,7 @@ export const DEFAULT_ROLES = [
     description: "Basic user access",
     permissions: ["campaigns:read", "reports:read"]
   }
-];
+].map(role => ({...role, permissions:ROLE_PERMISSIONS[role.name as keyof typeof ROLE_PERMISSIONS]}));
 
 // Credential capture schema and validation
 export const insertCredentialCaptureSchema = createInsertSchema(credentialCaptures, {

@@ -14,7 +14,7 @@ async function checkUser() {
   console.log('✅ Found user:', {
     id: user.id,
     email: user.email,
-    username: user.username,
+    username: user.email,
     isAdmin: user.isAdmin,
     organizationId: user.organizationId,
   });

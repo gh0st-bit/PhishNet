@@ -1,3 +1,4 @@
+import {describeBadgeCriterion} from '@shared/badge-criteria';
 import { useParams, useLocation } from "wouter";
 import AppLayout from "@/components/layout/app-layout";
 import { useQuery } from "@tanstack/react-query";
@@ -88,37 +89,8 @@ export default function EmployeeBadgeDetailPage() {
   const { badge } = data;
   const CategoryIcon = categoryIcons[badge.category] || Award;
 
-  const formatRequirement = (criteria: any) => {
-    if (!criteria) return "No requirements specified";
-    
-    if (criteria.type === "points") {
-      return `Earn ${criteria.requiredPoints} total points`;
-    } else if (criteria.type === "quiz_completion") {
-      return `Complete ${criteria.requiredCompletions} quiz${criteria.requiredCompletions !== 1 ? 'es' : ''} with passing score`;
-    } else if (criteria.type === "streak") {
-      return `Maintain a ${criteria.requiredDays}-day learning streak`;
-    } else if (criteria.type === "perfect_score") {
-      return `Achieve ${criteria.requiredCount} perfect score${criteria.requiredCount !== 1 ? 's' : ''} (100%)`;
-    }
-    
-    return "Complete special requirements";
-  };
-
-  const formatProgressText = (details: any) => {
-    if (!details) return "";
-    
-    if (details.type === "points") {
-      return `${details.current.toLocaleString()} / ${details.required.toLocaleString()} points`;
-    } else if (details.type === "quiz_completion") {
-      return `${details.current} / ${details.required} quizzes completed`;
-    } else if (details.type === "perfect_score") {
-      return `${details.current} / ${details.required} perfect scores`;
-    } else if (details.type === "streak") {
-      return `${details.current} / ${details.required} days`;
-    }
-    
-    return "";
-  };
+  const formatRequirement=describeBadgeCriterion;
+  const formatProgressText=(details:any)=>details?.type==='custom'?'Your administrator reviews this achievement.':details?.required?`${details.current} / ${details.required}`:'Progress unavailable';
 
   return (
     <AppLayout>
@@ -169,7 +141,7 @@ export default function EmployeeBadgeDetailPage() {
                 <Alert className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
                   <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                   <AlertDescription className="text-green-800 dark:text-green-300">
-                    You earned this badge on {new Date(badge.earnedAt).toLocaleDateString('en-US', {
+                    You earned this badge on {new Date(badge.earnedAt).toLocaleDateString(document.documentElement.lang || 'en-US', {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric',

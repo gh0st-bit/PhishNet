@@ -1,7 +1,7 @@
 import { db, pool } from "../db";
 import { campaigns } from "@shared/schema";
 import { and, lte, isNotNull, inArray, eq } from "drizzle-orm";
-import { sendCampaignEmails } from "./email-service";
+import { enqueueCampaign } from "./campaign-dispatch";
 
 let schedulerStarted = false;
 let intervalHandle: NodeJS.Timeout | null = null;
@@ -31,7 +31,7 @@ export function startCampaignScheduler(intervalMs: number = 60_000) {
           and(
             isNotNull(campaigns.scheduledAt),
             lte(campaigns.scheduledAt, now),
-            inArray(campaigns.status, ['Scheduled', 'Draft'])
+            inArray(campaigns.status, ['Scheduled'])
           )
         );
 
@@ -41,12 +41,8 @@ export function startCampaignScheduler(intervalMs: number = 60_000) {
 
         for (const c of due) {
           try {
-            await db.update(campaigns)
-              .set({ status: 'Active', updatedAt: new Date() })
-              .where(eq(campaigns.id, c.id));
-
             console.log(`[Scheduler] Launching campaign ${c.id} (org ${c.organizationId})`);
-            const result = await sendCampaignEmails(c.id, c.organizationId);
+            const result = await enqueueCampaign(c.id, c.organizationId, true);
             console.log(`[Scheduler] Campaign ${c.id} completed:`, result);
           } catch (e) {
             console.error(`[Scheduler] Error processing campaign ${c.id}:`, e);

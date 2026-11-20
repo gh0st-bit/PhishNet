@@ -133,7 +133,7 @@ async function seedCorePhishingDataForOrg(orgId: number, adminId: number) {
         html_content: '<html><body><h2>Phish Simulation</h2><p>{{.Content}}</p></body></html>',
         text_content: 'Phish simulation content',
         sender_name: 'Security Team',
-        sender_email: 'security@' + (org.domain ?? 'company.local'),
+        sender_email: 'security@' + (org.name ?? 'company.local'),
         type: 'phishing',
         complexity: 'medium',
         description: def.description,
@@ -515,7 +515,6 @@ async function seedEmployeeUsersForOrg(orgId: number) {
         firstName,
         lastName,
         isAdmin: false,
-        isActive: true,
         organizationId: orgId,
         createdAt: daysAgo(Math.floor(Math.random() * 60)),
         updatedAt: new Date(),
@@ -576,8 +575,6 @@ async function seedEmployeeContentForOrg(orgId: number, adminId: number, employe
         category: mod.category,
         difficulty: mod.difficulty,
         durationMinutes: mod.duration,
-        content: `<h2>${mod.title}</h2><p>This is a comprehensive guide to ${mod.title.toLowerCase()}.</p>`,
-        isActive: true,
       }).returning();
       moduleIds.push(newMod.id);
     }
@@ -608,7 +605,7 @@ async function seedEmployeeContentForOrg(orgId: number, adminId: number, employe
         moduleId: moduleIds[i],
         status,
         progressPercentage: progress,
-        startedAt: status !== 'not_started' ? daysAgo(Math.floor(Math.random() * 45)) : null,
+
         completedAt,
       }).onConflictDoNothing();
     }
@@ -642,11 +639,7 @@ async function seedEmployeeContentForOrg(orgId: number, adminId: number, employe
         description: `Test your knowledge on ${quiz.title.toLowerCase()}.`,
         passingScore: quiz.passingScore,
         timeLimit: quiz.timeLimit,
-        questions: [
-          { id: 1, question: 'Sample question 1?', options: ['A', 'B', 'C', 'D'], correctAnswer: 0 },
-          { id: 2, question: 'Sample question 2?', options: ['A', 'B', 'C', 'D'], correctAnswer: 1 },
-        ],
-        isActive: true,
+
       }).returning();
       quizIds.push(newQuiz.id);
     }
@@ -663,9 +656,11 @@ async function seedEmployeeContentForOrg(orgId: number, adminId: number, employe
         userId,
         quizId: quizIds[i],
         attemptNumber: 1,
-        score,
         totalQuestions,
-        correctAnswers,
+
+        score,
+
+
         answers: [{ questionId: 1, answer: 0 }, { questionId: 2, answer: 1 }],
         completedAt: daysAgo(Math.floor(Math.random() * 20)),
       }).onConflictDoNothing();
@@ -694,14 +689,13 @@ async function seedEmployeeContentForOrg(orgId: number, adminId: number, employe
     if (existing.length === 0) {
       await db.insert(articles).values({
         organizationId: orgId,
-        authorId: adminId,
+        author: adminId,
         title: article.title,
-        slug: article.title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
         content: `<h1>${article.title}</h1><p>This article covers essential information about ${article.title.toLowerCase()}.</p>`,
         excerpt: `Learn about ${article.title.toLowerCase()}`,
         category: article.category,
-        readTime: article.readTime,
-        isPublished: true,
+        readTimeMinutes: article.readTime,
+        published: true,
         publishedAt: daysAgo(Math.floor(Math.random() * 60)),
       });
     }
@@ -731,7 +725,6 @@ async function seedEmployeeContentForOrg(orgId: number, adminId: number, employe
         title: deck.title,
         description: deck.description,
         category: deck.title.includes('Phishing') ? 'phishing' : deck.title.includes('Password') ? 'passwords' : 'general',
-        isActive: true,
       }).returning();
 
       // Add some flashcards to the deck
@@ -746,7 +739,7 @@ async function seedEmployeeContentForOrg(orgId: number, adminId: number, employe
           deckId: newDeck.id,
           frontContent: card.front,
           backContent: card.back,
-          order: 0,
+          orderIndex: 0,
         });
       }
     }
@@ -757,7 +750,7 @@ async function seedEmployeeContentForOrg(orgId: number, adminId: number, employe
   try {
     const existingBadges = await db.select({ id: badges.id })
       .from(badges)
-      .where(eq(badges.organizationId, orgId))
+
       .limit(5);
 
     if (existingBadges.length > 0) {
@@ -937,7 +930,7 @@ async function run() {
       // Seed employee users with User role
       const employeeUserIds = await seedEmployeeUsersForOrg(orgId);
       // Seed employee-facing content (training, quizzes, articles, flashcards, badges, leaderboard)
-      await seedEmployeeContentForOrg(orgId, primaryAdmin.id, employeeUserIds);
+      await seedEmployeeContentForOrg(orgId, primaryAdmin.id, employeeUserIds || []);
       // Also seed training/quizzes/badges/points for that admin so dashboards/quizzes look alive
       await seedTrainingForAdmin(primaryAdmin.id, orgId);
       // And seed reporting/threat statistics and risk scores so graphs and reports have data

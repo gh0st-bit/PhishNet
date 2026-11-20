@@ -44,6 +44,17 @@ export class TwoFactorService {
     });
   }
 
+  /**
+   * Like verifyToken, but returns the matched 30-second time step (or null), so callers
+   * can record it and reject a replay of the same code within its validity window.
+   */
+  static verifyTokenStep(base32Secret: string, token: string): number | null {
+    if (!/^\d{6}$/.test(token)) return null;
+    const match = speakeasy.totp.verifyDelta({ secret: base32Secret, encoding: 'base32', token, window: this.WINDOW });
+    if (!match) return null;
+    return Math.floor(Date.now() / 1000 / 30) + match.delta;
+  }
+
   /** Generate human‑friendly one‑time backup codes */
   static generateBackupCodes(count = 8): string[] {
     const codes: string[] = [];

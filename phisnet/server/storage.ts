@@ -1,7 +1,7 @@
 ﻿// Removed unused imports
 import session from 'express-session';
 import ConnectPgSimple from 'connect-pg-simple';
-import { db, pool } from "./db"; // Add pool to this import
+import { db, pool, controlPool } from "./db"; // Add pool to this import
 import { 
   campaigns, 
   campaignResults, 
@@ -143,9 +143,9 @@ export class DatabaseStorage implements IStorage {
   constructor() {
     // ALWAYS use database session store - no fallback to memory
     this.sessionStore = new PostgresSessionStore({ 
-      pool, // This should now work with the imported pool
+      pool: controlPool, // Session persistence uses the identity/control connection.
       tableName: 'session',
-      createTableIfMissing: true,
+      createTableIfMissing: false,
       ttl: 30 * 60 // 30 minutes in seconds
     });
     
@@ -166,106 +166,13 @@ export class DatabaseStorage implements IStorage {
   }
   
   // User methods
-  async getUser(id: number): Promise<User | undefined> {
-    const result = await pool.query(
-      `SELECT id, email, password, first_name, last_name, is_admin, organization_id, organization_name,
-              created_at, updated_at,
-              COALESCE(is_active, true) AS is_active,
-              COALESCE(email_verified, false) AS email_verified,
-              COALESCE(failed_login_attempts, 0) AS failed_login_attempts,
-              last_failed_login,
-              COALESCE(account_locked, false) AS account_locked,
-              account_locked_until,
-              last_login,
-              COALESCE(two_factor_enabled, false) AS two_factor_enabled,
-              two_factor_secret,
-              two_factor_backup_codes,
-              two_factor_verified_at
-         FROM users
-        WHERE id = $1
-        LIMIT 1`,
-      [id]
-    );
-    if (result.rows.length === 0) return undefined;
-    const r = result.rows[0];
-    // Map to User shape with safe defaults for optional/newer fields
-    return {
-      id: r.id,
-      email: r.email,
-      password: r.password,
-      firstName: r.first_name,
-      lastName: r.last_name,
-      profilePicture: null,
-      position: null,
-      bio: null,
-      lastLogin: r.last_login ?? null,
-      failedLoginAttempts: r.failed_login_attempts ?? 0,
-      lastFailedLogin: r.last_failed_login ?? null,
-      accountLocked: r.account_locked ?? false,
-      accountLockedUntil: r.account_locked_until ?? null,
-      isActive: r.is_active ?? true,
-      isAdmin: r.is_admin ?? false,
-      organizationId: r.organization_id,
-      organizationName: r.organization_name ?? "None",
-      twoFactorEnabled: r.two_factor_enabled ?? false,
-      twoFactorSecret: r.two_factor_secret ?? null,
-      twoFactorBackupCodes: r.two_factor_backup_codes ?? [],
-      twoFactorVerifiedAt: r.two_factor_verified_at ?? null,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    } as unknown as User;
+  async getUser(id:number):Promise<User|undefined> {
+    const [user]=await db.select().from(users).where(eq(users.id,id)).limit(1);return user;
   }
-  
-  async getUserByEmail(email: string): Promise<User | undefined> {
-    const result = await pool.query(
-      `SELECT id, email, password, first_name, last_name, is_admin, organization_id, organization_name,
-              created_at, updated_at,
-              COALESCE(is_active, true) AS is_active,
-              COALESCE(email_verified, false) AS email_verified,
-              COALESCE(failed_login_attempts, 0) AS failed_login_attempts,
-              last_failed_login,
-              COALESCE(account_locked, false) AS account_locked,
-              account_locked_until,
-              last_login,
-              COALESCE(two_factor_enabled, false) AS two_factor_enabled,
-              two_factor_secret,
-              two_factor_backup_codes,
-              two_factor_verified_at
-         FROM users
-        WHERE email = $1
-        LIMIT 1`,
-      [email]
-    );
-    if (result.rows.length === 0) return undefined;
-    const r = result.rows[0];
-    // Map to User shape with safe defaults for optional/newer fields
-    return {
-      id: r.id,
-      email: r.email,
-      password: r.password,
-      firstName: r.first_name,
-      lastName: r.last_name,
-      profilePicture: null,
-      position: null,
-      bio: null,
-      lastLogin: r.last_login ?? null,
-      failedLoginAttempts: r.failed_login_attempts ?? 0,
-      lastFailedLogin: r.last_failed_login ?? null,
-      accountLocked: r.account_locked ?? false,
-      accountLockedUntil: r.account_locked_until ?? null,
-      isActive: r.is_active ?? true,
-      isAdmin: r.is_admin ?? false,
-      organizationId: r.organization_id,
-      organizationName: r.organization_name ?? "None",
-      twoFactorEnabled: r.two_factor_enabled ?? false,
-      twoFactorSecret: r.two_factor_secret ?? null,
-      twoFactorBackupCodes: r.two_factor_backup_codes ?? [],
-      twoFactorVerifiedAt: r.two_factor_verified_at ?? null,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-    } as unknown as User;
+  async getUserByEmail(email:string):Promise<User|undefined> {
+    const [user]=await db.select().from(users).where(sql`lower(${users.email})=lower(${email.trim()})`).limit(1);return user;
   }
-  
+
   async createUser(user: InsertUser): Promise<User> {
     const [newUser] = await db.insert(users).values(user).returning();
     return newUser;
@@ -346,6 +253,7 @@ export class DatabaseStorage implements IStorage {
     const [newGroup] = await db.insert(groups).values({
       name: group.name,
       description: group.description,
+      filterRules: group.filterRules,
       organizationId,
     }).returning();
     return newGroup;
@@ -368,22 +276,14 @@ export class DatabaseStorage implements IStorage {
   }
   
   async listGroups(organizationId: number): Promise<(Group & { targetCount: number })[]> {
-    const groupList = await db.select().from(groups).where(eq(groups.organizationId, organizationId));
-    
-    const groupsWithCounts = await Promise.all(
-      groupList.map(async (group) => {
-        const targetCount = await db.select({ count: count() })
-          .from(targets)
-          .where(eq(targets.groupId, group.id));
-        
-        return {
-          ...group,
-          targetCount: targetCount[0]?.count || 0,
-        };
-      })
-    );
-    
-    return groupsWithCounts;
+    const {rows}=await pool.query(`SELECT g.id,g.name,g.description,g.filter_rules AS "filterRules",g.organization_id AS "organizationId",g.created_at AS "createdAt",g.updated_at AS "updatedAt",
+      (SELECT count(DISTINCT lower(t.email))::int FROM targets t WHERE t.organization_id=g.organization_id AND
+        ((g.filter_rules IS NULL AND t.group_id=g.id) OR (g.filter_rules IS NOT NULL
+        AND (g.filter_rules->>'department' IS NULL OR lower(t.department)=lower(g.filter_rules->>'department'))
+        AND (g.filter_rules->>'position' IS NULL OR lower(t.position)=lower(g.filter_rules->>'position'))
+        AND (g.filter_rules->>'emailDomain' IS NULL OR lower(split_part(t.email,'@',2))=g.filter_rules->>'emailDomain')))) AS "targetCount"
+      FROM groups g WHERE g.organization_id=$1 ORDER BY g.name`,[organizationId]);
+    return rows;
   }
   
   /**
@@ -466,8 +366,7 @@ export class DatabaseStorage implements IStorage {
         password: decryptedPassword,
       };
     } catch (error) {
-      console.error('[Storage] Failed to decrypt SMTP profile password:', error);
-      return profile;
+      throw new Error('Unable to decrypt SMTP profile');
     }
   }
   
@@ -478,6 +377,7 @@ export class DatabaseStorage implements IStorage {
     
     const [newProfile] = await db.insert(smtpProfiles).values({
       name: profile.name,
+      deliveryMode: profile.deliveryMode || "tenant_smtp",
       host: profile.host,
       port: profile.port,
       username: profile.username,
@@ -520,20 +420,13 @@ export class DatabaseStorage implements IStorage {
   async listSmtpProfiles(organizationId: number): Promise<SmtpProfile[]> {
     const profiles = await db.select().from(smtpProfiles).where(eq(smtpProfiles.organizationId, organizationId));
     
-    // Decrypt passwords before returning
-    const SecretsService = (await import('./services/secrets.service')).default;
-    return Promise.all(profiles.map(async (profile) => ({
-      ...profile,
-      password: (profile.password && SecretsService.isEncrypted(profile.password))
-        ? await SecretsService.decrypt(organizationId, profile.password)
-        : profile.password,
-    })));
+    return profiles.map(profile => ({ ...profile, password: '' }));
   }
   
   // Email Template methods
   async getEmailTemplate(id: number): Promise<EmailTemplate | undefined> {
     try {
-      console.log(`Getting email template with ID: ${id}`);
+
       
       // Use direct database query to ensure we get the correct data
       const result = await pool.query(
@@ -547,7 +440,7 @@ export class DatabaseStorage implements IStorage {
       }
       
       const dbTemplate = result.rows[0];
-      console.log(`Raw email template data from DB:`, dbTemplate);
+
       
       // Map database fields to Drizzle model (snake_case keys)
       const template = {
@@ -691,7 +584,7 @@ export class DatabaseStorage implements IStorage {
   // Campaign methods
   async getCampaign(id: number): Promise<Campaign | undefined> {
     try {
-      console.log(`Getting campaign with ID: ${id}`);
+
       
       const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, id));
       
@@ -699,8 +592,7 @@ export class DatabaseStorage implements IStorage {
         console.log(`No campaign found with ID: ${id}`);
         return undefined;
       }
-      
-      console.log(`Campaign found:`, campaign);
+
       return campaign;
     } catch (error) {
       console.error("Error getting campaign:", error);
@@ -710,6 +602,7 @@ export class DatabaseStorage implements IStorage {
   
   async createCampaign(organizationId: number, userId: number, campaign: InsertCampaign): Promise<Campaign> {
     const [newCampaign] = await db.insert(campaigns).values({
+      ...campaign,
       name: campaign.name,
       targetGroupId: campaign.targetGroupId,
       smtpProfileId: campaign.smtpProfileId,
@@ -717,7 +610,7 @@ export class DatabaseStorage implements IStorage {
       landingPageId: campaign.landingPageId,
       scheduledAt: campaign.scheduledAt,
       endDate: campaign.endDate,
-  status: campaign.scheduledAt ? "Scheduled" : "Draft",
+      status: "Draft",
       organizationId,
       createdById: userId,
     }).returning();

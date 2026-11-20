@@ -54,10 +54,22 @@ export default function AdminCredentialCapturesPage() {
   });
 
   const captures = capturesData?.data || [];
-  const campaigns = campaignsData?.data || [];
+  const campaigns = campaignsData?.campaigns || [];
   const pagination = capturesData?.pagination || { page: 1, limit: 20, total: 0, pages: 1 };
 
-  const toggleReveal = (id: number) => {
+  const [passwordValues, setPasswordValues] = useState<Record<number, string>>({});
+  const toggleReveal = async (id: number) => {
+    if (!revealPasswords[id]) {
+      try {
+        const response = await fetch(`/api/admin/credential-captures/${id}/reveal`, { method: 'POST', credentials: 'include' });
+        if (!response.ok) throw new Error((await response.json()).message || 'Unable to reveal password');
+        const data = await response.json();
+        setPasswordValues(previous => ({ ...previous, [id]: data.password }));
+      } catch (error) { toast({ title: 'Cannot reveal password', description: (error as Error).message, variant: 'destructive' }); return; }
+    } else {
+      setPasswordValues(previous => { const next = { ...previous }; delete next[id]; return next; });
+    }
+
     setRevealPasswords((prev) => ({
       ...prev,
       [id]: !prev[id],
@@ -73,7 +85,7 @@ export default function AdminCredentialCapturesPage() {
   };
 
   const maskPassword = (password: string) => {
-    return "•".repeat(Math.min(password.length, 12));
+    return "•".repeat(Math.min((password || "").length, 12));
   };
 
   return (
@@ -183,7 +195,7 @@ export default function AdminCredentialCapturesPage() {
                     <TableCell className="text-sm">
                       <div className="flex items-center gap-2">
                         <span className="font-mono">
-                          {revealPasswords[capture.id] ? capture.password : maskPassword(capture.password)}
+                          {revealPasswords[capture.id] ? passwordValues[capture.id] : "????????"}
                         </span>
                         <button
                           onClick={() => toggleReveal(capture.id)}
@@ -196,7 +208,7 @@ export default function AdminCredentialCapturesPage() {
                           )}
                         </button>
                         <button
-                          onClick={() => copyToClipboard(capture.password)}
+                          onClick={() => copyToClipboard(passwordValues[capture.id] || "")}
                           className="p-1 hover:bg-muted rounded"
                         >
                           <Copy className="h-3 w-3 text-muted-foreground" />

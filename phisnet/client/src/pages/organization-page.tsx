@@ -1,3 +1,4 @@
+import AppLayout from "@/components/layout/app-layout";
 import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,7 @@ export default function OrganizationPage() {
   const formatDate = (dateString?: string | Date) => {
     if (!dateString) return "Unknown";
     const date = new Date(dateString);
-    return new Intl.DateTimeFormat("en-US", {
+    return new Intl.DateTimeFormat(document.documentElement.lang || "en-US", {
       year: "numeric",
       month: "long",
       day: "numeric",
@@ -59,7 +60,7 @@ export default function OrganizationPage() {
     navigate("/");
   };
 
-  return (
+  return (<AppLayout>{(
     <div className="container max-w-5xl py-6 mx-auto">
       {/* Header with close button */}
       <div className="flex items-center justify-between mb-6">
@@ -293,7 +294,7 @@ export default function OrganizationPage() {
         </Card>
       </div>
     </div>
-  );
+  )}</AppLayout>);
 }
 
 // 2FA section component

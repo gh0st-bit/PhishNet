@@ -1,3 +1,4 @@
+import { PostgresRateLimitStore } from './rate-limit-store';
 import rateLimit from 'express-rate-limit';
 
 /**
@@ -5,6 +6,7 @@ import rateLimit from 'express-rate-limit';
  * Prevents brute force attacks with 10 failed attempts limit
  */
 export const loginLimiter = rateLimit({
+  store:new PostgresRateLimitStore("login"),
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10, // Limit each IP to 10 failed login requests per windowMs
   message: 'Too many login attempts. Please try again later.',
@@ -26,6 +28,7 @@ export const loginLimiter = rateLimit({
  * Prevents brute force attacks and credential stuffing
  */
 export const authLimiter = rateLimit({
+  store:new PostgresRateLimitStore("auth"),
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // Limit each IP to 5 requests per windowMs
   message: 'Too many authentication attempts. Please try again later.',
@@ -40,6 +43,7 @@ export const authLimiter = rateLimit({
  * Prevents abuse and bot traffic from skewing metrics
  */
 export const trackingLimiter = rateLimit({
+  store:new PostgresRateLimitStore("tracking"),
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 100, // Allow 100 tracking events per minute per IP
   message: 'Too many requests. Please try again later.',
@@ -54,6 +58,7 @@ export const trackingLimiter = rateLimit({
  * Protects against excessive API usage
  */
 export const apiLimiter = rateLimit({
+  store:new PostgresRateLimitStore("api"),
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 1000, // Limit each IP to 1000 requests per windowMs
   message: 'Too many requests from this IP. Please try again later.',
@@ -68,6 +73,7 @@ export const apiLimiter = rateLimit({
  * Protects sensitive operations like user creation, deletion, settings changes
  */
 export const adminLimiter = rateLimit({
+  store:new PostgresRateLimitStore("admin"),
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // Limit to 100 admin operations per 15 minutes
   message: 'Too many admin operations. Please try again later.',

@@ -1,3 +1,4 @@
+import {RefreshButton} from '@/components/ui/refresh-button';
 // Notifications listing page
 import AppLayout from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
@@ -7,6 +8,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { Trash2, Check, RefreshCw, AlertTriangle, Shield, BrainCircuit } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from '@/hooks/use-auth';
+import { notificationDestination } from '@shared/access-control';
+import { useLocation } from 'wouter';
 
 interface Notification {
   id: number;
@@ -66,13 +70,15 @@ function getTypeIcon(type: string) {
 }
 
 export default function NotificationsPage() {
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const limit = 50;
 
-  const { data: notificationData, isLoading, refetch } = useQuery({
+  const { data: notificationData, isLoading, error, refetch } = useQuery({
     queryKey: ['/api/notifications', limit],
     queryFn: async () => {
-      const res = await fetch(`/api/notifications?limit=${limit}`);
+      const res = await fetch(`/api/notifications?limit=${limit}`, {credentials:"include",cache:"no-store"});
       if (!res.ok) throw new Error('Failed to fetch notifications');
       return res.json();
     },
@@ -87,6 +93,7 @@ export default function NotificationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+      queryClient.invalidateQueries({queryKey:['/api/notifications/unread-count']});
     },
   });
 
@@ -97,6 +104,7 @@ export default function NotificationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+      queryClient.invalidateQueries({queryKey:['/api/notifications/unread-count']});
     },
   });
 
@@ -112,9 +120,7 @@ export default function NotificationsPage() {
             <p className="text-muted-foreground">Review all recent activity and threat intelligence alerts.</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
-              <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
-            </Button>
+            <RefreshButton onRefresh={()=>Promise.all([queryClient.refetchQueries({queryKey:['/api/notifications'],type:'active'},{throwOnError:true}),queryClient.refetchQueries({queryKey:['/api/notifications/unread-count'],type:'active'},{throwOnError:true})])}>Refresh notifications</RefreshButton>
             {unreadCount > 0 && (
               <Button size="sm" onClick={() => markAllAsReadMutation.mutate()} disabled={markAllAsReadMutation.isPending}>
                 <Check className="h-4 w-4 mr-2" /> Mark All Read
@@ -128,7 +134,7 @@ export default function NotificationsPage() {
             <CardTitle>Recent Notifications ({notifications.length})</CardTitle>
           </CardHeader>
           <CardContent>
-            {notifications.length === 0 ? (
+            {error ? <p role="alert">Notifications could not be loaded. Use Refresh notifications to retry.</p> : isLoading ? <p role="status">Loading notifications...</p> : notifications.length === 0 ? (
               <p className="text-center text-muted-foreground py-12">No notifications available.</p>
             ) : (
               <div className="divide-y">
@@ -141,9 +147,11 @@ export default function NotificationsPage() {
                       type="button"
                       className="flex-1 text-left"
                       onClick={() => {
-                        if (n.actionUrl) {
-                          globalThis.location.href = n.actionUrl;
-                        }
+                        void fetch(`/api/notifications/${n.id}/read`, {method:'PUT'}).then(() => {
+                          queryClient.invalidateQueries({queryKey:['/api/notifications']});
+                          queryClient.invalidateQueries({queryKey:['/api/notifications/unread-count']});
+                        });
+                        navigate(notificationDestination(n, user || {}));
                       }}
                     >
                       <div className="flex items-center gap-2">

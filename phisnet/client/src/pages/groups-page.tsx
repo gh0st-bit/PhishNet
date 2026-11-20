@@ -175,7 +175,7 @@ export default function GroupsPage() {
 
   const handleEditGroup = (group: Group) => {
     setSelectedGroup(group);
-    setShowModal(true);
+    setIsCreatingGroup(true);
   };
 
   const handleViewGroup = (group: Group) => {

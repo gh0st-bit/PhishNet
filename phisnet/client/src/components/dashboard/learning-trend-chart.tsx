@@ -6,7 +6,7 @@ interface TrendData {
   date: string;
   modulesCompleted: number;
   quizzesPassed: number;
-  pointsEarned: number;
+  pointsEarned: number|null;
 }
 
 interface LearningTrendChartProps {
@@ -23,7 +23,7 @@ export function LearningTrendChart({
   // Format date for display
   const formattedData = data.map(d => ({
     ...d,
-    date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    date: new Date(d.date).toLocaleDateString(document.documentElement.lang || 'en-US', { month: 'short', day: 'numeric' })
   }));
 
   return (
@@ -35,7 +35,7 @@ export function LearningTrendChart({
               <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5" />
               <span className="truncate">{title}</span>
             </CardTitle>
-            <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
+            <CardDescription className="text-xs sm:text-sm">{description}. Points before event recording began are not available.</CardDescription>
           </div>
         </div>
       </CardHeader>

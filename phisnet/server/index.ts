@@ -1,145 +1,66 @@
-import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
-import { setupVite, serveStatic, log } from "./vite";
-import { isAuthenticated, isAdmin } from './auth';
-import { pool } from './db';
-import { startCampaignScheduler } from './services/campaign-scheduler';
+import { observeRequests,registerOperations } from './observability';
+import { reliableRoutes } from './http';
+import { sendgridWebhook } from './services/delivery-webhook';
+import express from 'express';
+import { readConfig } from './config';
+import { localNetworkOnly } from './services/local-lab';
+import { requestSecurity } from './middleware/request-security';
+import { registerRoutes } from './routes';
+import { setupVite, serveStatic, log } from './vite';
+import { pool,validateDatabaseRoles } from './db';
+import { storage } from './storage';
 import { initRealtime } from './services/realtime';
+import { startCampaignScheduler, stopCampaignScheduler } from './services/campaign-scheduler';
 import { threatFeedScheduler } from './services/threat-intelligence/threat-feed-scheduler';
 import { dataRetentionScheduler } from './services/data-retention-scheduler';
+import { reportingScheduler } from './services/reporting-scheduler';
 
-const app = express();
+const config = readConfig();
+const app = reliableRoutes(express());
+app.use(localNetworkOnly);
+app.use(observeRequests);
+app.use(requestSecurity(config.origins, config.production));
+if (config.production) app.use('/api/debug', (_req, res) => res.status(404).json({ message: 'API endpoint not found' }));
+app.post('/api/webhooks/sendgrid',express.raw({type:'application/json',limit:'512kb'}),sendgridWebhook);
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Add CORS middleware
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'http://localhost:5173');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cookie');
-  
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
-});
-
-// eslint-disable-next-line prefer-top-level-await
-(async () => {
-  // Validate critical environment variables
-  const requiredEnvVars = ['DATABASE_URL', 'SESSION_SECRET'];
-  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-  
-  if (missingVars.length > 0) {
-    console.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}`);
-    process.exit(1);
-  }
-  
-  // Warn if MASTER_ENCRYPTION_KEY is using insecure default
-  if (!process.env.MASTER_ENCRYPTION_KEY || 
-      process.env.MASTER_ENCRYPTION_KEY.includes('CHANGE') ||
-      process.env.MASTER_ENCRYPTION_KEY.includes('insecure')) {
-    console.warn('WARNING: MASTER_ENCRYPTION_KEY is not set or using insecure default. ' +
-                 'Generate a secure key with: openssl rand -base64 32');
-  }
-  
+async function main() {
+  await pool.query('SELECT 1');
+  await validateDatabaseRoles(config.production);
   const server = await registerRoutes(app);
-  // Initialize Socket.IO real-time server
-  initRealtime(server);
-
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
+  registerOperations(app);
+  app.use('/api', (_req, res) => res.status(404).json({ message: 'API endpoint not found' }));
+  const io = initRealtime(server, app.get('sessionMiddleware'), config.origins);
+  if (app.get('env') === 'development') await setupVite(app, server);
+  else serveStatic(app);
+  app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (res.headersSent) return next(err);
+    const status = err.name==='ZodError'?400:Number(err.status || err.statusCode) || 500;
+    console.error('Request failed', { status, name: err.name });
+    res.status(status).json({ message: status >= 500 ? 'Internal server error' : err.name==='ZodError'?'Invalid request fields':err.message });
   });
-
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
-  } else {
-    serveStatic(app);
-  }
-
-  const port = 5000;
-  server.listen(port, "localhost", () => {
-    log(`Server running at http://localhost:${port}`);
-    
-    // Start background scheduler to auto-send due campaigns
-  const intervalMs = Number.parseInt(process.env.CAMPAIGN_SCHEDULER_INTERVAL_MS || '60000', 10);
-    startCampaignScheduler(intervalMs);
-    
-    // Start threat intelligence feed scheduler (runs every N hours)
-    // Controlled via env var THREAT_FEED_ENABLED=true to avoid accidental start in constrained environments
-    try {
-      const enabled = (process.env.THREAT_FEED_ENABLED || 'true').toLowerCase() === 'true';
-      if (enabled) {
-  const threatIntervalHours = Number.parseInt(process.env.THREAT_FEED_INTERVAL_HOURS || '2', 10);
-        threatFeedScheduler.start(threatIntervalHours);
-        log(`Threat intelligence scheduler started (every ${threatIntervalHours} hours)`);
-      } else {
-        log('Threat intelligence scheduler disabled via THREAT_FEED_ENABLED env var');
-      }
-    } catch (err) {
-      console.error('Failed to start threat intelligence scheduler:', err);
-    }
-
-    // Start data retention scheduler (daily by default)
-    try {
-      const retentionEnabled = (process.env.DATA_RETENTION_ENABLED || 'true').toLowerCase() === 'true';
-      if (retentionEnabled) {
-        const intervalHours = Number.parseInt(process.env.DATA_RETENTION_INTERVAL_HOURS || '24', 10);
-        dataRetentionScheduler.start(intervalHours);
-        log(`Data retention scheduler started (every ${intervalHours} hours)`);
-      } else {
-        log('Data retention scheduler disabled via DATA_RETENTION_ENABLED env var');
-      }
-    } catch (err) {
-      console.error('Failed to start data retention scheduler:', err);
-    }
+  server.listen(config.port, config.host, () => {
+    log(`Server running at http://${config.host}:${config.port}`);
+    if (process.env.CAMPAIGN_SCHEDULER_ENABLED === 'true') startCampaignScheduler();
+    if (process.env.THREAT_FEED_ENABLED === 'true') threatFeedScheduler.start(Number(process.env.THREAT_FEED_INTERVAL_HOURS || 2));
+    if (process.env.DATA_RETENTION_ENABLED === 'true') dataRetentionScheduler.start(Number(process.env.DATA_RETENTION_INTERVAL_HOURS || 24));
   });
-})();
-
-// Debug endpoint
-app.get("/api/debug/templates", isAuthenticated, isAdmin, async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM email_templates LIMIT 10');
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Debug query error:', error);
-    res.status(500).json({ error: 'Database query failed' });
-  }
-});
+  let closing = false;
+  const shutdown = () => {
+    if (closing) return;
+    closing = true;
+    stopCampaignScheduler();
+    threatFeedScheduler.stop();
+    dataRetentionScheduler.stop();
+    reportingScheduler.stop();
+    storage.stopSessionStore();
+    const timeout = setTimeout(() => process.exit(1), 15000).unref();
+    io.close();
+    server.close(() => { void pool.end().finally(() => { clearTimeout(timeout); process.exit(0); }); });
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+}
+main().catch(error => { console.error('Startup failed', error.message); process.exit(1); });

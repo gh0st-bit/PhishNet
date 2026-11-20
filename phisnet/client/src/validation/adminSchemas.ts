@@ -1,3 +1,4 @@
+import {badgeCriterionSchema} from '@shared/badge-criteria';
 import { z } from "zod";
 
 export const quizFormSchema = z.object({
@@ -48,7 +49,7 @@ export const badgeFormSchema = z.object({
   category: z.string().min(1, "Category required"),
   pointsAwarded: z.number().int().min(0).optional(),
   rarity: z.enum(["common","rare","epic","legendary"]).optional(),
-  criteria: z.any()
+  criteria: badgeCriterionSchema
 });
 
 export type QuizFormValues = z.infer<typeof quizFormSchema>;

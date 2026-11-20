@@ -1,9 +1,12 @@
+import {drizzle} from 'drizzle-orm/node-postgres';
+import {pool} from '../db';
+import { reliableRoutes } from '../http';
 import type { Express } from "express";
 import { Router, Request, Response } from "express";
 import sanitizeHtml from "sanitize-html";
 import { db } from "../db";
 import { validateBody } from "../middleware/validation";
-import { isAuthenticated, isAdmin } from "../auth"; // optional guards if needed
+import { isAuthenticated, isAdmin, isAdminOrOrgAdmin } from "../auth"; // optional guards if needed
 import { NotificationService } from "../services/notification-service";
 import {
   // Tables
@@ -43,7 +46,17 @@ import {
 } from "../../shared/schema";
 import { eq, and, desc, like, or, sql } from "drizzle-orm";
 
-const router = Router();
+async function writeBadge(id:number,changes:Partial<typeof badges.$inferInsert>) {
+  const client=await pool.connect();
+  try {
+    await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(18468,$1)',[id]);
+    const [badge]=await drizzle(client).update(badges).set(changes).where(eq(badges.id,id)).returning();
+    await client.query('COMMIT');return badge;
+  }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+}
+
+const router = reliableRoutes(Router());
+router.use('/badges',isAdmin);
 
 // Helper for pagination
 function parsePaginationParams(pageParam: any, pageSizeParam: any) {
@@ -769,18 +782,21 @@ router.get("/badges", async (req: Request, res: Response) => {
     const { page, pageSize, offset } = parsePaginationParams(req.query.page, req.query.pageSize);
 
     // Total count
-    const [countRow] = await db.select({ total: sql<number>`count(*)` }).from(badges);
+    const badgeFilter=req.query.archived==='true'?sql`${badges.archivedAt} IS NOT NULL`:sql`${badges.archivedAt} IS NULL`;
+    const [countRow] = await db.select({ total: sql<number>`count(*)` }).from(badges).where(badgeFilter);
     const total = countRow?.total ?? 0;
 
     const rows = await db
       .select({
         id: badges.id,
+        archivedAt: badges.archivedAt,
         name: badges.name,
         description: badges.description,
         criteria: badges.criteria,
         rarity: badges.rarity,
         iconUrl: badges.iconUrl,
         pointsAwarded: badges.pointsAwarded,
+        published: badges.published,
         category: badges.category,
         createdAt: badges.createdAt,
         earnedCount: sql<number>`(
@@ -788,6 +804,7 @@ router.get("/badges", async (req: Request, res: Response) => {
         )`
       })
       .from(badges)
+      .where(badgeFilter)
       .orderBy(desc(badges.createdAt))
       .limit(pageSize)
       .offset(offset);
@@ -816,6 +833,7 @@ router.post("/badges", validateBody(insertBadgeSchema), async (req: Request, res
       rarity: req.body.rarity ?? "common",
       iconUrl: req.body.iconUrl,
       pointsAwarded: req.body.pointsAwarded ?? 0,
+      published: req.body.published ?? false,
     };
 
     const [newBadge] = await db
@@ -848,19 +866,19 @@ router.put("/badges/:id", validateBody(updateBadgeSchema), async (req: Request, 
       return res.status(404).json({ message: "Badge not found" });
     }
 
+    if(existing.archivedAt)return res.status(409).json({message:"Restore this archived badge before editing"});
     const updateData: Partial<InsertBadge> = {
       name: req.body.name,
       description: req.body.description,
       criteria: req.body.criteria,
       rarity: req.body.rarity,
       iconUrl: req.body.iconUrl,
+      pointsAwarded: req.body.pointsAwarded,
+      category: req.body.category,
+      published: req.body.published,
     };
 
-    const [updatedBadge] = await db
-      .update(badges)
-      .set(updateData)
-      .where(eq(badges.id, badgeId))
-      .returning();
+    const updatedBadge=await writeBadge(badgeId,updateData);
 
     res.json({ badge: updatedBadge });
   } catch (error: any) {
@@ -887,15 +905,35 @@ router.delete("/badges/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Badge not found" });
     }
 
-    await db
-      .delete(badges)
-      .where(eq(badges.id, badgeId));
+    await writeBadge(badgeId,{archivedAt:new Date(),published:false});
 
     res.json({ success: true });
   } catch (error: any) {
     console.error("Error deleting badge:", error);
     res.status(500).json({ message: "Failed to delete badge" });
   }
+});
+
+router.post('/badges/:id/award', async(req,res)=>{
+  const email=String(req.body.email||'').trim().toLowerCase(),reason=String(req.body.reason||'').trim();
+  if(reason.length<3||reason.length>1000)return res.status(400).json({message:'Provide an award reason of 3–1000 characters'});
+  const client=await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const {rows:[employee]}=await client.query(`SELECT u.id FROM users u WHERE lower(u.email)=$1 AND u.organization_id=$2 AND u.is_active AND NOT u.is_admin AND NOT EXISTS(SELECT 1 FROM user_roles ur JOIN roles r ON r.id=ur.role_id WHERE ur.user_id=u.id AND r.name IN ('Admin','OrgAdmin','Manager'))`,[email,req.user!.organizationId]);
+    if(!employee){await client.query('ROLLBACK');return res.status(404).json({message:'Active employee not found in your organization'});}
+    await client.query('SELECT pg_advisory_xact_lock($1)',[employee.id]);
+    await client.query('SELECT pg_advisory_xact_lock(18468,$1)',[Number(req.params.id)]);
+    const {rows:[badge]}=await client.query("SELECT * FROM badges WHERE id=$1 AND published AND archived_at IS NULL AND criteria->>'type'='custom' FOR SHARE",[Number(req.params.id)]);
+    if(!badge){await client.query('ROLLBACK');return res.status(409).json({message:'Choose a published, active manual badge'});}
+    const result=await client.query(`INSERT INTO user_badges(user_id,badge_id,award_snapshot) SELECT $1,$2,$3 WHERE NOT EXISTS(SELECT 1 FROM user_badges WHERE user_id=$1 AND badge_id=$2) RETURNING id`,[employee.id,badge.id,JSON.stringify({name:badge.name,description:badge.description,iconUrl:badge.icon_url,rarity:badge.rarity,manualReason:reason,awardedBy:req.user!.id})]);
+    await client.query('COMMIT');res.json({awarded:!!result.rowCount,alreadyEarned:!result.rowCount});
+  } catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+});
+router.post('/badges/:id/restore', async(req,res)=>{
+  const badge=await writeBadge(Number(req.params.id),{archivedAt:null,published:false});
+  if(!badge)return res.status(404).json({message:'Badge not found'});
+  res.json({badge});
 });
 
 /**
@@ -921,11 +959,8 @@ router.patch("/badges/:id/publish", async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Badge not found" });
     }
 
-    const [updatedBadge] = await db
-      .update(badges)
-      .set({ published })
-      .where(eq(badges.id, badgeId))
-      .returning();
+    if(existing.archivedAt)return res.status(409).json({message:"Restore this archived badge before publishing"});
+    const updatedBadge=await writeBadge(badgeId,{published});
 
     res.json({ badge: updatedBadge, message: `Badge ${published ? 'published' : 'unpublished'} successfully` });
   } catch (error: any) {
@@ -1109,6 +1144,7 @@ router.post("/articles", validateBody(createArticleRequestSchema), async (req: R
       thumbnailUrl: req.body.thumbnailUrl,
       author: req.user.id,
       readTimeMinutes: req.body.readTimeMinutes,
+      published: req.body.published ?? false,
     };
 
     const [newArticle] = await db
@@ -1122,7 +1158,7 @@ router.post("/articles", validateBody(createArticleRequestSchema), async (req: R
       const notifications = await NotificationService.createOrganizationNotification({
         organizationId: orgId,
         type: 'article',
-        title: 'New Article Published',
+        title: newArticle.published ? 'New Article Published' : 'Article Draft Created',
         message: `New article available: "${newArticle.title}"`,
         priority: 'low',
         actionUrl: '/employee/articles',
@@ -1130,6 +1166,7 @@ router.post("/articles", validateBody(createArticleRequestSchema), async (req: R
           articleId: newArticle.id,
           articleTitle: newArticle.title,
           category: newArticle.category,
+          published: newArticle.published,
         },
       });
       console.log(`✅ Created ${notifications?.length || 0} article notifications`);
@@ -1292,6 +1329,7 @@ router.patch("/articles/:id/publish", async (req: Request, res: Response) => {
       .where(eq(articles.id, articleId))
       .returning();
 
+    if (published && !existing.published) await NotificationService.createOrganizationNotification({organizationId:orgId,type:'article',title:'New Article Published',message:`New article available: "${updatedArticle.title}"`,priority:'low',actionUrl:'/employee/articles',metadata:{articleId:updatedArticle.id,published:true}});
     res.json({ article: updatedArticle, message: `Article ${published ? 'published' : 'unpublished'} successfully` });
   } catch (error: any) {
     console.error("Error updating article publish status:", error);
@@ -1584,6 +1622,7 @@ router.patch("/flashcard-decks/:id/publish", async (req: Request, res: Response)
       .where(eq(flashcardDecks.id, deckId))
       .returning();
 
+    if (published && !existing.published) await NotificationService.createOrganizationNotification({organizationId:orgId,type:'flashcard',title:'Flashcard Deck Published',message:`New flashcards available: "${updatedDeck.title}"`,priority:'low',actionUrl:'/employee/flashcards',metadata:{deckId:updatedDeck.id,published:true}});
     res.json({ deck: updatedDeck, message: `Flashcard deck ${published ? 'published' : 'unpublished'} successfully` });
   } catch (error: any) {
     console.error("Error updating flashcard deck publish status:", error);

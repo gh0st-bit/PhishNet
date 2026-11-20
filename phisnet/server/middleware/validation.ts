@@ -15,7 +15,7 @@ export function validateBody(schema: ZodSchema) {
     } catch (error) {
       if (error instanceof ZodError) {
         // Format validation errors for client
-        const errors = error.errors.map((err) => ({
+        const errors = error.issues.map((err) => ({
           path: err.path.join("."),
           message: err.message,
         }));
@@ -40,7 +40,7 @@ export function validateBody(schema: ZodSchema) {
  * @param schema - Zod schema to validate against
  * @returns Express middleware function
  */
-export function validateQuery(schema: ZodSchema) {
+export function validateQuery(schema: ZodSchema<Request["query"]>) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       // Validate and parse query parameters
@@ -48,7 +48,7 @@ export function validateQuery(schema: ZodSchema) {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        const errors = error.errors.map((err) => ({
+        const errors = error.issues.map((err) => ({
           path: err.path.join("."),
           message: err.message,
         }));
@@ -72,7 +72,7 @@ export function validateQuery(schema: ZodSchema) {
  * @param schema - Zod schema to validate against
  * @returns Express middleware function
  */
-export function validateParams(schema: ZodSchema) {
+export function validateParams(schema: ZodSchema<Request["params"]>) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       // Validate and parse route parameters
@@ -80,7 +80,7 @@ export function validateParams(schema: ZodSchema) {
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        const errors = error.errors.map((err) => ({
+        const errors = error.issues.map((err) => ({
           path: err.path.join("."),
           message: err.message,
         }));

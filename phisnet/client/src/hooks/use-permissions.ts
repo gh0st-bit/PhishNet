@@ -1,24 +1,13 @@
 // Create: phisnet/client/src/hooks/use-permissions.tsx
 import { useAuth } from "./use-auth";
 import { PERMISSIONS } from "@shared/schema";
+import { can } from '@shared/access-control';
 
 export function usePermissions() {
   const { user } = useAuth();
 
   const hasPermission = (permission: string): boolean => {
-    if (!user) {
-      return false;
-    }
-    
-    // For now, give admins all permissions
-    // Later you can implement role-based permissions from user.roles
-    if (user.isAdmin) {
-      return true;
-    }
-    
-    // Add more sophisticated permission checking here
-    // when you implement role-based permissions
-    return false;
+    return can(user, permission);
   };
 
   const hasAnyPermission = (permissions: string[]): boolean => {

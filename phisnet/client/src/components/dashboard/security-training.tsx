@@ -28,7 +28,7 @@ export default function SecurityTraining({ trainings }: SecurityTrainingProps) {
   };
 
   return (
-    <Card>
+    <Card className="glass glass-tile">
       <CardHeader>
         <CardTitle>Security Training</CardTitle>
       </CardHeader>

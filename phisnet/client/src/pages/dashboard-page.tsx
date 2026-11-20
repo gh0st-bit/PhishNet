@@ -1,4 +1,5 @@
 import AppLayout from "@/components/layout/app-layout";
+import OverviewPanel from '@/components/dashboard/overview-panel';
 import StatCard from "@/components/dashboard/stat-card";
 import RecentCampaigns from "@/components/dashboard/recent-campaigns";
 import PhishingMetricsChart from "@/components/dashboard/phishing-metrics-chart";
@@ -48,7 +49,7 @@ function RecentNotifications() {
 
   if (isLoading) {
     return (
-      <Card>
+      <Card className="glass glass-tile">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Bell className="h-4 w-4" />
@@ -65,7 +66,7 @@ function RecentNotifications() {
   }
 
   return (
-    <Card>
+    <Card className="glass glass-tile">
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <Bell className="h-4 w-4" />
@@ -153,6 +154,7 @@ export default function DashboardPage() {
 
   return (
     <AppLayout>
+      <div className="mb-8"><OverviewPanel/></div>
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>

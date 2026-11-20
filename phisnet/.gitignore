@@ -23,9 +23,8 @@ out/
 .env.codespace
 .env.codespaces
 
-# Keep .env.example and .env.frontend for reference
+# Keep the single .env.example template for local setup
 !.env.example
-!.env.frontend
 
 # Security & Sensitive Data
 *.key
@@ -149,3 +148,24 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+.env.audit
+.env.audit.*
+
+backups/audit-drills/
+backups/
+
+.env.investor-demo.accounts
+
+/DEMO-LOGINS.private.txt
+
+# Database exports and dumps contain user records and password hashes; never commit them.
+Exported-DB/*.json
+**/database-full-backup.sql
+attached_assets/phishnet.sql
+backups/**/*.sql
+
+# Archived leftovers (Replit, one-off scripts, old packages); kept locally, not part of the product.
+_archive/
+
+phishnet-release.tar.gz

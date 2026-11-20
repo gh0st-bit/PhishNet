@@ -1,3 +1,4 @@
+import {RefreshButton} from '@/components/ui/refresh-button';
 // PhishNet Email Settings Component
 import React, { useState, useEffect } from "react";
 // UI Components
@@ -50,7 +51,7 @@ export function EmailSettings() {
   }, []);
 
   // Fetch notification preferences from API
-  const fetchNotificationPreferences = async () => {
+  const fetchNotificationPreferences = async (manual=false) => {
     try {
       setLoading(true);
       const response = await fetch('/api/notifications/preferences', {
@@ -76,6 +77,7 @@ export function EmailSettings() {
     } 
     // Handle errors
     catch (error) {
+      if(manual)throw error;
       console.error('Error fetching notification preferences:', error);
       toast({
         title: "Error",
@@ -301,15 +303,7 @@ export function EmailSettings() {
         )}
       </CardContent>
       <CardFooter>
-        <Button 
-          variant="outline" 
-          onClick={fetchNotificationPreferences}
-          disabled={loading}
-          className="ml-auto"
-        >
-          {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Refresh Settings
-        </Button>
+        <RefreshButton className="ml-auto" onRefresh={()=>fetchNotificationPreferences(true)}>Refresh Settings</RefreshButton>
       </CardFooter>
     </Card>
   );
@@ -367,7 +361,7 @@ export function EmailSettings() {
   //}, []);
 
   // Fetch notification preferences from API
-  //const fetchNotificationPreferences = async () => {
+  //const fetchNotificationPreferences = async (manual=false) => {
     //try {
       //setLoading(true);
       //const response = await fetch('/api/notifications/preferences', {

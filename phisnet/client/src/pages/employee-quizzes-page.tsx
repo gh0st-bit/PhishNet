@@ -1,3 +1,4 @@
+import {RefreshButton} from '@/components/ui/refresh-button';
 import AppLayout from "@/components/layout/app-layout";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -36,9 +37,7 @@ export default function EmployeeQuizzesPage() {
           <h1 className="text-2xl font-bold">Quizzes</h1>
           <p className="text-sm text-muted-foreground">Test your knowledge</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
-        </Button>
+        <RefreshButton onRefresh={()=>refetch({throwOnError:true})}/>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

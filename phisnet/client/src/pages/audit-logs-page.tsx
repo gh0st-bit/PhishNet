@@ -1,3 +1,4 @@
+import {RefreshButton} from '@/components/ui/refresh-button';
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import AppLayout from "@/components/layout/app-layout";
@@ -112,10 +113,7 @@ export default function AuditLogsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh
-            </Button>
+            <RefreshButton onRefresh={()=>refetch({throwOnError:true})}/>
             <Button variant="outline" size="sm" onClick={handleExport}>
               <Download className="h-4 w-4 mr-2" />
               Export CSV
@@ -258,7 +256,7 @@ export default function AuditLogsPage() {
                         </TableCell>
                         <TableCell className="text-sm">{log.ip || "—"}</TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="sm">
+                          <Button variant="ghost" size="sm" onClick={() => setSelectedLog(log)}>
                             View
                           </Button>
                         </TableCell>

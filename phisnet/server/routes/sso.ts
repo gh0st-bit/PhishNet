@@ -1,7 +1,8 @@
+import {randomBytes,timingSafeEqual} from 'node:crypto';
 import { Express, Request, Response } from "express";
 import passport from "passport";
 import { db } from "../db";
-import { ssoConfig, users, insertSsoConfigSchema } from "../../shared/schema";
+import { ssoConfig, users, insertSsoConfigSchema, rolesSchema, userRolesSchema } from "../../shared/schema";
 import { eq } from "drizzle-orm";
 import { isAuthenticated, isAdmin } from "../auth";
 import { SsoService } from "../services/sso.service";
@@ -12,7 +13,7 @@ export function registerSsoRoutes(app: Express) {
    * GET /api/auth/saml/:orgId
    * Initiate SAML login for an organization
    */
-  app.get("/api/auth/saml/:orgId", async (req: Request, res: Response) => {
+  app.get("/api/auth/saml/:orgId", async (req: Request, res: Response, next) => {
     try {
       const orgId = Number.parseInt(req.params.orgId, 10);
       
@@ -23,15 +24,21 @@ export function registerSsoRoutes(app: Express) {
       const strategy = await SsoService.initializeSamlStrategy(orgId);
       
       // Use the strategy directly to authenticate (cast to any to avoid type issues)
-      passport.use('saml', strategy as any);
+
       
-      passport.authenticate('saml', {
+      const nonce=randomBytes(24).toString('hex');
+      res.cookie(`phishnet.saml.${orgId}`,nonce,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:process.env.NODE_ENV==='production'?'none':'lax',path:'/api/auth/saml/callback',maxAge:300000});
+      req.query.RelayState=`${orgId}.${nonce}`;
+      passport.authenticate(strategy, {
         session: false,
-      })(req, res);
+
+      })(req, res, next);
     } catch (error) {
-      console.error('SAML initiation error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : "Failed to initiate SAML login" 
+      // An organization without SAML is a normal "not found", not a server failure.
+      const status = Number((error as any)?.status) === 404 ? 404 : 500;
+      if (status === 500) console.error('SAML initiation error:', error);
+      res.status(status).json({ 
+        message: status === 404 && error instanceof Error ? error.message : "Failed to initiate SAML login" 
       });
     }
   });
@@ -42,17 +49,17 @@ export function registerSsoRoutes(app: Express) {
    */
   app.post("/api/auth/saml/callback", async (req: Request, res: Response) => {
     try {
-      // Extract org ID from RelayState or session
-      const orgId = Number.parseInt(req.body.RelayState || req.query.orgId as string, 10);
-      
-      if (Number.isNaN(orgId)) {
-        return res.status(400).json({ message: "Invalid organization context" });
-      }
+      const state=typeof req.body.RelayState==='string'?/^(\d+)\.([0-9a-f]{48})$/.exec(req.body.RelayState):null;
+      if(!state)return res.status(400).json({message:'Invalid SAML state'});
+      const orgId=Number(state[1]);const cookieName=`phishnet.saml.${orgId}`;
+      const cookie=(req.get('cookie')||'').split(';').map(v=>v.trim()).find(v=>v.startsWith(cookieName+'='))?.slice(cookieName.length+1);
+      if(!cookie||cookie.length!==state[2].length||!timingSafeEqual(Buffer.from(cookie),Buffer.from(state[2])))return res.status(403).json({message:'SAML browser state mismatch'});
+      res.clearCookie(cookieName,{path:'/api/auth/saml/callback'});
 
       const strategy = await SsoService.initializeSamlStrategy(orgId);
-      passport.use('saml', strategy as any);
 
-      passport.authenticate('saml', (err: Error | null, user: Express.User | false) => {
+
+      passport.authenticate(strategy, (err: Error | null, user: Express.User | false) => {
         if (err) {
           console.error('SAML authentication error:', err);
           return res.redirect('/login?error=saml_failed');
@@ -62,7 +69,15 @@ export function registerSsoRoutes(app: Express) {
           return res.redirect('/login?error=saml_no_user');
         }
 
-        // Manually establish session
+        if(!user.isActive)return res.redirect('/auth?error=inactive');
+        // SAML proves the primary identity; privileged and tenant MFA policy still applies.
+        void (async()=>{
+          const {storage}=await import('../storage');
+          const org=await storage.getOrganization(user.organizationId);
+          const roles=await db.select({name:rolesSchema.name}).from(userRolesSchema).innerJoin(rolesSchema,eq(userRolesSchema.roleId,rolesSchema.id)).where(eq(userRolesSchema.userId,user.id));
+          const needsMfa=user.twoFactorEnabled||org?.twoFactorRequired||(process.env.NODE_ENV==='production'&&(user.isAdmin||roles.some(role=>role.name==='OrgAdmin')));
+          if(needsMfa){(req.session as any).pendingTwoFactorUserId=user.id;(req.session as any).pendingTwoFactorExpiresAt=Date.now()+300000;return req.session.save(()=>res.redirect(user.twoFactorEnabled?'/auth?mfa=verify':'/auth?mfa=setup'));}
+          // Manually establish session
         req.login(user, (loginErr) => {
           if (loginErr) {
             console.error('Session creation error:', loginErr);
@@ -70,8 +85,9 @@ export function registerSsoRoutes(app: Express) {
           }
 
           // Redirect to dashboard
-          res.redirect('/');
+          req.session.save(()=>res.redirect('/'));
         });
+        })().catch(()=>res.redirect('/auth?error=saml_failed'));
       })(req, res);
     } catch (error) {
       console.error('SAML callback error:', error);
@@ -96,9 +112,11 @@ export function registerSsoRoutes(app: Express) {
       res.set('Content-Type', 'application/xml');
       res.send(metadata);
     } catch (error) {
-      console.error('SAML metadata error:', error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : "Failed to retrieve SAML metadata" 
+      // An organization without SAML is a normal "not found", not a server failure.
+      const status = Number((error as any)?.status) === 404 ? 404 : 500;
+      if (status === 500) console.error('SAML metadata error:', error);
+      res.status(status).json({ 
+        message: status === 404 && error instanceof Error ? error.message : "Failed to retrieve SAML metadata" 
       });
     }
   });

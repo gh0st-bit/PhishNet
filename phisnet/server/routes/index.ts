@@ -1,3 +1,15 @@
+import {registerContentLibrary} from './content-library';
+import {registerLearningPaths} from './learning-paths';
+import {registerPilot} from './pilot';
+import {registerPilotContent} from './pilot-content';
+import {registerMicrosoftConnection} from './microsoft-connection';
+import {registerReportedMessages} from './reported-messages';
+import {registerManager} from './manager';
+import { registerPrivateAssets } from './private-assets';
+import {registerLocalLab} from './local-lab';
+import {registerProductOverview} from './product-overview';
+import { registerDeliverySettings } from './delivery-settings';
+import { registerTrainingAssignmentRoutes } from './training-assignments';
 import type { Express } from 'express';
 import { registerHealthRoutes } from './health';
 import { registerDashboardRoutes } from './dashboard';
@@ -29,8 +41,19 @@ import { registerCredentialCaptureRoutes } from './credential-capture';
  * This function is called from the main routes.ts file
  */
 export function registerModularRoutes(app: Express) {
+  registerPilot(app);
+  registerLearningPaths(app);
+  registerPilotContent(app);
+  registerMicrosoftConnection(app);
+  registerReportedMessages(app);
+  registerManager(app);
+  registerLocalLab(app);
+  registerProductOverview(app);
   // Core system routes
   registerHealthRoutes(app);
+  registerPrivateAssets(app);
+  registerDeliverySettings(app);
+  registerTrainingAssignmentRoutes(app);
   
   // Dashboard routes
   registerDashboardRoutes(app);
@@ -76,6 +99,7 @@ export function registerModularRoutes(app: Express) {
 
   // Secrets management routes (admin only)
   registerSecretsRoutes(app);
+  registerContentLibrary(app);
 
   // Employee Portal routes (employee-facing features)
   registerEmployeePortalRoutes(app);

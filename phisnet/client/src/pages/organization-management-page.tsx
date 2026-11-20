@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { copyText } from '@/lib/clipboard';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -100,6 +101,7 @@ export default function OrganizationManagementPage() {
   const queryClient = useQueryClient();
   const [showOrgDialog, setShowOrgDialog] = useState(false);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
+  const [inviteLinks,setInviteLinks] = useState<Record<number,string>>({});
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null);
   const [deleteOrgId, setDeleteOrgId] = useState<number | null>(null);
   const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
@@ -197,6 +199,7 @@ export default function OrganizationManagementPage() {
       return await response.json();
     },
     onSuccess: (data) => {
+      setInviteLinks(previous=>({...previous,...Object.fromEntries((data.success||[]).filter((item:any)=>item.inviteUrl).map((item:any)=>[item.id,item.inviteUrl]))}));
       const successCount = data.successCount ?? data.success?.length ?? 0;
       const failedCount = data.failedCount ?? data.failed?.length ?? 0;
       
@@ -238,14 +241,15 @@ export default function OrganizationManagementPage() {
   // Resend invite mutation
   const resendInvite = useMutation({
     mutationFn: async (inviteId: number) => {
-      return apiRequest("POST", `/api/admin/org-admin-invites/${inviteId}/resend`);
+      return (await apiRequest("POST", `/api/admin/org-admin-invites/${inviteId}/resend`)).json() as Promise<{ inviteUrl?: string }>;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data, inviteId) => {
       customToast.success({ title: "Invite resent", description: "A new invitation email has been sent." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/org-admin-invites"] });
       if (data.inviteUrl) {
-        navigator.clipboard.writeText(data.inviteUrl);
-        customToast.info({ title: "New invite link copied" });
+        setInviteLinks(previous=>({...previous,[inviteId]:data.inviteUrl!}));
+        if(await copyText(data.inviteUrl))customToast.info({ title: "New invite link copied" });
+        else customToast.error({title:'Clipboard unavailable',description:'Use the invitation email to open the link.'});
       }
     },
     onError: (error: Error) => {
@@ -285,10 +289,11 @@ export default function OrganizationManagementPage() {
     }
   };
 
-  const copyInviteLink = (invite: OrgAdminInvite) => {
-    const inviteUrl = invite.inviteUrl || `${window.location.origin}/api/enroll/accept?token=${encodeURIComponent(invite.token)}`;
-    navigator.clipboard.writeText(inviteUrl);
-    customToast.success({ title: "Invite link copied" });
+  const copyInviteLink = async (invite: OrgAdminInvite) => {
+    const inviteUrl = inviteLinks[invite.id];
+    if(!inviteUrl)return;
+    if(await copyText(inviteUrl))customToast.success({ title: "Invite link copied" });
+    else customToast.error({title:'Clipboard unavailable',description:'Use the invitation email to open the link.'});
   };
 
   const getStatusBadge = (invite: OrgAdminInvite) => {
@@ -516,10 +521,10 @@ export default function OrganizationManagementPage() {
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
 
-                                  {/* Always allow copying the invite link while it exists */}
-                                  <DropdownMenuItem onClick={() => copyInviteLink(invite)}>
+                                  {/* A stored hash cannot be used as an invitation token. */}
+                                  <DropdownMenuItem disabled={!inviteLinks[invite.id] || Boolean(invite.acceptedAt) || new Date(invite.expiresAt) <= new Date()} onClick={() => copyInviteLink(invite)}>
                                     <Copy className="mr-2 h-4 w-4" />
-                                    Copy Invite Link
+                                    {inviteLinks[invite.id]?'Copy Invite Link':'Resend to get a new link'}
                                   </DropdownMenuItem>
 
                                   {/* Resend only for pending + not expired */}

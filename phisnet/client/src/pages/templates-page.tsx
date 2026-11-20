@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,7 +59,7 @@ export default function TemplatesPage() {
   const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   
   const { data: templates = [] } = useQuery<Template[]>({
     queryKey: ['/api/email-templates'],
@@ -115,7 +115,7 @@ export default function TemplatesPage() {
 
   const handleCreateCampaign = () => {
     // Navigate to campaigns page with a query parameter to open the editor
-    navigate("/campaigns?action=create");
+    navigate((location.startsWith('/org-admin') ? '/org-admin/campaigns' : '/campaigns') + '?action=create');
   };
 
   return (
@@ -203,6 +203,8 @@ export default function TemplatesPage() {
       {/* Template Editor Dialog */}
       <Dialog open={isEditing} onOpenChange={setIsEditing}>
         <DialogContent className="max-w-5xl h-[85vh]">
+          {/* Screen-reader name; the editor shows its own visible heading. */}
+          <DialogTitle className="sr-only">Email template editor</DialogTitle>
           <TemplateEditor 
             template={selectedTemplate ? { ...selectedTemplate, type: selectedTemplate.type ?? null } : null} 
             onClose={() => setIsEditing(false)} 
@@ -213,6 +215,7 @@ export default function TemplatesPage() {
       {/* Template Preview Dialog */}
       <Dialog open={isPreviewing} onOpenChange={setIsPreviewing}>
         <DialogContent className="max-w-5xl h-[85vh] dialog-content-preview">
+          <DialogTitle className="sr-only">Email template preview</DialogTitle>
           {selectedTemplate && (
             <TemplatePreview template={{
               ...selectedTemplate,

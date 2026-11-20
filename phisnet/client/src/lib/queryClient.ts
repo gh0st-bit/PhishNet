@@ -51,7 +51,7 @@ export async function refreshSession(skipForUserEndpoint: boolean = false, skipA
     sessionStorage.setItem('lastSessionPing', now.toString());
     
     // Use the API base URL from environment variables
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const baseUrl = import.meta.env.VITE_API_URL || '';
     
     const response = await fetch(`${baseUrl}/api/session-ping`, { 
       method: 'POST',
@@ -87,13 +87,13 @@ export async function apiRequest(
   const isUserEndpoint = url === '/api/user';
   
   // Determine if this is an auth endpoint that should skip redirect-on-401 logic
-  const authEndpoints = ['/api/login', '/api/register', '/api/forgot-password', '/api/reset-password'];
+  const authEndpoints = ['/api/login', '/api/register', '/api/forgot-password', '/api/reset-password', '/api/enroll/accept'];
   const isAuthEndpoint = authEndpoints.includes(url);
   // Refresh the session before making the actual request (skip auth redirect for auth endpoints)
   await refreshSession(isUserEndpoint, isAuthEndpoint);
   
   // Use the API base URL from environment variables
-  const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const baseUrl = import.meta.env.VITE_API_URL || '';
   const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
   
     const res = await fetch(fullUrl, {
@@ -121,7 +121,7 @@ export const getQueryFn: <T>(options: {
     await refreshSession(isUserEndpoint, false);
     
     // Use the API base URL from environment variables
-    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+    const baseUrl = import.meta.env.VITE_API_URL || '';
     const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url}`;
     
     const res = await fetch(fullUrl, {

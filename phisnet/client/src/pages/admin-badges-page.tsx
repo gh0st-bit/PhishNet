@@ -1,3 +1,4 @@
+import AppLayout from "@/components/layout/app-layout";
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
@@ -45,6 +46,7 @@ const rarityIconMap: Record<string, JSX.Element> = {
 
 export default function AdminBadgesPage() {
   const queryClient = useQueryClient();
+  const [mutationError,setMutationError]=useState('');
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingBadge, setEditingBadge] = useState<AdminBadge | null>(null);
@@ -72,7 +74,7 @@ export default function AdminBadgesPage() {
       if (!res.ok) throw new Error('Failed to fetch badges');
       return res.json();
     },
-    keepPreviousData: true,
+    placeholderData: (previous) => previous,
   });
 
   const createBadgeMutation = useMutation({
@@ -91,7 +93,9 @@ export default function AdminBadgesPage() {
       if (!res.ok) throw new Error('Failed to create badge');
       return res.json();
     },
+    onError: (error:Error) => { setMutationError(error.message); },
     onSuccess: () => {
+      setMutationError('');
       queryClient.invalidateQueries({ queryKey: ['/api/admin/badges'] });
       setIsDialogOpen(false);
       resetForm();
@@ -112,7 +116,9 @@ export default function AdminBadgesPage() {
       if (!res.ok) throw new Error('Failed to update badge');
       return res.json();
     },
+    onError: (error:Error) => { setMutationError(error.message); },
     onSuccess: () => {
+      setMutationError('');
       queryClient.invalidateQueries({ queryKey: ['/api/admin/badges'] });
       setIsDialogOpen(false);
       setEditingBadge(null);
@@ -126,7 +132,9 @@ export default function AdminBadgesPage() {
       if (!res.ok) throw new Error('Failed to delete badge');
       return res.json();
     },
+    onError: (error:Error) => { setMutationError(error.message); },
     onSuccess: () => {
+      setMutationError('');
       queryClient.invalidateQueries({ queryKey: ['/api/admin/badges'] });
     },
   });
@@ -193,7 +201,7 @@ export default function AdminBadgesPage() {
   const startIndex = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const endIndex = Math.min(page * pageSize, total);
 
-  return (
+  return (<AppLayout>{(
     <div className="space-y-6 p-4 md:p-6 max-w-[1400px] mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -349,6 +357,7 @@ export default function AdminBadgesPage() {
         )}
       </div>
 
+      {mutationError && <p role="alert" className="text-destructive">{mutationError}</p>}
       {error && (
         <Alert variant="destructive"><AlertDescription>Failed to load badges. Please try again.</AlertDescription></Alert>
       )}
@@ -393,7 +402,7 @@ export default function AdminBadgesPage() {
                       Publish
                     </Button>
                   )}
-                  <Button size="sm" variant="outline" className="text-destructive" onClick={() => { if (confirm(`Delete badge "${badge.name}"? This action cannot be undone.`)) deleteBadgeMutation.mutate(badge.id); }}><Trash2 className="h-4 w-4" /></Button>
+                  <Button size="sm" variant="outline" className="text-destructive" onClick={() => { if (confirm(`Archive badge "${badge.name}"? Earned achievements will be retained.`)) deleteBadgeMutation.mutate(badge.id); }}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               </div>
               <div>
@@ -415,5 +424,5 @@ export default function AdminBadgesPage() {
         </div>
       )}
     </div>
-  );
+  )}</AppLayout>);
 }

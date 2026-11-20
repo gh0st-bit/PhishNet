@@ -6,7 +6,7 @@ import { useLandingPages } from "@/hooks/useApi";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import LandingPageEditor from "@/components/landing-pages/landing-page-editor";
 import { 
   Ghost, 
@@ -217,6 +217,8 @@ export default function LandingPagesPage() {
       {/* Landing Page Editor Dialog */}
       <Dialog open={isCreating} onOpenChange={setIsCreating}>
         <DialogContent className="max-w-4xl p-0" style={{ maxHeight: '90vh', height: 'auto' }}>
+          {/* Screen-reader name; the editor shows its own visible heading. */}
+          <DialogTitle className="sr-only">Landing page editor</DialogTitle>
           <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 2rem)' }}>
             <div className="p-6">
               <LandingPageEditor 

@@ -1,353 +1,159 @@
-# 🎣 PhishNet - Advanced Phishing Simulation Platform
+# PhishNet
 
-<div align="center">
+PhishNet is a phishing simulation and security awareness platform with organization management, campaigns, email templates, landing pages, training, quizzes, threat intelligence, and reporting.
 
-[![Node.js](https://img.shields.io/badge/node-%3E%3D%2018.0.0-brightgreen)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/typescript-%5E5.0.0-blue)](https://www.typescriptlang.org/)
-[![PostgreSQL](https://img.shields.io/badge/postgresql-%3E%3D15-blue)](https://www.postgresql.org/)
+## Project layout
 
-**🚀 One-Command Setup** • **🔒 Enterprise Grade**
+The application is a single npm package in `phisnet/`. Run application commands from that directory.
 
-</div>
+| Location | Purpose |
+| --- | --- |
+| `phisnet/client/` | React, TypeScript, Vite, Tailwind, and UI components |
+| `phisnet/server/` | Express API, authentication, services, and background schedulers |
+| `phisnet/shared/` | Drizzle schema, validation, and shared types |
+| `phisnet/migrations/` | Database migrations and SQL utilities |
+| `phisnet/scripts/` | Database, development, and operational utilities |
+| `phisnet/tests/` and `phisnet/e2e/` | Automated tests |
+| `phisnet/Exported-DB/` and `phisnet/backups/` | Data exports and backup/restore helpers |
+| `phisnet/attached_assets/` and `phisnet/uploads/` | Referenced assets and uploaded content |
+| `Documentation/` and `reference-docs/` | Academic reports, presentations, designs, and reference materials |
 
----
+The root npm manifest is separate from the application manifest. Application commands belong in `phisnet/`.
 
-## 🌟 Overview
+## Local setup
 
-PhishNet is a professional phishing simulation platform designed for cybersecurity training and awareness. Features advanced templates, real-time analytics, and enterprise-grade security.
+Prerequisites: Node.js with npm, PostgreSQL, and Git. Existing development configuration targets Node.js 20 and PostgreSQL 15. Sessions use PostgreSQL; Redis is not needed for session storage.
 
-### ✨ Key Features
-- 🎣 **Advanced Phishing Campaigns** with professional templates
-- 📊 **Real-Time Analytics** and detailed reporting
-- 🏢 **Multi-Tenant Support** for organizations
-- 🔒 **Role-Based Access Control** and security features
-
----
-
-## ⚡ Quick Setup
-
-### 🚀 One-Command Deployment
-
-#### Linux/macOS:
-```bash
-git clone https://github.com/gh0st-bit/PhishNet.git
-cd PhishNet/phisnet
-chmod +x deploy.sh
-./deploy.sh
+```sh
+cd phisnet
+npm ci
 ```
 
-#### Windows PowerShell:
+Keep an existing `.env`. For a new checkout, copy `.env.example` to `.env`:
+
 ```powershell
-git clone https://github.com/gh0st-bit/PhishNet.git
-cd PhishNet\phisnet
-# Fix PowerShell execution policy if needed
-Set-ExecutionPolicy Bypass -Scope Process -Force
-# Run the deployment script
-.\deploy.ps1
+# Windows PowerShell
+Copy-Item .env.example .env
 ```
 
-#### Windows (Easiest Method):
-```cmd
-git clone https://github.com/gh0st-bit/PhishNet.git
-cd PhishNet\phisnet
-universal-setup.bat
+```sh
+# Linux/macOS
+cp .env.example .env
 ```
 
-This universal setup script automatically handles:
-- Execution policy issues
-- Deployment and startup in one command
-- Error recovery with fallback options
-- Both development and production modes
+Configure these values for your own PostgreSQL database and credentials:
 
-Run `universal-setup.bat --help` to see all options.
+```dotenv
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=phishnet
+DB_USER=phishnet_user
+DB_PASSWORD=replace-with-your-password
+DATABASE_URL=postgresql://phishnet_user:replace-with-your-password@localhost:5432/phishnet
+SESSION_SECRET=replace-with-a-random-secret
+MASTER_ENCRYPTION_KEY=replace-with-a-base64-encoded-32-byte-key
+```
 
-> Note: Legacy container quick start removed. Use the platform scripts above for local setup.
+The server connects using the individual `DB_*` settings. Drizzle tooling uses `DATABASE_URL`, and startup also requires that variable. Keep both forms consistent; URL-encode special characters in the connection URL. The example environment file contains repeated settings: ensure repeated assignments agree.
 
----
+Generate independent values for `SESSION_SECRET` and `MASTER_ENCRYPTION_KEY` by running this command twice:
 
-## 🔑 Default Access
+```sh
+node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+```
 
-- **URL:** `http://localhost:3000`
-- **Email:** `admin@phishnet.local`
-- **Password:** `admin123`
+Keep the master encryption key stable for an existing database: organization secrets depend on it. Optional provider keys and email settings are listed in `.env.example`; configure SMTP profiles in the application for campaign delivery.
 
-**⚠️ Change the default password immediately after first login!**
+### Database initialization
 
----
+Create the PostgreSQL role and database matching your environment first. For a **new, empty development database**, apply the current shared schema:
 
-## 🛠️ Manual Setup (If Needed)
+```sh
+npm run db:push
+```
 
-If automatic deployment fails, you can set up manually:
+For an existing database, back it up and review the applicable migrations before making changes. `npm run db:generate` generates Drizzle migrations and `npm run db:migrate` applies journaled migrations. Additional SQL files in `migrations/` are standalone historical changes, not an instruction to run every SQL file in filename order.
 
-### Prerequisites
-- Node.js 18+
-- PostgreSQL 15+
-- Redis
-- Git
+`npm run db:migrate:safe` is a targeted threat-intelligence migration, not a full database initializer. `npm run setup` also runs `import-data`, which truncates tables before importing the JSON snapshots in `Exported-DB/`; use it only when intentionally replacing that data.
 
-### 🗄️ Automatic Database Setup
-The deployment scripts automatically handle database creation and setup:
+### Start development
 
-```bash
-# 1. Clone repository
-git clone https://github.com/gh0st-bit/PhishNet.git
-cd PhishNet/phisnet
-
-# 2. Install dependencies
-npm install
-
-# 3. Complete Automated Setup (NEW ENHANCED VERSION!)
-# The deploy scripts now automatically handle:
-# ✅ Database creation with proper user permissions
-# ✅ Complete environment configuration with secure defaults
-# ✅ Required directory creation (logs, uploads, temp, exports, backups)
-# ✅ Database schema application from SQL files
-# ✅ Sample data import with admin user creation
-# ✅ Fallback to manual SQL import if npm scripts fail
-# ✅ Database connection verification and table counting
-# ✅ Security settings with auto-generated secrets
-
-# Run the complete setup (everything automated):
-npm run setup
-
-# Or run individual steps:
-npm run db:push        # Create/update database schema
-npm run import-data    # Import sample data and admin user
-
-# 4. Environment Auto-Configuration (NEW!)
-# .env file is automatically created with:
-# - Database URL (postgresql://postgres@localhost:5432/phishnet)
-# - Redis configuration for sessions
-# - Auto-generated security secrets
-# - Complete application settings
-# - Email configuration (optional)
-# - Upload and logging settings
-# - Feature toggles and admin account details
-
-# 5. Verify Everything Works (NEW!)
-./verify-setup.sh      # Linux/macOS
-.\verify-setup.ps1     # Windows
-# This checks: Node.js, PostgreSQL, Redis, database tables, 
-# environment files, project structure, and connections
-
-# 6. Start application
+```sh
 npm run dev
 ```
 
-### 🔄 Database Management Commands
+Open **http://localhost:5000**. The Express entrypoint currently fixes the listener to `localhost:5000`; changing `PORT` in `.env` alone does not change it. Development serves the UI through Vite integration in Express.
 
-```bash
-# Reset database completely (removes all data)
-./reset-db.sh          # Linux/macOS
-.\reset-db.ps1         # Windows (if available)
+Use an account in your configured database. Old setup scripts and exported databases contain different account defaults; there is no universal login guaranteed by this README.
 
-# Or use npm scripts:
-npm run db:push        # Update schema only
-npm run import-data    # Re-import sample data
-npm run setup          # Complete setup (schema + data)
+For separate frontend work, `npm run frontend:dev` starts Vite on port 5173 and `npm run app:preview` starts it alongside the backend. `npm run frontend:full` starts the frontend with the mock API, which is separate from the real backend.
 
-# Check database status
-psql -U postgres -d phishnet -c "\dt"  # List tables
+## Build and run
+
+```sh
+npm run build
+npm start
 ```
 
-### 📊 Database Configuration
+The build writes frontend assets to `phisnet/dist/public/` and bundles the backend to `phisnet/dist/index.js`. The runtime still needs the configured PostgreSQL database and environment variables.
 
-**Automatic Setup Includes:**
-- ✅ Database: `phishnet` 
-- ✅ User: `postgres` (default PostgreSQL user)
-- ✅ Schema: Complete PhishNet tables and relationships
-- ✅ Sample Data: Templates, campaigns, and admin user
-- ✅ Extensions: Required PostgreSQL extensions
-- ✅ Permissions: Proper access controls
+Production session cookies expect HTTPS by default. `ALLOW_INSECURE_COOKIES=true` is available for local HTTP testing of a production build. The server's localhost binding requires appropriate hosting/proxy configuration for external access.
 
-**Default Admin Account:**
-- Email: `admin@phishnet.local`
-- Password: `admin123`
-- Role: Super Administrator
+Docker, Compose, and devcontainer setup have been removed. Use a local Node.js and PostgreSQL installation with `.env`; `.env.example` is the single onboarding template. Retained installation and deployment scripts are legacy operational tools required by other retained scripts or CI configuration. Their presence is not a guarantee of a working deployment; the direct npm commands above describe the current package structure.
 
----
+## Commands and tests
 
-## 📦 Package for Friends
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the integrated development application |
+| `npm run build` | Build frontend and backend |
+| `npm start` | Run the compiled application |
+| `npm run check` | TypeScript check |
+| `npm test` | Jest tests |
+| `npm run test:unit` | Jest unit tests with coverage |
+| `npm run test:integration` | Jest integration tests |
+| `npm run test:e2e` | Playwright tests |
+| `npm run security:scan` | Dependency audit |
+| `npm run ti:ingest` | Manually ingest threat feeds; writes to the database |
+| `npm run db:dedupe` | Deduplicate threat intelligence; changes database records |
 
-Create a complete package with your data for easy sharing:
+Jest configuration is in `phisnet/jest.config.js`; Playwright configuration is in `phisnet/playwright.config.ts`. Integration and browser tests require their application/database setup. Existing test configuration and TypeScript errors may need separate fixes; cleanup does not change application or test code.
 
-```bash
-./create-package.sh
+Background campaign, threat-feed, and data-retention schedulers start with the server. For development without automatic feed ingestion or retention processing, set `THREAT_FEED_ENABLED=false` and `DATA_RETENTION_ENABLED=false` in `.env`. Intervals include `THREAT_FEED_INTERVAL_HOURS` and `DATA_RETENTION_INTERVAL_HOURS`.
+
+## Database backup and restore
+
+Keep existing exports and backups. PostgreSQL tools must be on `PATH` for the following examples. Replace the database, role, and filenames with your own values.
+
+```sh
+# Create a custom-format backup
+pg_dump -h localhost -U phishnet_user -d phishnet -Fc -f phishnet.dump
+
+# Restore into an already-created, separate empty database
+pg_restore -h localhost -U phishnet_user -d phishnet_restored --no-owner phishnet.dump
+
+# Restore a plain SQL backup into a separate empty database
+psql -h localhost -U phishnet_user -d phishnet_restored -f backup.sql
+
+# Check restored data
+psql -h localhost -U phishnet_user -d phishnet_restored -c "SELECT COUNT(*) FROM users;"
 ```
 
-This creates a package containing:
-- Complete PhishNet source code
-- Your database with campaigns and templates
-- Automated setup scripts
-- All configuration files
+Additional backup and restore helpers remain in `phisnet/Exported-DB/`. Update both `DB_NAME` and `DATABASE_URL` before connecting the application to a restored database. Preserve the associated encryption keys when restoring existing organization data.
 
----
+## Architecture and troubleshooting
 
+The UI uses React, Wouter, TanStack Query, and React Hook Form with Zod. Express registers API routes through `server/routes.ts` and `server/routes/index.ts`; authentication is in `server/auth.ts`. PostgreSQL access is configured in `server/db.ts`, with models in `shared/schema.ts`. API routes generally live under `/api`; protected routes require a session and enforce roles and organization membership. Socket.IO supports realtime updates.
 
-## �️ Supported Platforms
+- **Missing database configuration:** check all five `DB_*` values and confirm PostgreSQL is running and accepts the configured role.
+- **Migration connection differs from the app:** make `DATABASE_URL` match the individual `DB_*` values.
+- **Login does not persist on local production HTTP:** check the secure-cookie setting described above.
+- **Missing frontend build:** run `npm run build` before `npm start`.
+- **Address already in use:** check port 5000; the entrypoint currently fixes that port.
+- **Encrypted settings cannot be read after a restore:** verify the original master key and organization encryption keys were retained.
 
-### Automatically Detected:
-- 🐉 **Kali Linux** (with auto-fixes)
-- 🐧 **Ubuntu/Debian**
-- 🎩 **CentOS/RHEL/Rocky**
-- 🎁 **Fedora**
-- ⚡ **Arch/Manjaro**
-- 🪟 **Windows 10/11**
-- 🍎 **macOS (Intel/ARM)**
+Agent instructions and third-party documentation remain with their respective tools and datasets. Historical implementation reports and duplicate setup guides have been consolidated into this README.
 
-### Database Configuration
-- 🗄️ **Automatic Database Creation**: Creates `phishnet` database with `postgres` user
-- 📊 **Schema Management**: Uses Drizzle ORM with automated migrations
-- 🔒 **Secure Setup**: Proper permissions and PostgreSQL extensions
-- 📈 **Sample Data**: Pre-loaded templates, campaigns, and admin account
-- 🔄 **Easy Reset**: Simple database reset and restoration commands
+## Production modernization
 
----
-
-## 📚 Quick Commands
-
-```bash
-# Start development server
-./start.sh              # Linux/macOS
-.\start.ps1             # Windows
-
-# Deploy production
-./deploy.sh --production
-
-# Database Management
-./reset-db.sh           # Complete database reset
-npm run setup           # Schema + sample data
-npm run db:push         # Update schema only
-npm run import-data     # Import sample data
-
-# Verify Setup (NEW!)
-./verify-setup.sh       # Linux/macOS - Check installation
-.\verify-setup.ps1      # Windows - Check installation
-
-# Create shareable package
-./create-package.sh
-
-# Fix Kali Linux issues
-./kali-quick-fix.sh
-
-# Database Troubleshooting
-psql -U postgres -d phishnet -c "\l"    # List databases
-psql -U postgres -d phishnet -c "\dt"   # List tables
-psql -U postgres -d phishnet -c "\du"   # List users
-```
-
-## 🛠️ Troubleshooting Common Issues
-
-### PowerShell Execution Policy Errors
-If you see errors like "File cannot be loaded because running scripts is disabled on this system":
-
-```powershell
-# Method 1: Use our universal setup script (recommended)
-universal-setup.bat    # For cmd.exe users
-.\universal-setup.ps1  # For PowerShell users
-
-# Method 2: Use our safe batch files
-deploy-safe.bat   # Instead of deploy.bat
-start-safe.bat    # Instead of start.bat
-
-# Method 3: Run this command in PowerShell as Administrator
-Set-ExecutionPolicy Bypass -Scope Process -Force
-
-# Method 4: For a more permanent solution
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
-```
-
-See `POWERSHELL-EXECUTION-FIX.md` for detailed troubleshooting steps.
-
-### Database Connection Issues
-If the application can't connect to the database:
-```bash
-# Check if PostgreSQL is running
-# Windows:
-Get-Service postgresql*
-
-# Linux/macOS:
-sudo systemctl status postgresql
-
-# Verify database exists:
-psql -U postgres -c "SELECT datname FROM pg_database WHERE datname='phishnet';"
-```
-
-### Node.js Version Issues
-The application works best with Node.js LTS versions (preferably Node 20):
-```bash
-# Check Node version
-node -v
-
-# If using nvm, switch to Node 20
-nvm install 20
-nvm use 20
-```
-
----
-
-## 🗄️ Database Details
-
-### Automatic Database Setup
-PhishNet automatically creates and configures a complete PostgreSQL database:
-
-**Database Structure:**
-- **Database Name**: `phishnet`
-- **User**: `postgres` (default system user)
-- **Tables**: 15+ tables for campaigns, templates, users, analytics
-- **Extensions**: plpgsql, uuid-ossp (auto-installed)
-- **Sample Data**: Ready-to-use templates and admin account
-
-**Schema Files:**
-- `migrations/00_phishnet_schema.sql` - Complete database schema
-- `migrations/01_sample_data.sql` - Sample templates and admin user
-- `migrations/create_notifications.sql` - Notification system
-- `migrations/fix-missing-columns.sql` - Schema updates
-
-**Database Reset Process:**
-```bash
-# Automated reset (recommended)
-./reset-db.sh
-
-# Manual reset process:
-sudo -u postgres psql -c "DROP DATABASE IF EXISTS phishnet;"
-sudo -u postgres psql -c "CREATE DATABASE phishnet;"
-npm run db:push         # Apply schema
-npm run import-data     # Load sample data
-```
-
----
-
-## 🎯 Architecture
-
-- **Frontend:** React + TypeScript + Tailwind CSS
-- **Backend:** Node.js + Express + TypeScript
-- **Database:** PostgreSQL with Drizzle ORM
-- **Cache:** Redis for sessions
-- **Deployment:** Universal scripts
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-<div align="center">
-
-**Made with ❤️ for the cybersecurity community**
-
-[Report Issues](https://github.com/gh0st-bit/PhishNet/issues) • [Documentation](./docs/) • [Support](mailto:support@phishnet.local)
-
-</div>
+See [implementation status and release gates](phisnet/docs/production-readiness.md) for the isolated audit environment, durable campaign worker, new runtime migrations, verification commands, staging deployment candidate, and outstanding production blockers. The existing production deployment scripts are not the release source of truth.

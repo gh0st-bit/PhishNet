@@ -1,0 +1,47 @@
+name: SMB pilot verification
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: phishnet_audit
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/ci-pilot-env.mjs
+      - run: node --env-file=.env.audit --import tsx scripts/bootstrap.ts
+      - run: node scripts/run-audit.mjs seed
+      - run: npm run check && npm run build
+      - run: node scripts/run-audit.mjs test
+      - run: npx playwright install --with-deps chromium
+      - name: Start isolated web app
+        run: |
+          node scripts/run-audit.mjs dev > /tmp/phishnet-pilot.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:5000/health/ready; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - run: node scripts/run-audit.mjs browser tests/browser/navigation-regressions.spec.ts tests/browser/surface-audit.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: pilot-browser-failures
+          path: test-results/
+          retention-days: 7

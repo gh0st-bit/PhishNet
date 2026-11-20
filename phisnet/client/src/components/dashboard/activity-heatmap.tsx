@@ -38,7 +38,7 @@ export function ActivityHeatmap({
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return date.toLocaleDateString(document.documentElement.lang || 'en-US', { month: 'short', day: 'numeric' });
   };
 
   return (

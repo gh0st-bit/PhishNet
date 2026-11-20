@@ -30,7 +30,7 @@ export default function RecentCampaigns({ campaigns, isLoading }: RecentCampaign
   const [, navigate] = useLocation();
 
   return (
-    <Card>
+    <Card className="glass glass-tile">
       <CardHeader className="flex flex-row items-center justify-between py-5 px-6">
         <CardTitle>Recent Campaigns</CardTitle>
         <Button 

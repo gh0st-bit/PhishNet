@@ -30,6 +30,8 @@ export interface Template {
 
 // User Types
 export interface User {
+  roles?: { id: number; name: string; description?: string; permissions?: string[] }[];
+  isAdmin?: boolean;
   id: number;
   email: string;
   name: string;

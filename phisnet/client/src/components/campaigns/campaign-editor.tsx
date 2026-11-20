@@ -84,7 +84,7 @@ export default function CampaignEditor({ campaignId, onClose }: CampaignEditorPr
         if (!dateString) return "";
         try {
           const date = new Date(dateString);
-          return date.toISOString().slice(0, 16);
+          return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
         } catch (error) {
           console.error('Error formatting date:', error);
           return "";
@@ -93,10 +93,10 @@ export default function CampaignEditor({ campaignId, onClose }: CampaignEditorPr
       
       const formData = {
         name: campaign.name || "",
-        targetGroupId: "1", // Default value since not available in Campaign type
-        smtpProfileId: "1", // Default value since not available in Campaign type  
-        emailTemplateId: "1", // Default value since not available in Campaign type
-        landingPageId: "1", // Default value since not available in Campaign type
+        targetGroupId: safeToString(campaign.targetGroupId),
+        smtpProfileId: safeToString(campaign.smtpProfileId),
+        emailTemplateId: safeToString(campaign.emailTemplateId),
+        landingPageId: safeToString(campaign.landingPageId),
         scheduledAt: formatDateTime(campaign.scheduledAt || null),
         endDate: formatDateTime(campaign.endDate || null),
       };
@@ -124,8 +124,8 @@ export default function CampaignEditor({ campaignId, onClose }: CampaignEditorPr
         smtpProfileId: parseInt(data.smtpProfileId) || 0,
         emailTemplateId: parseInt(data.emailTemplateId) || 0,
         landingPageId: parseInt(data.landingPageId) || 0,
-        scheduledAt: data.scheduledAt && data.scheduledAt !== "" ? data.scheduledAt : null,
-        endDate: data.endDate && data.endDate !== "" ? data.endDate : null,
+        scheduledAt: data.scheduledAt ? new Date(data.scheduledAt).toISOString() : null,
+        endDate: data.endDate ? new Date(data.endDate).toISOString() : null,
       };
       
       console.log('Formatted data for API:', formattedData);
@@ -158,6 +158,7 @@ export default function CampaignEditor({ campaignId, onClose }: CampaignEditorPr
       });
       queryClient.invalidateQueries({ queryKey: ['/api/campaigns'] });
       queryClient.invalidateQueries({ queryKey: ['/api/campaigns', campaignId] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-details', campaignId] });
       queryClient.invalidateQueries({ queryKey: ['/api/dashboard/stats'] });
       onClose();
     },

@@ -1,3 +1,8 @@
+import {badgeFacts} from '../services/badge-evaluation';
+import {evaluateBadgeCriterion} from '@shared/badge-criteria';
+import {answerMatches} from '@shared/quiz-grading';
+import {pool} from '../db';
+import { reliableRoutes } from '../http';
 /**
  * Employee Portal API Routes
  * Handles all employee-facing features: training, quizzes, certificates, gamification
@@ -27,7 +32,7 @@ import { eq, and, desc, sql, count } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "node:crypto";
 
-const router = Router();
+const router = reliableRoutes(Router());
 
 // All employee routes require authentication, organization membership, and employee role (not admin)
 router.use(isAuthenticated);
@@ -186,7 +191,9 @@ router.get("/training/:id", async (req: Request, res: Response) => {
       )
       .limit(1);
 
-    res.json({ module, progress });
+    const captured=(await pool.query('SELECT content_snapshot FROM training_progress WHERE user_id=$1 AND module_id=$2',[userId,moduleId])).rows[0]?.content_snapshot;
+    const saved=captured?.module?Object.fromEntries(Object.entries(captured.module).map(([key,value])=>[key.replace(/_([a-z])/g,(_m,c)=>c.toUpperCase()),value])):module;
+    res.json({module:saved,progress,contentCapturedAt:captured?.capturedAt||null});
   } catch (error: any) {
     console.error("Error fetching training module:", error);
     res.status(500).json({ message: "Failed to fetch training module" });
@@ -205,7 +212,10 @@ router.post("/training/:id/progress", async (req: Request, res: Response) => {
 
     const moduleId = Number.parseInt(req.params.id);
     const userId = req.user.id;
-      const { progressPercentage, videoTimestamp, status } = req.body;
+    const parsed=z.object({progressPercentage:z.number().int().min(0).max(100),videoTimestamp:z.number().int().min(0).max(86400).default(0),status:z.enum(['not_started','in_progress','completed']).optional()}).safeParse(req.body);
+    if(!parsed.success)return res.status(400).json({message:'Invalid learning progress'});
+    const {progressPercentage,videoTimestamp,status}=parsed.data;
+    if(!(await pool.query('SELECT 1 FROM training_modules WHERE id=$1 AND organization_id=$2',[moduleId,req.user.organizationId])).rowCount)return res.status(404).json({message:'Training module not found'});
 
     // Check if progress record exists
     const [existing] = await db
@@ -219,6 +229,7 @@ router.post("/training/:id/progress", async (req: Request, res: Response) => {
       )
       .limit(1);
 
+    if(existing?.status==='completed')return res.json({success:true});
     if (existing) {
       // Update existing progress
       const updateData: any = {
@@ -234,7 +245,7 @@ router.post("/training/:id/progress", async (req: Request, res: Response) => {
         updateData.status = "completed";
 
         // Award XP for completion
-        await gamificationService.awardXP(userId, 50, "training_completion");
+        await gamificationService.awardXP(userId, 50, "training_completion",`training:${moduleId}`);
       }
 
       await db
@@ -242,14 +253,8 @@ router.post("/training/:id/progress", async (req: Request, res: Response) => {
         .set(updateData)
         .where(eq(trainingProgress.id, existing.id));
     } else {
-      // Create new progress record
-      await db.insert(trainingProgress).values({
-        userId,
-        moduleId,
-        progressPercentage,
-          videoTimestamp,
-        status: status || "in_progress",
-      });
+      await db.insert(trainingProgress).values({userId,moduleId,progressPercentage,videoTimestamp,status:progressPercentage>=100?'completed':status||'in_progress',completedAt:progressPercentage>=100?new Date():null});
+      if(progressPercentage>=100)await gamificationService.awardXP(userId,50,'training_completion',`training:${moduleId}`);
     }
 
     res.json({ success: true });
@@ -400,7 +405,7 @@ router.post("/quizzes/:id/submit", async (req: Request, res: Response) => {
     for (const question of questions) {
       const userAnswer = answers[question.id];
       const correctAnswer = question.correctAnswer;
-      const isCorrect = JSON.stringify(userAnswer) === JSON.stringify(correctAnswer);
+      const isCorrect = answerMatches(question.questionType,userAnswer,correctAnswer);
 
       if (isCorrect) {
         correctAnswers++;
@@ -454,7 +459,7 @@ router.post("/quizzes/:id/submit", async (req: Request, res: Response) => {
     let gamificationData = null;
     if (passed) {
       const xp = score === 100 ? 100 : 50; // Bonus for perfect score
-      const gamificationResult = await gamificationService.awardXP(userId, xp, "quiz_completion");
+      const gamificationResult = await gamificationService.awardXP(userId, xp, "quiz_completion",`quiz-attempt:${attempt.id}`);
       gamificationData = {
         xpGained: xp,
         leveledUp: gamificationResult.leveledUp,
@@ -596,11 +601,11 @@ router.get("/badges", async (req: Request, res: Response) => {
     const allBadges = await db
       .select()
       .from(badges)
-      .where(eq(badges.published, true));
+      .where(sql`(${badges.published} AND ${badges.archivedAt} IS NULL) OR EXISTS (SELECT 1 FROM user_badges ub WHERE ub.badge_id=${badges.id} AND ub.user_id=${userId})`);
 
     // Get user's earned badges
     const earnedBadgeIds = await db
-      .select({ badgeId: userBadges.badgeId, earnedAt: userBadges.earnedAt })
+      .select({ badgeId: userBadges.badgeId, earnedAt: userBadges.earnedAt, snapshot: userBadges.awardSnapshot })
       .from(userBadges)
       .where(eq(userBadges.userId, userId));
 
@@ -608,11 +613,14 @@ router.get("/badges", async (req: Request, res: Response) => {
       earnedBadgeIds.map(b => [b.badgeId, b.earnedAt])
     );
 
+    const facts=await badgeFacts(userId);
     // Merge data
     const badgesWithStatus = allBadges.map(badge => ({
       ...badge,
+      ...(earnedBadgeIds.find(b=>b.badgeId===badge.id)?.snapshot as object || {}),
       earned: earnedMap.has(badge.id),
       earnedAt: earnedMap.get(badge.id) || null,
+      ...(()=>{try { const evaluated=evaluateBadgeCriterion(badge.criteria,facts);return {progress:earnedMap.has(badge.id)?100:evaluated.progress,progressDetails:evaluated};}catch{return {progress:0,progressDetails:null};}})(),
     }));
 
     res.json({ badges: badgesWithStatus });
@@ -646,7 +654,7 @@ router.get("/badges/:id", async (req: Request, res: Response) => {
       .where(
         and(
           eq(badges.id, badgeId),
-          eq(badges.published, true)
+          sql`((${badges.published} AND ${badges.archivedAt} IS NULL) OR EXISTS(SELECT 1 FROM user_badges ub WHERE ub.badge_id=${badges.id} AND ub.user_id=${userId}))`
         )
       );
 
@@ -674,78 +682,16 @@ router.get("/badges/:id", async (req: Request, res: Response) => {
       .from(userBadges)
       .where(eq(userBadges.badgeId, badgeId));
 
-    // Calculate user progress based on badge criteria
-    let progress = 0;
-    let progressDetails = null;
-
-    const criteria = badge.criteria as any;
-    
-    if (earned) {
-      progress = 100;
-    } else if (criteria) {
-      // Calculate progress based on criteria type
-      if (criteria.type === 'points' && criteria.requiredPoints) {
-        const [userStats] = await db
-          .select({ totalPoints: userPoints.totalPoints })
-          .from(userPoints)
-          .where(eq(userPoints.userId, userId));
-        
-        if (userStats) {
-          progress = Math.min(100, (userStats.totalPoints / criteria.requiredPoints) * 100);
-          progressDetails = {
-            current: userStats.totalPoints,
-            required: criteria.requiredPoints,
-            type: 'points'
-          };
-        }
-      } else if (criteria.type === 'quiz_completion' && criteria.requiredCompletions) {
-        const [{ quizCount }] = await db
-          .select({ quizCount: sql<number>`count(DISTINCT quiz_id)::int` })
-          .from(quizAttempts)
-          .where(
-            and(
-              eq(quizAttempts.userId, userId),
-              sql`${quizAttempts.score} >= (SELECT passing_score FROM quizzes WHERE id = ${quizAttempts.quizId})`
-            )
-          );
-        
-        progress = Math.min(100, (quizCount / criteria.requiredCompletions) * 100);
-        progressDetails = {
-          current: quizCount,
-          required: criteria.requiredCompletions,
-          type: 'quiz_completion'
-        };
-      } else if (criteria.type === 'streak' && criteria.requiredDays) {
-        // For streak badges, we'd need to calculate current streak
-        // Simplified version - just show requirement
-        progressDetails = {
-          current: 0,
-          required: criteria.requiredDays,
-          type: 'streak'
-        };
-      } else if (criteria.type === 'perfect_score' && criteria.requiredCount) {
-        const [{ perfectScores }] = await db
-          .select({ perfectScores: sql<number>`count(*)::int` })
-          .from(quizAttempts)
-          .where(
-            and(
-              eq(quizAttempts.userId, userId),
-              eq(quizAttempts.score, 100)
-            )
-          );
-        
-        progress = Math.min(100, (perfectScores / criteria.requiredCount) * 100);
-        progressDetails = {
-          current: perfectScores,
-          required: criteria.requiredCount,
-          type: 'perfect_score'
-        };
-      }
+    let progress=earned?100:0;
+    let progressDetails:any=null;
+    if(!earned) {
+      try { const result=evaluateBadgeCriterion(badge.criteria,await badgeFacts(userId)); progress=result.progress; progressDetails=result; } catch { progressDetails={type:'unavailable',current:0,required:0}; }
     }
 
     res.json({
       badge: {
         ...badge,
+        ...(earned ? userBadgeRecord[0].awardSnapshot as object || {} : {}),
         earned,
         earnedAt,
         totalEarned: count,
@@ -765,6 +711,8 @@ router.get("/badges/:id", async (req: Request, res: Response) => {
  */
 router.get("/leaderboard", async (req: Request, res: Response) => {
   try {
+    const enabled=(await pool.query("SELECT COALESCE((preferences->>'leaderboardEnabled')::boolean,false) AS enabled FROM organizations WHERE id=$1",[req.user!.organizationId])).rows[0]?.enabled;
+    if(!enabled)return res.json({leaderboard:[],enabled:false});
     if (!req.user) {
       return res.status(401).json({ message: "Unauthorized" });
     }

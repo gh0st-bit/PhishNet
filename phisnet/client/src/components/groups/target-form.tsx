@@ -48,7 +48,7 @@ export default function TargetForm({ groupId, target, onClose }: TargetFormProps
   const mutation = useMutation({
     mutationFn: async (data: TargetFormValues) => {
       const url = isEditing 
-        ? `/api/targets/${target.id}` 
+        ? `/api/groups/${groupId}/targets/${target.id}`
         : `/api/groups/${groupId}/targets`;
       const method = isEditing ? "PUT" : "POST";
       const res = await apiRequest(method, url, data);
